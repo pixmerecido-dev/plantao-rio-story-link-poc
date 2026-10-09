@@ -1,0 +1,25 @@
+{
+  "name": "plantao-rio-story-link-poc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Base para uma prova de conceito de stories com links no Instagram Android.",
+  "type": "module",
+  "engines": { "node": ">=22.19.0", "npm": ">=10" },
+  "scripts": {
+    "doctor": "tsx src/utils/doctor.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "appium": "appium"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.0",
+    "webdriverio": "^10.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "appium": "2.19.0",
+    "appium-uiautomator2-driver": "4.2.9",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
