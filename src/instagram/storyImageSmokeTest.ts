@@ -14,9 +14,8 @@ try {
   await driver.checkAppium();
   await driver.connect();
   connected = true;
-  const filename = await publisher.findExistingTestImage(process.argv[2] ?? 'assets/story-test.jpg');
   await driver.openAndConfirmInstagram();
-  await publisher.loadImageIntoStory(filename, directory);
+  await publisher.loadImageIntoStory(process.argv[2] ?? 'assets/story-test.jpg', directory);
 } catch (error: unknown) {
   console.error('Falha no teste de imagem de Story:', error);
   process.exitCode = 1;

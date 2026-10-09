@@ -1,8 +1,8 @@
 import type { InstagramDriver } from './InstagramDriver.js';
-import { resourceIdSelector } from './storyFlowInspection.js';
+import { resourceIdSelector, GALLERY_ID } from './instagramStateMachine.js';
+export { GALLERY_ID } from './instagramStateMachine.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
-export const GALLERY_ID = 'com.instagram.android:id/gallery_grid_container';
 export const THUMBNAIL_ID = 'com.instagram.android:id/gallery_grid_item_thumbnail';
 export const CAMERA_ID = 'com.instagram.android:id/gallery_grid_camera_item_icon';
 export const FOLDER_ID = 'com.instagram.android:id/gallery_folder_menu_tv';

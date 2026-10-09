@@ -4,7 +4,7 @@ import { resolve, join } from 'node:path';
 import { InstagramDriver } from './InstagramDriver.js';
 import { StoryLinkPublisher } from './StoryLinkPublisher.js';
 import { saveScreenArtifacts } from './diagnostics.js';
-import { isStoryEditor, openStickersPanel, relevantStickerElements, linkStickerElements } from './storyStickers.js';
+import { openStickersPanel, relevantStickerElements, linkStickerElements } from './storyStickers.js';
 import { selectorForObservedElement } from './storyMediaInspection.js';
 
 const driver = new InstagramDriver();
@@ -18,12 +18,7 @@ try {
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
-  if (!(await isStoryEditor(driver.getSession()))) {
-    const filename = await publisher.findExistingTestImage(process.argv[2] ?? 'assets/story-test.jpg');
-    await publisher.loadImageIntoStory(filename, join(directory, 'image-flow'));
-  } else {
-    console.log('Editor já aberto: reutilizando o rascunho atual, sem selecionar outra imagem.');
-  }
+  await publisher.loadImageIntoStory(process.argv[2] ?? 'assets/story-test.jpg', join(directory, 'image-flow'));
   await saveScreenArtifacts(driver, directory, 'editor-before-stickers');
   const clickedSelector = await openStickersPanel(driver.getSession());
   const { elements } = await saveScreenArtifacts(driver, directory, 'stickers');

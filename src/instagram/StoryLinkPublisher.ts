@@ -6,9 +6,8 @@ import { resolve, join } from 'node:path';
 import { promisify } from 'node:util';
 import { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
-import { detectInstagramState, reachStoryCreation, resourceIdSelector, STORY_ID, waitForClickable } from './storyFlowInspection.js';
-import { selectFirstVisiblePhoto, waitForGallery, waitForGalleryExit } from './storyGallery.js';
-import { isStoryEditor } from './storyStickers.js';
+import { navigateToStoryEditor, STORY_ID } from './instagramStateMachine.js';
+import { selectFirstVisiblePhoto, waitForGalleryExit } from './storyGallery.js';
 
 const runFile = promisify(execFile);
 
@@ -55,30 +54,20 @@ export class StoryLinkPublisher {
   }
 
 
-  async loadImageIntoStory(filename: string, directory: string): Promise<void> {
-    if (process.env.DRY_RUN !== 'true') throw new Error('Esta etapa exige DRY_RUN=true.');
+  async loadImageIntoStory(localReference: string, directory: string): Promise<void> {
+    let filename: string | undefined;
+    let selected: Awaited<ReturnType<typeof selectFirstVisiblePhoto>> | undefined;
     const session = this.driver.getSession();
-    const state = await detectInstagramState(session);
-    await reachStoryCreation(session, state, () => {});
-    const story = await session.$(resourceIdSelector(STORY_ID));
-    await waitForClickable(session, story);
-    await story.click();
-    console.log('[1] STORY aberto');
-    await waitForGallery(session);
-    console.log('[2] Galeria confirmada');
-    await saveScreenArtifacts(this.driver, directory, 'gallery');
-    const selected = await selectFirstVisiblePhoto(session);
-    console.log('[4] Imagem de teste selecionada');
-    await waitForGalleryExit(session);
-    await session.waitUntil(async () => await isStoryEditor(session), {
-      timeout: 20_000, interval: 500, timeoutMsg: 'Nenhum marcador confirmado do editor apareceu após selecionar a foto.',
+    const result = await navigateToStoryEditor(session, async () => {
+      // Só requer ADB/arquivo local quando realmente vai selecionar uma imagem.
+      await saveScreenArtifacts(this.driver, directory, 'gallery');
+      filename = await this.findExistingTestImage(localReference);
+      selected = await selectFirstVisiblePhoto(session);
+      await waitForGalleryExit(session);
     });
-    console.log('[5] Editor do Story aberto (galeria fechada e marcador real visível)');
     await saveScreenArtifacts(this.driver, directory, 'editor');
-    console.log('[6] Captura do editor salva');
-    await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ filename, storyId: STORY_ID, ...selected,
-      editorConfirmation: 'galeria não visível, Instagram em primeiro plano e marcador asset_button/Stickers/your_story_share_shortcut_button visível', published: false }, null, 2)}\n`, 'utf8');
-    console.log('[7] Pronto para próxima etapa');
-    // Pare aqui: nenhum outro clique após selecionar uma única miniatura.
+    await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ ...result, filename, storyId: STORY_ID, selected,
+      reusedExistingDraft: result.initialState === 'STATE_EDITOR',
+      editorConfirmation: 'marcador real do editor visível e Instagram em primeiro plano', published: false }, null, 2)}\n`, 'utf8');
   }
 }

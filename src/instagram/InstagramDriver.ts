@@ -43,6 +43,8 @@ export class InstagramDriver {
         'appium:dontStopAppOnReset': true,
       },
     });
+    // Probes de estado ausente devem responder imediatamente no Appium.
+    await this.session.setTimeout({ implicit: 0 });
   }
 
   async openAndConfirmInstagram(): Promise<void> {

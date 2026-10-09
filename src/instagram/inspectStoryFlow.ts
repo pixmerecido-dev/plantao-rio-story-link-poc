@@ -38,9 +38,14 @@ try {
   console.log(`[1] Estado inicial detectado: ${initialState}`);
   reached = initialState;
   await capture('step-01-initial');
-  await reachStoryCreation(driver.getSession(), initialState);
-  reached = 'STATE_CREATE; STORY visível, sem clicar';
-  await capture('step-02-create');
+  if (initialState === 'STATE_EDITOR' || initialState === 'STATE_GALLERY') {
+    console.log(`[NAV] Já está em ${initialState}; não voltar à Home nem selecionar mídia neste diagnóstico.`);
+    await capture('step-02-current');
+  } else {
+    await reachStoryCreation(driver.getSession(), initialState);
+    reached = 'STATE_CREATE; STORY visível, sem clicar';
+    await capture('step-02-create');
+  }
   console.log('[5] Pronto para próxima etapa');
 } catch (error: unknown) {
   console.error('Falha no diagnóstico da criação:', error);

@@ -1,21 +1,16 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
-import { resourceIdSelector, waitForClickable } from './storyFlowInspection.js';
+import { detectInstagramState, resourceIdSelector, waitForClickable, STICKERS_ID, SHARE_SHORTCUT_ID } from './instagramStateMachine.js';
+export { STICKERS_ID, SHARE_SHORTCUT_ID } from './instagramStateMachine.js';
 import { selectorForObservedElement } from './storyMediaInspection.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
-export const STICKERS_ID = 'asset_button';
 export const STICKERS_DESCRIPTION = 'Stickers';
-export const SHARE_SHORTCUT_ID = 'com.instagram.android:id/your_story_share_shortcut_button';
 export const STICKERS_SELECTORS = [resourceIdSelector(STICKERS_ID), `~${STICKERS_DESCRIPTION}`] as const;
 const WAIT = { timeout: 20_000, interval: 500 };
 
 export async function isStoryEditor(session: Session): Promise<boolean> {
-  for (const selector of [...STICKERS_SELECTORS, resourceIdSelector(SHARE_SHORTCUT_ID)]) {
-    const element = await session.$(selector);
-    if (await element.isExisting() && await element.isDisplayed()) return true;
-  }
-  return false;
+  return await detectInstagramState(session) === 'STATE_EDITOR';
 }
 
 export function relevantStickerElements(elements: InstagramElement[]): InstagramElement[] {

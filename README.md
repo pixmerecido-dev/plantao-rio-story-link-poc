@@ -88,7 +88,7 @@ No Windows com Appium, `emulator-5554`, Instagram autenticado e `DRY_RUN=true`:
 npm run smoke:story-image
 ```
 
-A imagem da POC já deve estar em `/sdcard/Pictures/PlantaoRio/` e ser **a mídia mais recente em Recents**, sem outra captura/foto posterior. O comando não reenvia nem apaga mídia. Confere por SHA-256 que um dos 20 arquivos recentes da POC corresponde a `assets/story-test.jpg` (ou ao arquivo local passado como argumento). Essa conferência garante a presença do arquivo; a identificação da miniatura selecionada depende da premissa de ordem em Recents, não de uma comparação visual automática.
+A imagem da POC já deve estar em `/sdcard/Pictures/PlantaoRio/` e ser **a mídia mais recente em Recents**, sem outra captura/foto posterior. O comando não reenvia nem apaga mídia. Somente quando precisa selecionar uma foto, confere por SHA-256 que um dos 20 arquivos recentes da POC corresponde a `assets/story-test.jpg` (ou ao arquivo local passado como argumento). Essa conferência garante a presença do arquivo; a identificação da miniatura selecionada depende da premissa de ordem em Recents, não de uma comparação visual automática.
 
 Reutiliza a detecção de estado, entra em STORY por `com.instagram.android:id/cam_dest_story` e aguarda a galeria `com.instagram.android:id/gallery_grid_container` existir e ficar visível. Exige que o álbum `com.instagram.android:id/gallery_folder_menu_tv` mostre `Recents`; outro álbum encerra com erro, sem selecionar imagem.
 
@@ -122,29 +122,33 @@ A tela capturada é a que aparece após ativar o Instagram: o comando não naveg
 
 A sessão Appium é encerrada com as mesmas capabilities de preservação (`noReset=true`, `shouldTerminateApp=false`). Não há publicação, logout, limpeza de dados ou alteração de `DRY_RUN`. Relatórios e saída do terminal podem conter dados pessoais; `artifacts/` permanece ignorado pelo Git. A execução real deve ocorrer no Windows, não no Codex Cloud.
 
-## Fluxo de criação orientado pelo estado atual
+## Máquina de estados reutilizável
 
-No Windows com Appium, `emulator-5554`, Instagram autenticado e `DRY_RUN=true`:
+`instagramStateMachine.ts` é compartilhado pelos fluxos de imagem, diagnóstico e stickers. A detecção usa somente `$`, `isExisting` e `isDisplayed`, sem `waitForExist` ou espera por Home. A sessão Appium configura `implicit=0` para que seletor ausente não cause espera longa. Ausência/stale durante uma transição é tratada como probe negativo; erros de conexão continuam sendo reportados.
 
-```powershell
-npm run inspect:story-flow
-```
+A ordem de prioridade é:
 
-Ativa Instagram com `noReset=true`, sem presumir que começa na Home. `detectInstagramState` verifica os resource-ids confirmados localmente:
+- `STATE_EDITOR`: marcador visível `asset_button`, `your_story_share_shortcut_button` ou descrição `Stickers`.
+- `STATE_GALLERY`: `gallery_grid_container` visível.
+- `STATE_CREATE`: `cam_dest_story` visível.
+- `STATE_HOME`: `feed_tab` ou `action_bar_left_button` visível.
+- `STATE_UNKNOWN`: nenhum marcador disponível.
 
-- `STATE_CREATE`: existe `com.instagram.android:id/cam_dest_story` (prioridade sobre Home).
-- `STATE_HOME`: existe `com.instagram.android:id/action_bar_left_button` ou `com.instagram.android:id/feed_tab`.
-- `STATE_UNKNOWN`: nenhum dos anteriores existe.
+Os IDs com namespace usam o prefixo confirmado `com.instagram.android:id/`. A visibilidade evita que um elemento oculto de uma tela anterior desvie a detecção. Editor/Galeria têm prioridade quando marcadores coexistem.
 
-Se já estiver em criação, não volta à Home e não clica em nenhum controle. Se estiver na Home, aguarda o botão Criar e clica uma única vez. No estado desconhecido, aguarda e tenta a aba Home, confirma Home e depois usa o botão Criar. Se a aba não aparecer, interrompe com erro e diagnóstico; não inventa outra navegação.
+`smoke:story-image` abre/ativa Instagram preservando a sessão e retoma da tela atual:
 
-Usa elementos únicos por `$`, sem coleções, índices, XPath ou coordenadas. Controles de navegação aguardam `waitForExist`, `waitForDisplayed` e o helper `waitForClickable`: a implementação nativa espera por visibilidade, habilitação e atributo Android `clickable=true`. O método homônimo de elemento do WebdriverIO só funciona em browsers, por isso não é chamado no Instagram nativo. Todas as esperas têm timeout de 15 segundos.
+- Editor: assume que a imagem já está carregada, confirma o estado, salva `editor.xml/.png/.json` e termina sem ADB ou seleção. Não valida novamente a identidade visual da imagem existente.
+- Galeria: seleciona uma foto pelo fluxo validado e aguarda Editor.
+- Criação: clica STORY uma vez, aguarda Galeria, seleciona e aguarda Editor.
+- Home: clica Criar uma vez e segue por Criação/Galeria/Editor.
+- Desconhecido: não procura nem tenta `feed_tab`; captura `error.xml/.png/.json` e retorna código 1.
 
-Aguarda `STATE_CREATE` e confirma `cam_dest_story` existente e visível. Não clica em STORY, não seleciona imagem nem abre stickers, insere URL ou publica. Em `artifacts/story-flow-<timestamp>/`, salva `step-01-initial` e `step-02-create` em XML/PNG/JSON, além de `summary.json`. Em erro, tenta salvar `error.xml`, `error.png` e `error.json`; a screenshot é tentada mesmo se a captura ou análise do XML falhar.
+As esperas longas só acontecem depois de reconhecer um estado e iniciar uma navegação, com timeout de 20 segundos. O helper nativo de clicabilidade usa existência, visibilidade, habilitação e `clickable=true`; não chama a API de browser do WebdriverIO. Nenhum sticker ou botão de compartilhamento é clicado pelo fluxo de imagem. `summary.json` informa estado inicial, transições e reutilização do rascunho.
 
-`DRY_RUN` não é alterado. A sessão Appium é encerrada com `shouldTerminateApp=false`, sem apagar dados, mídia ou alterar login. Os artefatos continuam ignorados pelo Git e podem conter dados pessoais. A validação de navegação real depende do Windows local; testes offline validam apenas as transições e ações esperadas.
+O diagnóstico `npm run inspect:story-flow` reutiliza a detecção: chega somente à criação partindo de Home/Criação, para sem navegar se já está em Galeria/Editor e aborta em Unknown. O módulo de stickers usa a mesma máquina para obter o editor antes de abrir seu painel.
 
-Para validar as transições sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs tests/storyMediaInspection.test.mjs tests/storyGallery.test.mjs tests/storyStickers.test.mjs`. Esses testes simulam os três estados, não substituem o teste local no Instagram.
+Para validar sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs tests/storyMediaInspection.test.mjs tests/storyGallery.test.mjs tests/storyStickers.test.mjs`. Esses testes usam sessões simuladas; a execução real permanece no Windows. `DRY_RUN=true` continua obrigatório e não é alterado. Não são usadas coordenadas, XPath ou índices de coleções vazias. Capturas locais podem conter dados pessoais e ficam ignoradas pelo Git.
 
 ## Abrir e inspecionar o painel de stickers (sem clicar em LINK)
 
