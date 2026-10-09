@@ -7,6 +7,8 @@ type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
 export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
 export const HOME_CREATE_ID = 'com.instagram.android:id/action_bar_left_button';
+export const HOME_STORY_ID = 'com.instagram.android:id/reel_empty_badge';
+export const HOME_STORY_DESCRIPTION = 'Add to story';
 export const HOME_TAB_ID = 'com.instagram.android:id/feed_tab';
 export const STORY_ID = 'com.instagram.android:id/cam_dest_story';
 export const GALLERY_ID = 'com.instagram.android:id/gallery_grid_container';
@@ -28,7 +30,7 @@ export async function detectInstagramState(session: Session): Promise<InstagramS
     { state: 'STATE_EDITOR', selectors: [resourceIdSelector(STICKERS_ID), resourceIdSelector(SHARE_SHORTCUT_ID), '~Stickers'] },
     { state: 'STATE_GALLERY', selectors: [resourceIdSelector(GALLERY_ID)] },
     { state: 'STATE_CREATE', selectors: [resourceIdSelector(STORY_ID)] },
-    { state: 'STATE_HOME', selectors: [resourceIdSelector(HOME_TAB_ID), resourceIdSelector(HOME_CREATE_ID)] },
+    { state: 'STATE_HOME', selectors: [resourceIdSelector(HOME_TAB_ID), resourceIdSelector(HOME_CREATE_ID), resourceIdSelector(HOME_STORY_ID)] },
   ];
   for (const probe of probes) {
     for (const selector of probe.selectors) {
@@ -65,6 +67,46 @@ export async function waitForState(session: Session, expected: InstagramState): 
     { ...WAIT, timeoutMsg: `${expected} não apareceu após a navegação.` });
 }
 
+/** Duas variantes reais da Home; probes rápidos antes de esperar um controle. */
+export async function navigateFromHome(session: Session): Promise<InstagramState> {
+  if (process.env.DRY_RUN !== 'true') throw new Error('Navegação exige DRY_RUN=true.');
+  console.log('[HOME] procurando rota Create tradicional');
+  const create = await session.$(resourceIdSelector(HOME_CREATE_ID));
+  if (await create.isExisting()) {
+    await clickNavigation(session, HOME_CREATE_ID);
+    console.log('[NAV] HOME -> CREATE');
+    await waitForState(session, 'STATE_CREATE');
+    return 'STATE_CREATE';
+  }
+  console.log('[HOME] action_bar_left_button ausente');
+  const badges = await session.$$(resourceIdSelector(HOME_STORY_ID));
+  if (badges.length !== 1) throw new Error(`Atalho próprio de Story ausente ou ambíguo: ${badges.length} reel_empty_badge.`);
+  const [badge] = badges;
+  if (!badge || !await badge.isDisplayed()) throw new Error('Atalho próprio de Story não está visível.');
+  let target = badge;
+  if (await badge.getAttribute('content-desc') !== HOME_STORY_DESCRIPTION) {
+    // A descrição pode estar em outro nó. Clique no nó acessível inequívoco
+    // de adicionar ao próprio Story, nunca numa miniatura genérica de conta.
+    const described = await session.$$(`~${HOME_STORY_DESCRIPTION}`);
+    if (described.length !== 1) throw new Error('Add to story ausente ou ambíguo; clique cancelado.');
+    const [accessible] = described;
+    if (!accessible || !await accessible.isDisplayed()) throw new Error('Add to story não está visível; clique cancelado.');
+    target = accessible;
+  }
+  await waitForClickable(session, target);
+  if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
+  console.log('[HOME] fallback "Add to story" encontrado');
+  await target.click();
+  console.log('[NAV] HOME -> STORY via reel_empty_badge');
+  let next: InstagramState = 'STATE_UNKNOWN';
+  await session.waitUntil(async () => {
+    next = await detectInstagramState(session);
+    return next !== 'STATE_HOME' && next !== 'STATE_UNKNOWN';
+  }, { ...WAIT, timeoutMsg: 'Nenhuma nova tela conhecida apareceu após Add to story.' });
+  console.log(`[STATE] novo estado detectado: ${next}`);
+  return next;
+}
+
 /** Seleção de mídia é injetada; pode ser reutilizado por imagem e stickers. */
 export async function navigateToStoryEditor(session: Session, selectImage: () => Promise<void>) {
   if (process.env.DRY_RUN !== 'true') throw new Error('A máquina de estados exige DRY_RUN=true.');
@@ -84,10 +126,9 @@ export async function navigateToStoryEditor(session: Session, selectImage: () =>
     if (state === 'STATE_STICKERS') throw new Error('STATE_STICKERS: painel já aberto; não voltar ao editor nem selecionar mídia.');
     if (state === 'STATE_UNKNOWN') throw new Error('STATE_UNKNOWN: abortando sem tentar Home ou clicar em controles desconhecidos.');
     if (state === 'STATE_HOME') {
-      console.log('[NAV] HOME -> CREATE: clicando uma vez em Criar');
-      await clickNavigation(session, HOME_CREATE_ID);
-      transitions.push('HOME -> CREATE');
-      await waitForState(session, 'STATE_CREATE');
+      state = await navigateFromHome(session);
+      transitions.push(`HOME -> ${state.replace('STATE_', '')}`);
+      continue;
     } else if (state === 'STATE_CREATE') {
       console.log('[NAV] CREATE -> GALLERY: clicando uma vez em STORY');
       await clickNavigation(session, STORY_ID);

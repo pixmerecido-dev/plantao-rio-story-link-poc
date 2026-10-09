@@ -1,5 +1,5 @@
 import type { InstagramDriver } from './InstagramDriver.js';
-import { detectInstagramState, waitForState } from './instagramStateMachine.js';
+import { detectInstagramState, navigateFromHome, waitForState } from './instagramStateMachine.js';
 import { ensureStickersPanel } from './storyStickers.js';
 import { clickExactLinkSticker } from './storyLinkInspection.js';
 
@@ -11,7 +11,8 @@ export async function navigateToLinkEditor(session: Session, prepareStoryEditor?
   let state = await detectInstagramState(session);
   console.log(`[STATE] Estado inicial: ${state}`);
   if (state === 'STATE_UNKNOWN') throw new Error('STATE_UNKNOWN: nenhuma navegação presumida; abortando.');
-  if (state === 'STATE_HOME' || state === 'STATE_CREATE' || state === 'STATE_GALLERY') {
+  if (state === 'STATE_HOME') state = await navigateFromHome(session);
+  if (state === 'STATE_CREATE' || state === 'STATE_GALLERY') {
     if (!prepareStoryEditor) throw new Error('Fluxo de imagem reutilizável não fornecido para obter o editor.');
     await prepareStoryEditor();
     state = await detectInstagramState(session);

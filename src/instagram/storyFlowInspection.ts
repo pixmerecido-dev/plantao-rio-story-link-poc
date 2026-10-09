@@ -1,5 +1,5 @@
 import type { InstagramDriver } from './InstagramDriver.js';
-import { clickNavigation, resourceIdSelector, waitForState, HOME_CREATE_ID, STORY_ID, type InstagramState } from './instagramStateMachine.js';
+import { navigateFromHome, resourceIdSelector, STORY_ID, type InstagramState } from './instagramStateMachine.js';
 
 export { detectInstagramState, resourceIdSelector, waitForClickable, HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, type InstagramState } from './instagramStateMachine.js';
 
@@ -10,9 +10,11 @@ export async function reachStoryCreation(session: ReturnType<InstagramDriver['ge
     throw new Error(`${initialState}: não é necessário nem seguro voltar para Home neste diagnóstico.`);
   }
   if (initialState === 'STATE_HOME') {
-    log('[NAV] HOME -> CREATE');
-    await clickNavigation(session, HOME_CREATE_ID);
-    await waitForState(session, 'STATE_CREATE');
+    const next = await navigateFromHome(session);
+    if (next !== 'STATE_CREATE') {
+      log(`[NAV] ${next}: diagnóstico encerrado sem selecionar mídia ou navegar novamente.`);
+      return;
+    }
   }
   const story = await session.$(resourceIdSelector(STORY_ID));
   await story.waitForExist({ timeout: 20_000 });

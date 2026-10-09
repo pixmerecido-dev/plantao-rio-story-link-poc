@@ -133,7 +133,7 @@ A ordem de prioridade é:
 - `STATE_EDITOR`: marcador visível `asset_button`, `your_story_share_shortcut_button` ou descrição `Stickers`.
 - `STATE_GALLERY`: `gallery_grid_container` visível.
 - `STATE_CREATE`: `cam_dest_story` visível.
-- `STATE_HOME`: `feed_tab` ou `action_bar_left_button` visível.
+- `STATE_HOME`: `feed_tab`, `action_bar_left_button` ou `reel_empty_badge` visível.
 - `STATE_UNKNOWN`: nenhum marcador disponível.
 
 Os IDs com namespace usam o prefixo confirmado `com.instagram.android:id/`. A visibilidade evita que um elemento oculto de uma tela anterior desvie a detecção. Stickers/Editor/Galeria têm prioridade quando marcadores coexistem. A detecção de Stickers usa existência, conforme os seletores confirmados; o clique no item ainda exige visibilidade.
@@ -143,7 +143,7 @@ Os IDs com namespace usam o prefixo confirmado `com.instagram.android:id/`. A vi
 - Editor: assume que a imagem já está carregada, confirma o estado, salva `editor.xml/.png/.json` e termina sem ADB ou seleção. Não valida novamente a identidade visual da imagem existente.
 - Galeria: seleciona uma foto pelo fluxo validado e aguarda Editor.
 - Criação: clica STORY uma vez, aguarda Galeria, seleciona e aguarda Editor.
-- Home: clica Criar uma vez e segue por Criação/Galeria/Editor.
+- Home: consulta rapidamente `action_bar_left_button` e usa a rota tradicional quando presente. Caso ausente, exige um único `reel_empty_badge` visível associado à descrição exata `Add to story`; aceita a descrição em um nó acessível separado e clica nesse nó. Sem confirmação ou com ambiguidade, aborta com diagnóstico. Depois do clique único, detecta novamente a tela, sem presumir Criação ou Galeria. O preenchimento do link também continua diretamente se abrir Editor, Stickers ou Link. Nunca usa `action_bar_button` genérico ou Stories de outras contas.
 - Desconhecido: não procura nem tenta `feed_tab`; captura `error.xml/.png/.json` e retorna código 1.
 
 As esperas longas só acontecem depois de reconhecer um estado e iniciar uma navegação, com timeout de 20 segundos. O helper nativo de clicabilidade usa existência, visibilidade, habilitação e `clickable=true`; não chama a API de browser do WebdriverIO. Nenhum sticker ou botão de compartilhamento é clicado pelo fluxo de imagem. `summary.json` informa estado inicial, transições e reutilização do rascunho.

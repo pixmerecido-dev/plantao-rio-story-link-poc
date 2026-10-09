@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectInstagramState, navigateToStoryEditor, resourceIdSelector,
-  HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from '../dist/instagram/instagramStateMachine.js';
+  HOME_CREATE_ID, HOME_STORY_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from '../dist/instagram/instagramStateMachine.js';
 import { LINK_EDITOR_MARKERS } from '../dist/instagram/linkEditorSelectors.js';
 import { reachStoryCreation } from '../dist/instagram/storyFlowInspection.js';
 
@@ -12,7 +12,7 @@ after(() => { if (originalDryRun === undefined) delete process.env.DRY_RUN; else
 function mockSession(ids, { hidden = [] } = {}) {
   const existing = new Set(ids);
   const clicks = [], waits = [], probes = [];
-  const selectors = new Map([HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, ...LINK_EDITOR_MARKERS].map(id => [resourceIdSelector(id), id]));
+  const selectors = new Map([HOME_CREATE_ID, HOME_STORY_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, ...LINK_EDITOR_MARKERS].map(id => [resourceIdSelector(id), id]));
   selectors.set('~Stickers', 'description:Stickers');
   selectors.set(`~${LINK_STICKER_DESCRIPTION}`, 'description:Link Sticker');
   const session = {
@@ -77,7 +77,7 @@ test('CREATE retoma sem Home, com um clique em STORY e uma seleção', async () 
 });
 
 test('HOME percorre CREATE e GALERIA, sem clicar em feed_tab', async () => {
-  const mock = mockSession([HOME_CREATE_ID, HOME_TAB_ID]);
+  const mock = mockSession([HOME_CREATE_ID, HOME_STORY_ID, HOME_TAB_ID]);
   const result = await navigateToStoryEditor(mock.session, mock.selectImage);
   assert.deepEqual(mock.clicks, [HOME_CREATE_ID, STORY_ID]);
   assert.equal(mock.selections(), 1);

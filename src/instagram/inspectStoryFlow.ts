@@ -43,7 +43,7 @@ try {
     await capture('step-02-current');
   } else {
     await reachStoryCreation(driver.getSession(), initialState);
-    reached = 'STATE_CREATE; STORY visível, sem clicar';
+    reached = await detectInstagramState(driver.getSession());
     await capture('step-02-create');
   }
   console.log('[5] Pronto para próxima etapa');
