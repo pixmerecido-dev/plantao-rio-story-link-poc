@@ -14,13 +14,13 @@ function fixture(descriptions, { transition = true } = {}) {
     isEnabled: async () => true,
     getText: async () => '',
     getAttribute: async name => name === 'content-desc' ? description : STICKER_ITEM_ID,
-    waitForExist: async () => {},
-    waitForDisplayed: async () => assert.equal(panel, true),
+    waitForExist: async () => { throw new Error('StrictSelectorError: não esperar item por selector compartilhado'); },
+    waitForDisplayed: async () => { throw new Error('StrictSelectorError: não esperar item por selector compartilhado'); },
     click: async () => { assert.equal(description, 'Link Sticker'); clicks.push(description); if (transition) panel = false; },
   }));
   const session = {
     $: async selector => {
-      assert.notEqual(selector, resourceIdSelector(STICKER_ITEM_ID), 'StrictSelectorError: ID compartilhado exige coleção');
+      assert.ok(!selector.includes(STICKER_ITEM_ID), 'StrictSelectorError: nenhum seletor desse ID pode usar $');
       return { isExisting: async () => false, isDisplayed: async () => false };
     },
     $$: async selector => {

@@ -145,3 +145,19 @@ test('existência do item compartilhado reconhece Stickers sem espera longa', as
   assert.equal(await detectInstagramState(mock.session), 'STATE_STICKERS');
   assert.deepEqual(mock.waits, []);
 });
+
+
+test('detectInstagramState com 17 stickers nunca chama $ ou espera individual', async () => {
+  const items = Array.from({ length: 17 }, () => ({
+    waitForExist: () => { throw new Error('StrictSelectorError'); },
+    isExisting: () => { throw new Error('StrictSelectorError'); },
+  }));
+  const queries = [];
+  const session = {
+    $$: async selector => { queries.push(selector); return items; },
+    $: () => { throw new Error('StrictSelectorError: selector resolve para 17 elementos'); },
+    waitUntil: () => { throw new Error('Detecção não pode esperar'); },
+  };
+  assert.equal(await detectInstagramState(session), 'STATE_STICKERS');
+  assert.deepEqual(queries, [resourceIdSelector(STICKER_ITEM_ID)]);
+});

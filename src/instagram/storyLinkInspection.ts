@@ -1,6 +1,7 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import type { InstagramElement } from './inspectElements.js';
-import { detectInstagramState, resourceIdSelector, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './instagramStateMachine.js';
+import { getStickerItems } from './stickerCollection.js';
+import { detectInstagramState, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './instagramStateMachine.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 const WAIT = { timeout: 20_000, interval: 500 };
@@ -10,7 +11,7 @@ export const LINK_ITEM_SELECTOR = `android=new UiSelector().resourceId(${JSON.st
 export async function clickExactLinkSticker(session: Session): Promise<string> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Inspecionar LINK exige DRY_RUN=true.');
   if (await detectInstagramState(session) !== 'STATE_STICKERS') throw new Error('Painel de stickers não confirmado.');
-  const items = await session.$$(resourceIdSelector(STICKER_ITEM_ID));
+  const items = await getStickerItems(session);
   console.log(`[1] Stickers encontrados: ${items.length}`);
   if (items.length === 0) throw new Error('Nenhum item com resource-id confirmado; não clicar pelo accessibility id sozinho.');
   console.log('[2] Procurando content-desc exato "Link Sticker"');
@@ -27,14 +28,17 @@ export async function clickExactLinkSticker(session: Session): Promise<string> {
   }
   console.log(`[3] LINK encontrado: ${links.length}`);
   if (links.length !== 1) throw new Error(`Esperado exatamente um Link Sticker; encontrados ${links.length}. Nenhum clique realizado.`);
-  // Sem índices: a coleção já foi filtrada e a cardinalidade é exatamente um.
-  for (const link of links) {
-    await link.waitForExist(WAIT);
-    await link.waitForDisplayed(WAIT);
-    await session.waitUntil(async () => await link.isEnabled(), { ...WAIT, timeoutMsg: 'LINK não ficou habilitado.' });
+  // Reconsulta a coleção inteira para evitar re-fetch estrito de um handle antigo.
+  const freshLinks = [];
+  for (const item of await getStickerItems(session)) {
+    if (await item.getAttribute('content-desc') === LINK_STICKER_DESCRIPTION) freshLinks.push(item);
+  }
+  if (freshLinks.length !== 1) throw new Error(`LINK mudou ou ficou ambíguo: ${freshLinks.length} correspondências. Nenhum clique realizado.`);
+  for (const link of freshLinks) {
+    // Não usar waitForExist/waitForDisplayed em item cujo selector é compartilhado.
+    if (!(await link.isDisplayed()) || !(await link.isEnabled())) throw new Error('LINK não está visível/habilitado; nenhum clique realizado.');
     if (await link.getAttribute('resource-id') !== STICKER_ITEM_ID ||
         await link.getAttribute('content-desc') !== LINK_STICKER_DESCRIPTION) throw new Error('Item LINK mudou antes do clique.');
-    if ((await session.$$(LINK_ITEM_SELECTOR)).length !== 1) throw new Error('Item LINK ficou ambíguo antes do clique.');
     if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
     console.log('[4] Clicando em LINK');
     await link.click();
@@ -60,7 +64,7 @@ export async function waitForLinkEditor(session: Session, beforeSource: string):
     const source = await session.getPageSource();
     if (source === beforeSource) return false;
     // Exige saída do painel, não apenas uma pequena alteração no XML.
-    const panelItems = await session.$$(resourceIdSelector(STICKER_ITEM_ID));
+    const panelItems = await getStickerItems(session);
     for (const item of panelItems) if (await item.isDisplayed()) return false;
     const linkOptions = await session.$$(`~${LINK_STICKER_DESCRIPTION}`);
     for (const linkOption of linkOptions) if (await linkOption.isDisplayed()) return false;

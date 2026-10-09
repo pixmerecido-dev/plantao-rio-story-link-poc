@@ -1,4 +1,6 @@
 import type { InstagramDriver } from './InstagramDriver.js';
+import { hasStickerPanel } from './stickerCollection.js';
+export { STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './stickerCollection.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
@@ -8,8 +10,6 @@ export const HOME_TAB_ID = 'com.instagram.android:id/feed_tab';
 export const STORY_ID = 'com.instagram.android:id/cam_dest_story';
 export const GALLERY_ID = 'com.instagram.android:id/gallery_grid_container';
 export const STICKERS_ID = 'asset_button';
-export const STICKER_ITEM_ID = 'com.instagram.android:id/sticker_sheet_redesign_item';
-export const LINK_STICKER_DESCRIPTION = 'Link Sticker';
 export const SHARE_SHORTCUT_ID = 'com.instagram.android:id/your_story_share_shortcut_button';
 const WAIT = { timeout: 20_000, interval: 500 };
 
@@ -19,15 +19,7 @@ export function resourceIdSelector(id: string): string {
 
 /** Probes sem waitForExist: ausência normal não causa timeout ou exceção. */
 export async function detectInstagramState(session: Session): Promise<InstagramState> {
-  // ID compartilhado: nunca usar $() ou seleção estrita nesta descoberta.
-  for (const selector of [resourceIdSelector(STICKER_ITEM_ID), `~${LINK_STICKER_DESCRIPTION}`]) {
-    try {
-      const items = await session.$$(selector);
-      if (items.length > 0) return 'STATE_STICKERS';
-    } catch (error: unknown) {
-      if (!(error instanceof Error) || !/no such element|stale element reference/i.test(error.message)) throw error;
-    }
-  }
+  if (await hasStickerPanel(session)) return 'STATE_STICKERS';
   const probes: { state: InstagramState; selectors: string[] }[] = [
     { state: 'STATE_EDITOR', selectors: [resourceIdSelector(STICKERS_ID), resourceIdSelector(SHARE_SHORTCUT_ID), '~Stickers'] },
     { state: 'STATE_GALLERY', selectors: [resourceIdSelector(GALLERY_ID)] },
@@ -57,7 +49,7 @@ export async function waitForClickable(session: Session, element: Element): Prom
   { ...WAIT, timeoutMsg: 'Elemento Android não ficou visível, habilitado e clicável.' });
 }
 
-export async function clickNavigation(session: Session, id: string): Promise<void> {
+export async function clickNavigation(session: Session, id: typeof HOME_CREATE_ID | typeof STORY_ID): Promise<void> {
   const element = await session.$(resourceIdSelector(id));
   await waitForClickable(session, element);
   if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
