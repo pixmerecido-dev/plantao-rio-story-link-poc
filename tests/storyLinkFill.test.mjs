@@ -78,7 +78,7 @@ test('URL aceita parâmetro, variável e padrão sem normalizar valor', () => {
 });
 
 // Executa os navegadores reais sobre uma sessão simulada para todos os estados.
-function endToEndFixture(initialState, { modern = false, destination = 'STATE_GALLERY', description = 'Add to story', separate = false } = {}) {
+function endToEndFixture(initialState, { modern = false, destination = 'STATE_GALLERY', description = 'Add to story', separate = false, buttonClass = 'android.widget.Button', enabled = true, clickable = 'true' } = {}) {
   let state = initialState;
   let value = 'previous';
   const actions = [];
@@ -88,7 +88,7 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
     return selector.match(/resourceId\("([^"]+)"\)/)?.[1];
   };
   const visible = resource => ({
-    STATE_HOME: ['com.instagram.android:id/feed_tab', modern ? 'com.instagram.android:id/reel_empty_badge' : 'com.instagram.android:id/action_bar_left_button', ...(separate ? ['accessible-add'] : [])],
+    STATE_HOME: ['com.instagram.android:id/feed_tab', modern ? 'com.instagram.android:id/reel_empty_badge' : 'com.instagram.android:id/action_bar_left_button', ...(modern && description === 'Add to story' || separate ? ['accessible-add'] : [])],
     STATE_CREATE: ['com.instagram.android:id/cam_dest_story'],
     STATE_GALLERY: ['com.instagram.android:id/gallery_grid_container'],
     STATE_EDITOR: ['asset_button'],
@@ -96,11 +96,12 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
     STATE_LINK_EDITOR: [LINK_URL_ID, LINK_DONE_ID],
   }[state] ?? []).includes(resource);
   const element = resource => ({
-    isExisting: async () => visible(resource), isDisplayed: async () => visible(resource), isEnabled: async () => true,
-    getAttribute: async name => name === 'clickable' ? 'true' : name === 'content-desc' ? resource === 'com.instagram.android:id/reel_empty_badge' ? description : resource === 'accessible-add' ? 'Add to story' : 'Stickers' : resource,
+    isExisting: async () => visible(resource), isDisplayed: async () => visible(resource), isEnabled: async () => enabled,
+    getAttribute: async name => name === 'class' ? buttonClass : name === 'clickable' ? clickable : name === 'content-desc' ? resource === 'com.instagram.android:id/reel_empty_badge' ? description : resource === 'accessible-add' ? 'Add to story' : 'Stickers' : resource,
     waitForExist: async () => assert.ok(visible(resource)), waitForDisplayed: async () => assert.ok(visible(resource)),
     click: async () => {
       assert.notEqual(resource, LINK_DONE_ID, 'Done nunca pode ser clicado');
+      assert.notEqual(resource, 'com.instagram.android:id/reel_empty_badge', 'badge visual nunca pode ser clicado');
       const next = { 'com.instagram.android:id/reel_empty_badge': destination, 'accessible-add': destination, 'com.instagram.android:id/action_bar_left_button': 'STATE_CREATE', 'com.instagram.android:id/cam_dest_story': 'STATE_GALLERY', asset_button: 'STATE_STICKERS' }[resource];
       assert.ok(next, 'controle inesperado não pode ser clicado');
       actions.push(resource); state = next;
@@ -121,6 +122,7 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
       if (selector === '~Link Sticker') return state === 'STATE_STICKERS' ? [{}] : [];
       return visible(id(selector)) ? [element(id(selector))] : [];
     },
+    pause: async () => {},
     waitUntil: async condition => { for (let attempt = 0; attempt < 2; attempt++) if (await condition()) return true; throw new Error('timeout'); },
     getCurrentPackage: async () => 'com.instagram.android',
   };
@@ -152,13 +154,13 @@ test('estado desconhecido aborta sem navegação ou preenchimento', async () => 
   assert.deepEqual(mock.actions, []);
 });
 
-for (const destination of ['STATE_CREATE', 'STATE_GALLERY', 'STATE_EDITOR', 'STATE_STICKERS', 'STATE_LINK_EDITOR']) {
+for (const destination of ['STATE_CREATE', 'STATE_GALLERY', 'STATE_EDITOR']) {
   test(`Home atual redetecta ${destination} e preenche sem Done`, async () => {
     const mock = endToEndFixture('STATE_HOME', { modern: true, destination });
     await fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL,
       () => navigateToStoryEditor(mock.session, mock.selectImage));
-    assert.equal(mock.actions[0], 'com.instagram.android:id/reel_empty_badge');
-    assert.equal(mock.actions.filter(action => action === 'com.instagram.android:id/reel_empty_badge').length, 1);
+    assert.equal(mock.actions[0], 'accessible-add');
+    assert.equal(mock.actions.filter(action => action === 'accessible-add').length, 1);
     assert.deepEqual(mock.actions.slice(-2), ['clear', ['type', DEFAULT_STORY_URL]]);
   });
 }
@@ -174,12 +176,12 @@ test('Home atual sem associação Add to story aborta sem clicar em outra conta'
   assert.deepEqual(mock.actions, []);
 });
 
-test('Home sem atalho ou com múltiplos badges aborta sem clique nem preenchimento', async () => {
+test('Home sem botão ou com múltiplos botões Add to story aborta sem clique nem preenchimento', async () => {
   for (const count of [0, 2]) {
     const mock = endToEndFixture('STATE_HOME', { modern: true });
     const query = mock.session.$$;
-    mock.session.$$ = async selector => selector === resourceIdSelector('com.instagram.android:id/reel_empty_badge')
-      ? Array.from({ length: count }, () => ({})) : query(selector);
+    mock.session.$$ = async selector => selector === '~Add to story'
+      ? count === 0 ? [] : [...await query(selector), ...await query(selector)] : query(selector);
     await assert.rejects(fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL), /ausente ou ambíguo/);
     assert.deepEqual(mock.actions, []);
   }
@@ -193,4 +195,27 @@ test('rota tradicional tem prioridade e não consulta fallback quando Criar exis
   };
   await fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL, () => navigateToStoryEditor(mock.session, mock.selectImage));
   assert.equal(mock.actions[0], 'com.instagram.android:id/action_bar_left_button');
+});
+
+for (const options of [{ buttonClass: 'android.view.View' }, { enabled: false }, { clickable: 'false' }]) {
+  test(`Add to story inválido aborta sem clique: ${JSON.stringify(options)}`, async () => {
+    const mock = endToEndFixture('STATE_HOME', { modern: true, ...options });
+    await assert.rejects(fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL), /ausente ou ambíguo|habilitado/);
+    assert.deepEqual(mock.actions, []);
+  });
+}
+test('Add to story clicado sem mudança de tela aborta com mensagem explícita, sem segundo clique', async () => {
+  const mock = endToEndFixture('STATE_HOME', { modern: true, destination: 'STATE_HOME' });
+  await assert.rejects(fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL), /Add to story clicado, mas permaneceu na Home/);
+  assert.deepEqual(mock.actions, ['accessible-add']);
+});
+test('badge ausente não impede clicar no botão acessível confirmado', async () => {
+  const mock = endToEndFixture('STATE_HOME', { modern: true });
+  const query = mock.session.$$;
+  mock.session.$$ = async selector => {
+    assert.notEqual(selector, resourceIdSelector('com.instagram.android:id/reel_empty_badge'));
+    return query(selector);
+  };
+  await fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL, () => navigateToStoryEditor(mock.session, mock.selectImage));
+  assert.equal(mock.actions[0], 'accessible-add');
 });

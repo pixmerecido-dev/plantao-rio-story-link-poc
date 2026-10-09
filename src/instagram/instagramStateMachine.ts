@@ -79,32 +79,43 @@ export async function navigateFromHome(session: Session): Promise<InstagramState
     return 'STATE_CREATE';
   }
   console.log('[HOME] action_bar_left_button ausente');
-  const badges = await session.$$(resourceIdSelector(HOME_STORY_ID));
-  if (badges.length !== 1) throw new Error(`Atalho próprio de Story ausente ou ambíguo: ${badges.length} reel_empty_badge.`);
-  const [badge] = badges;
-  if (!badge || !await badge.isDisplayed()) throw new Error('Atalho próprio de Story não está visível.');
-  let target = badge;
-  if (await badge.getAttribute('content-desc') !== HOME_STORY_DESCRIPTION) {
-    // A descrição pode estar em outro nó. Clique no nó acessível inequívoco
-    // de adicionar ao próprio Story, nunca numa miniatura genérica de conta.
-    const described = await session.$$(`~${HOME_STORY_DESCRIPTION}`);
-    if (described.length !== 1) throw new Error('Add to story ausente ou ambíguo; clique cancelado.');
-    const [accessible] = described;
-    if (!accessible || !await accessible.isDisplayed()) throw new Error('Add to story não está visível; clique cancelado.');
-    target = accessible;
+  const candidates = await session.$$(`~${HOME_STORY_DESCRIPTION}`);
+  const buttons: Element[] = [];
+  for (const candidate of candidates) {
+    if (await candidate.isExisting() && await candidate.isDisplayed() &&
+        await candidate.getAttribute('class') === 'android.widget.Button' &&
+        await candidate.getAttribute('content-desc') === HOME_STORY_DESCRIPTION) buttons.push(candidate);
   }
-  await waitForClickable(session, target);
+  // Sem evidência de associação na hierarquia real, não escolher entre botões
+  // duplicados nem usar a mera presença de Your story para atribuir um deles.
+  if (buttons.length !== 1) throw new Error(`Add to story ausente ou ambíguo: ${buttons.length} botões visíveis; associação a Your story não comprovada.`);
+  const [target] = buttons;
+  if (!target) throw new Error('Add to story ausente; clique cancelado.');
+  const clickable = await target.getAttribute('clickable');
+  if (!await target.isEnabled() || (clickable !== null && clickable !== '' && clickable !== 'true')) {
+    throw new Error('Add to story não está habilitado/clicável; clique cancelado.');
+  }
   if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
-  console.log('[HOME] fallback "Add to story" encontrado');
+  console.log('[HOME] fallback "Add to story" encontrado: android.widget.Button');
   await target.click();
-  console.log('[NAV] HOME -> STORY via reel_empty_badge');
-  let next: InstagramState = 'STATE_UNKNOWN';
-  await session.waitUntil(async () => {
-    next = await detectInstagramState(session);
-    return next !== 'STATE_HOME' && next !== 'STATE_UNKNOWN';
-  }, { ...WAIT, timeoutMsg: 'Nenhuma nova tela conhecida apareceu após Add to story.' });
-  console.log(`[STATE] novo estado detectado: ${next}`);
-  return next;
+  console.log('[NAV] HOME -> STORY via accessibility id Add to story');
+  await session.pause(300);
+  const observed: { state: InstagramState } = { state: 'STATE_UNKNOWN' };
+  try {
+    await session.waitUntil(async () => {
+      observed.state = await detectInstagramState(session);
+      return observed.state === 'STATE_CREATE' || observed.state === 'STATE_GALLERY' || observed.state === 'STATE_EDITOR';
+    }, { timeout: 6_000, interval: 400, timeoutMsg: 'Nenhuma tela de Story comprovada apareceu após Add to story.' });
+  } catch (error: unknown) {
+    if (observed.state === 'STATE_HOME') {
+      const message = '[HOME] Add to story clicado, mas permaneceu na Home';
+      console.error(message);
+      throw new Error(message, { cause: error });
+    }
+    throw error;
+  }
+  console.log(`[STATE] novo estado detectado: ${observed.state}`);
+  return observed.state;
 }
 
 /** Seleção de mídia é injetada; pode ser reutilizado por imagem e stickers. */
