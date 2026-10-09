@@ -24,6 +24,7 @@ function fixture(descriptions, { transition = true } = {}) {
       return { isExisting: async () => false, isDisplayed: async () => false };
     },
     $$: async selector => {
+      if (selector.includes('link_sticker_list_')) return [];
       if (!panel) return [];
       if (selector === resourceIdSelector(STICKER_ITEM_ID)) return items;
       if (selector === '~Link Sticker') return [{ isDisplayed: async () => panel }];

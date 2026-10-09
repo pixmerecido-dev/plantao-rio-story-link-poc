@@ -19,7 +19,8 @@
     "inspect:instagram": "tsx src/instagram/inspectInstagram.ts",
     "inspect:story-flow": "tsx src/instagram/inspectStoryFlow.ts",
     "smoke:story-stickers": "tsx src/instagram/storyStickersSmokeTest.ts",
-    "smoke:story-link": "tsx src/instagram/storyLinkSmokeTest.ts"
+    "smoke:story-link": "tsx src/instagram/storyLinkSmokeTest.ts",
+    "smoke:story-link-fill": "tsx src/instagram/storyLinkFillSmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",

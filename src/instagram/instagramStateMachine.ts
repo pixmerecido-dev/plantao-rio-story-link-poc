@@ -1,10 +1,11 @@
 import type { InstagramDriver } from './InstagramDriver.js';
+import { LINK_EDITOR_MARKERS } from './linkEditorSelectors.js';
 import { hasStickerPanel } from './stickerCollection.js';
 export { STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './stickerCollection.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
-export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_STICKERS' | 'STATE_UNKNOWN';
+export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
 export const HOME_CREATE_ID = 'com.instagram.android:id/action_bar_left_button';
 export const HOME_TAB_ID = 'com.instagram.android:id/feed_tab';
 export const STORY_ID = 'com.instagram.android:id/cam_dest_story';
@@ -19,6 +20,9 @@ export function resourceIdSelector(id: string): string {
 
 /** Probes sem waitForExist: ausência normal não causa timeout ou exceção. */
 export async function detectInstagramState(session: Session): Promise<InstagramState> {
+  for (const id of LINK_EDITOR_MARKERS) {
+    if ((await session.$$(resourceIdSelector(id))).length > 0) return 'STATE_LINK_EDITOR';
+  }
   if (await hasStickerPanel(session)) return 'STATE_STICKERS';
   const probes: { state: InstagramState; selectors: string[] }[] = [
     { state: 'STATE_EDITOR', selectors: [resourceIdSelector(STICKERS_ID), resourceIdSelector(SHARE_SHORTCUT_ID), '~Stickers'] },
@@ -76,6 +80,7 @@ export async function navigateToStoryEditor(session: Session, selectImage: () =>
       console.log('[OK] Editor do Story confirmado');
       return { initialState, finalState: state, transitions };
     }
+    if (state === 'STATE_LINK_EDITOR') throw new Error('STATE_LINK_EDITOR: configuração do link já aberta; não voltar ao editor ou selecionar mídia.');
     if (state === 'STATE_STICKERS') throw new Error('STATE_STICKERS: painel já aberto; não voltar ao editor nem selecionar mídia.');
     if (state === 'STATE_UNKNOWN') throw new Error('STATE_UNKNOWN: abortando sem tentar Home ou clicar em controles desconhecidos.');
     if (state === 'STATE_HOME') {

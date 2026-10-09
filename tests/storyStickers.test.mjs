@@ -29,7 +29,7 @@ function fixture({ primary = true, fallback = true, panelOpens = true, shareOnly
         },
       };
     },
-    $$: async selector => (await (await session.$(selector)).isExisting()) ? [{}] : [],
+    $$: async selector => selector.includes('link_sticker_list_') ? [] : (await (await session.$(selector)).isExisting()) ? [{}] : [],
     waitUntil: async condition => { for (let i = 0; i < 2; i++) if (await condition()) return true; throw new Error('timeout'); },
     getCurrentPackage: async () => 'com.instagram.android',
     getPageSource: async () => opened
