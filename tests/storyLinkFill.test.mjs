@@ -76,3 +76,77 @@ test('URL aceita parâmetro, variável e padrão sem normalizar valor', () => {
   assert.throws(() => resolveStoryUrl('javascript:alert(1)'), /HTTP/);
   assert.throws(() => resolveStoryUrl(' https://example.org '), /HTTP/);
 });
+
+// Executa os navegadores reais sobre uma sessão simulada para todos os estados.
+function endToEndFixture(initialState) {
+  let state = initialState;
+  let value = 'previous';
+  const actions = [];
+  const id = selector => {
+    if (selector === '~Stickers') return 'asset_button';
+    return selector.match(/resourceId\("([^"]+)"\)/)?.[1];
+  };
+  const visible = resource => ({
+    STATE_HOME: ['com.instagram.android:id/feed_tab', 'com.instagram.android:id/action_bar_left_button'],
+    STATE_CREATE: ['com.instagram.android:id/cam_dest_story'],
+    STATE_GALLERY: ['com.instagram.android:id/gallery_grid_container'],
+    STATE_EDITOR: ['asset_button'],
+    STATE_STICKERS: [STICKER_ITEM_ID],
+    STATE_LINK_EDITOR: [LINK_URL_ID, LINK_DONE_ID],
+  }[state] ?? []).includes(resource);
+  const element = resource => ({
+    isExisting: async () => visible(resource), isDisplayed: async () => visible(resource), isEnabled: async () => true,
+    getAttribute: async name => name === 'clickable' ? 'true' : name === 'content-desc' ? 'Stickers' : resource,
+    waitForExist: async () => assert.ok(visible(resource)), waitForDisplayed: async () => assert.ok(visible(resource)),
+    click: async () => {
+      assert.notEqual(resource, LINK_DONE_ID, 'Done nunca pode ser clicado');
+      const next = { 'com.instagram.android:id/action_bar_left_button': 'STATE_CREATE', 'com.instagram.android:id/cam_dest_story': 'STATE_GALLERY', asset_button: 'STATE_STICKERS' }[resource];
+      assert.ok(next, 'controle inesperado não pode ser clicado');
+      actions.push(resource); state = next;
+    },
+    clearValue: async () => { assert.equal(resource, LINK_URL_ID); actions.push('clear'); value = ''; },
+    addValue: async input => { assert.equal(resource, LINK_URL_ID); actions.push(['type', input]); value += input; },
+    getText: async () => value,
+  });
+  const items = Array.from({ length: 17 }, (_, index) => ({
+    getAttribute: async name => name === 'content-desc' ? index === 8 ? 'Link Sticker' : 'Other' : STICKER_ITEM_ID,
+    getText: async () => '', isDisplayed: async () => state === 'STATE_STICKERS', isEnabled: async () => true,
+    click: async () => { assert.equal(index, 8); actions.push('LINK'); state = 'STATE_LINK_EDITOR'; },
+  }));
+  const session = {
+    $: async selector => { assert.ok(!selector.includes(STICKER_ITEM_ID)); return element(id(selector)); },
+    $$: async selector => {
+      if (id(selector) === STICKER_ITEM_ID) return state === 'STATE_STICKERS' ? items : [];
+      if (selector === '~Link Sticker') return state === 'STATE_STICKERS' ? [{}] : [];
+      return visible(id(selector)) ? [element(id(selector))] : [];
+    },
+    waitUntil: async condition => { for (let attempt = 0; attempt < 2; attempt++) if (await condition()) return true; throw new Error('timeout'); },
+    getCurrentPackage: async () => 'com.instagram.android',
+  };
+  return { session, actions, selectImage: async () => { assert.equal(state, 'STATE_GALLERY'); actions.push('photo'); state = 'STATE_EDITOR'; } };
+}
+
+const { navigateToStoryEditor } = await import('../dist/instagram/instagramStateMachine.js');
+for (const [initialState, expected] of [
+  ['STATE_HOME', ['com.instagram.android:id/action_bar_left_button', 'com.instagram.android:id/cam_dest_story', 'photo', 'asset_button', 'LINK']],
+  ['STATE_CREATE', ['com.instagram.android:id/cam_dest_story', 'photo', 'asset_button', 'LINK']],
+  ['STATE_GALLERY', ['photo', 'asset_button', 'LINK']],
+  ['STATE_EDITOR', ['asset_button', 'LINK']],
+  ['STATE_STICKERS', ['LINK']],
+  ['STATE_LINK_EDITOR', []],
+]) {
+  test(`fluxo completo partindo de ${initialState} preenche URL e nunca confirma`, async () => {
+    const mock = endToEndFixture(initialState);
+    const actual = await fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL,
+      () => navigateToStoryEditor(mock.session, mock.selectImage));
+    assert.equal(actual, DEFAULT_STORY_URL);
+    assert.deepEqual(mock.actions, [...expected, 'clear', ['type', DEFAULT_STORY_URL]]);
+  });
+}
+
+test('estado desconhecido aborta sem navegação ou preenchimento', async () => {
+  const mock = endToEndFixture('STATE_UNKNOWN');
+  await assert.rejects(fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL,
+    () => navigateToStoryEditor(mock.session, mock.selectImage)), /STATE_UNKNOWN/);
+  assert.deepEqual(mock.actions, []);
+});

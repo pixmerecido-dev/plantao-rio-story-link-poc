@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import { writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { StoryLinkPublisher } from './StoryLinkPublisher.js';
 import { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 import { resolveStoryUrl, fillStoryLinkUrl } from './storyLinkFill.js';
 
 const driver = new InstagramDriver();
+const publisher = new StoryLinkPublisher(driver);
 const directory = resolve('artifacts', `story-link-fill-${Date.now()}`);
 let connected = false;
 try {
@@ -15,10 +17,11 @@ try {
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
-  const confirmedValue = await fillStoryLinkUrl(driver.getSession(), url);
+  const confirmedValue = await fillStoryLinkUrl(driver.getSession(), url,
+    () => publisher.loadImageIntoStory('assets/story-test.jpg', join(directory, 'image-flow')));
   await saveScreenArtifacts(driver, directory, 'link-filled');
   await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ confirmedValue, doneClicked: false, published: false }, null, 2)}\n`, 'utf8');
-  console.log('[7] Pronto para próxima etapa');
+  console.log('[7] Sucesso');
 } catch (error: unknown) {
   console.error('Falha ao preencher URL do Link Sticker:', error);
   process.exitCode = 1;

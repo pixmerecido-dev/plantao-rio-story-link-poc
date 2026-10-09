@@ -195,7 +195,7 @@ O acesso ao ID compartilhado está centralizado em `stickerCollection.ts`: `getS
 
 ## Preencher uma URL variável sem clicar em Done
 
-No Windows, deixe aberto o painel de stickers ou a configuração do Link Sticker. Com Appium, emulador e `DRY_RUN=true`:
+No Windows, com Appium, emulador, Instagram autenticado e `DRY_RUN=true`, pode começar em qualquer estado conhecido: Home, Criação, Galeria, Editor, Stickers ou configuração do Link.
 
 ```powershell
 npm run smoke:story-link-fill
@@ -208,10 +208,13 @@ npm run smoke:story-link-fill
 
 Sem argumento nem STORY_URL, usa `https://plantaorio.com.br/`. Exige HTTP(S) e preserva a string informada para conferir exatamente o valor, sem normalizar query ou barra final.
 
-A máquina detecta `STATE_LINK_EDITOR` antes de outros estados pela existência de qualquer ID confirmado: `link_sticker_list_web_url_edit_text`, `link_sticker_list_done_button` ou `link_sticker_list_title`, todos com prefixo `com.instagram.android:id/`. A descoberta usa probes de coleção sem espera longa. Se já estiver nesse estado, não navega nem clica em LINK novamente. Se estiver em Stickers, filtra a coleção pela descrição exata `Link Sticker`, exige exatamente um item e clica somente nele; aguarda o estado de configuração. Outros estados abortam com diagnóstico, sem navegação presumida.
+A máquina detecta `STATE_LINK_EDITOR` antes de outros estados pela existência de qualquer ID confirmado: `link_sticker_list_web_url_edit_text`, `link_sticker_list_done_button` ou `link_sticker_list_title`, todos com prefixo `com.instagram.android:id/`. A descoberta usa probes de coleção sem espera longa. Se já estiver nesse estado, não navega nem clica em LINK novamente. Se estiver em Stickers, filtra a coleção pela descrição exata `Link Sticker`, exige exatamente um item e clica somente nele; aguarda o estado de configuração. Nos estados Home/Criação/Galeria, compõe `StoryLinkPublisher.loadImageIntoStory` e `navigateToStoryEditor`, usando a imagem de teste já enviada. No editor, reutiliza `ensureStickersPanel`. `storyLinkNavigation.ts` coordena essas funções sem duplicar os cliques ou a seleção. Apenas STATE_UNKNOWN aborta com diagnóstico. A foto da POC precisa ser a mídia mais recente em Recents quando houver seleção; ao retomar Editor/Stickers/Link, não seleciona outra imagem.
 
 No campo `com.instagram.android:id/link_sticker_list_web_url_edit_text`, aguarda existência/visibilidade, limpa o conteúdo anterior, insere a URL e lê o texto para confirmar igualdade exata. Depois somente observa `com.instagram.android:id/link_sticker_list_done_button`: não clica, envia Enter ou confirma. Os IDs de cancelar, título e custom CTA estão registrados em `linkEditorSelectors.ts`, mas não são acionados.
 
 Salva `link-filled.xml`, `link-filled.png`, `link-filled.json` e `summary.json` em `artifacts/story-link-fill-<timestamp>/`. Em erro, tenta `error.xml/.png/.json`. Para com a URL digitada e o diálogo aberto. Preserva dados/login e encerra apenas a sessão Appium, sem publicar ou tocar em Your story. Não usa coordenadas nem XPath. URLs informadas aparecem no terminal e nas capturas, conforme o diagnóstico; os artefatos permanecem ignorados pelo Git.
 
 Validação offline: `npm run typecheck`, `npm run build`, `node --test tests/*.test.mjs`. A execução real acontece somente no Windows.
+
+
+Os testes do preenchimento cobrem início em cada um dos seis estados conhecidos, usando os navegadores de produção sobre uma sessão simulada, além de Unknown, divergência de valor e DRY_RUN desabilitado. O sucesso só é registrado depois de conferir a URL e salvar `link-filled.xml/.png/.json`. A execução integrada real deve ser feita no Windows; o cloud não acessa Appium/ADB.
