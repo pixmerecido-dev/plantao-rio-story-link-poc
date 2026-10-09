@@ -4,12 +4,16 @@
   "private": true,
   "description": "Base para uma prova de conceito de stories com links no Instagram Android.",
   "type": "module",
-  "engines": { "node": ">=22.19.0", "npm": ">=10" },
+  "engines": {
+    "node": ">=22.19.0",
+    "npm": ">=10"
+  },
   "scripts": {
     "doctor": "tsx src/utils/doctor.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "appium": "appium"
+    "appium": "appium",
+    "smoke:instagram": "tsx src/instagram/smokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",

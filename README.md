@@ -1,6 +1,6 @@
 # plantao-rio-story-link-poc
 
-Base inicial em Node.js e TypeScript para uma futura prova de conceito de stories com links no Instagram. Esta etapa prepara a estrutura e o diagnóstico de configuração; a automação do Instagram ainda não foi implementada.
+Base inicial em Node.js e TypeScript para uma futura prova de conceito de stories com links no Instagram. Esta etapa prepara a estrutura e o diagnóstico de configuração; há apenas um smoke test local que abre o Instagram, sem implementar Stories.
 
 ## Onde cada componente roda
 
@@ -43,7 +43,7 @@ O `doctor` carrega o `.env`, verifica a presença e o formato de `DRY_RUN` e imp
 
 A compilação gera `dist/`, ignorado pelo Git. Ainda não há testes de automação em `tests/`.
 
-## Appium no Windows — etapa futura
+## Appium no Windows — smoke test local
 
 As dependências locais incluem Appium 2 e UiAutomator2. Quando for executar testes reais no Windows, registre o driver no Appium e confira a instalação a partir da raiz do projeto:
 
@@ -53,17 +53,29 @@ npx --no-install appium driver list --installed
 npm run appium
 ```
 
-Esses comandos são destinados ao computador local e não fazem parte do diagnóstico inicial. Não foram executados contra um emulador nesta etapa. O cliente WebdriverIO será usado futuramente para criar sessões; nenhuma sessão ou ação no Instagram está implementada.
+Esses comandos são destinados ao computador local e não fazem parte do diagnóstico inicial. Não foram executados contra um emulador nesta etapa. O smoke test usa WebdriverIO para criar uma sessão UiAutomator2 no dispositivo `emulator-5554`.
 
 ## Estrutura
 
 ```text
 src/
   config/environment.ts  # Leitura e validação da configuração
-  instagram/             # Reservado para a futura integração
+  instagram/             # InstagramDriver.ts e smokeTest.ts
   utils/doctor.ts         # Relatório local de configuração
 assets/                   # Reservado para recursos não sensíveis
 tests/                   # Reservado para os futuros testes
 ```
 
 Arquivos `.gitkeep` preservam os diretórios vazios no Git. Não adicione dados pessoais, credenciais ou mídia sensível ao repositório.
+
+## Executar o primeiro teste de integração (somente no Windows local)
+
+Com o Instagram já instalado e autenticado no `emulator-5554` e o Appium rodando em `http://127.0.0.1:4723`, execute na raiz:
+
+```powershell
+npm run smoke:instagram
+```
+
+O teste verifica `/status`, cria a sessão UiAutomator2, ativa `com.instagram.android`, aguarda três segundos e confirma o package em primeiro plano (com até 15 segundos adicionais de espera). Não verifica se o usuário está logado: preserva o login existente com `noReset=true`, `fullReset=false` e sem forçar reinicialização. Ao terminar, inclusive em caso de erro após a conexão, tenta encerrar apenas a sessão Appium, mantendo o aplicativo aberto com `shouldTerminateApp=false`. Falhas de execução ou encerramento exibem o erro completo e retornam código 1.
+
+Este teste abre o aplicativo localmente mesmo com `DRY_RUN=true`: não lê nem altera essa variável. Não publica Stories ou outro conteúdo, não usa coordenadas nem API privada do Instagram e não armazena senhas. No Codex Cloud execute apenas `npm run typecheck` e `npm run build`; a integração real precisa ser validada no Windows.
