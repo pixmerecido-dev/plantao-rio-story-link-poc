@@ -11,3 +11,28 @@ export async function collectHierarchy(driver: InstagramDriver, stage: string): 
   console.log(`Diagnóstico salvo em ${directory} (pode conter dados pessoais; não enviar ao Git).`);
   return directory;
 }
+
+export async function saveScreenArtifacts(driver: InstagramDriver, directory: string, name: string) {
+  await mkdir(directory, { recursive: true });
+  const session = driver.getSession();
+  let source = '';
+  const results = await Promise.allSettled([
+    (async () => {
+      source = await session.getPageSource();
+      await writeFile(join(directory, `${name}.xml`), source, 'utf8');
+    })(),
+    session.saveScreenshot(join(directory, `${name}.png`)),
+  ]);
+  const { extractInstagramElements } = await import('./inspectElements.js');
+  let elements: ReturnType<typeof extractInstagramElements> = [];
+  try {
+    elements = extractInstagramElements(source);
+    await writeFile(join(directory, `${name}.json`), `${JSON.stringify(elements, null, 2)}\n`, 'utf8');
+  } catch (error: unknown) {
+    results.push({ status: 'rejected', reason: error });
+  }
+  const failures = results.filter(result => result.status === 'rejected');
+  if (failures.length) throw new AggregateError(failures.map(result => result.reason), `Falha na captura ${name}`);
+  console.log(`Captura: ${join(directory, name)}.xml / .png / .json`);
+  return { source, elements };
+}

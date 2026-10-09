@@ -80,48 +80,31 @@ O teste verifica `/status`, cria a sessão UiAutomator2, ativa `com.instagram.an
 
 Este teste abre o aplicativo localmente mesmo com `DRY_RUN=true`: não lê nem altera essa variável. Não publica Stories ou outro conteúdo, não usa coordenadas nem API privada do Instagram e não armazena senhas. No Codex Cloud execute apenas `npm run typecheck` e `npm run build`; a integração real precisa ser validada no Windows.
 
-## Carregar imagem no editor de Story (sem publicar)
+## Carregar a mídia já enviada no editor de Story
 
-Esta etapa reutiliza `InstagramDriver` e acrescenta `StoryLinkPublisher`. Não há implementação de sticker, URL ou publicação. `DRY_RUN` deve continuar `true`: neste teste isso permite preparar um rascunho local, mas não publicar. O script recusa outro valor e não modifica `.env`.
-
-Pré-requisitos locais: Appium em `http://127.0.0.1:4723`, UiAutomator2, Instagram já autenticado, `emulator-5554` e `adb` no PATH. Se necessário, defina `ADB_PATH` no seu `.env` para o caminho completo de `adb.exe`, sem aspas embutidas. Não são necessários `adb_shell` no Appium nem senhas.
-
-### Identificar os seletores no Windows
-
-Os controles reais dependem da versão e do idioma do Instagram. **Nenhum resource-id foi presumido.** É necessário preencher seletores reais antes de completar o fluxo. No PowerShell:
-
-```powershell
-Copy-Item story-selectors.example.json story-selectors.local.json
-npm run diagnose:instagram
-```
-
-O diagnóstico conecta sem abrir ou navegar no aplicativo e salva a tela atual em `artifacts/<timestamp>-manual/hierarchy.xml` e `screen.png`. Abra manualmente cada tela relevante e repita o diagnóstico. Esses arquivos podem conter dados pessoais; eles e a configuração local estão ignorados pelo Git.
-
-Preencha `story-selectors.local.json` usando atributos observados no XML:
-
-- `openStory`: sequência de controles para entrar especificamente no modo Story, partindo da tela inicial do Instagram.
-- `openGallery`: sequência para abrir a galeria e, se necessário, o álbum `PlantaoRio`.
-- `image`: seletor único da imagem enviada, não de qualquer miniatura. Se a interface expuser o nome do arquivo, use `{{filename}}` no valor: o script substitui pelo nome registrado no log. Se o nome não estiver disponível, colete a hierarquia da galeria após o primeiro envio e identifique a miniatura correta pelos atributos reais.
-- `editorMarker`: controle exclusivo do editor de Story, ausente na galeria.
-- `editorPreview`: elemento da prévia da imagem carregada no editor, identificado na hierarquia real.
-
-Priorize `accessibility id` (atributo `content-desc`), depois `resource-id` e `text` exato. O formato de cada seletor é `{ "strategy": "accessibility id", "value": "valor observado" }`. Não há XPath ou coordenadas neste fluxo. Deixe apenas passos necessários de abertura: nunca configure compartilhar, enviar, publicar, avançar ou stickers. Controles reconhecidos como publicação por texto, descrição ou ID são recusados, mas os seletores locais ainda precisam ser revisados para a versão do aplicativo.
-
-### Executar
+No Windows com Appium, `emulator-5554`, Instagram autenticado, `adb` no PATH e `DRY_RUN=true`:
 
 ```powershell
 npm run smoke:story-image
-# Ou receber outro JPEG local:
+# Para usar outro JPEG local como referência dos bytes já enviados:
 npm run smoke:story-image -- "C:\imagens\meu-teste.jpg"
 ```
 
-O fixture padrão é `assets/story-test.jpg`, uma imagem sintética sem dados pessoais. A imagem é copiada por `adb -s emulator-5554 push` para `/sdcard/Pictures/PlantaoRio/` com nome novo; um broadcast do MediaScanner solicita sua indexação na galeria. A mídia é mantida, inclusive em falhas. Caso o Android ainda não mostre a imagem, aguarde a indexação e confira a pasta no dispositivo; não substitua o seletor por uma miniatura genérica.
+O comando não reenvia nem apaga imagens. Procura os arquivos `plantao-story-<timestamp>.jpg` em `/sdcard/Pictures/PlantaoRio/`, do mais recente para o mais antigo (até 20 arquivos). Compara o SHA-256 dos bytes no emulador com `assets/story-test.jpg` ou com o arquivo passado. Assim, a mídia mais recente só é usada se corresponder realmente à referência local; nunca escolhe simplesmente a primeira imagem da galeria. Se não encontrar correspondência, encerra com erro. `ADB_PATH` pode indicar o caminho completo de `adb.exe` no `.env`.
 
-O script apresenta os seis passos e exige que o marcador do editor passe de ausente para visível após selecionar a imagem, além de verificar a prévia visível e o package ativo. Isso confirma a estrutura da tela; a correspondência visual com a imagem enviada depende de selecionar corretamente a miniatura. O diagnóstico final permite conferir essa correspondência. Nenhum botão é clicado após a seleção da imagem.
+Reutiliza a detecção de estado e a navegação já confirmadas, localiza `com.instagram.android:id/cam_dest_story` e clica em STORY. Captura a tela seguinte em `artifacts/story-image-<timestamp>/step-03-media-picker.xml`, `.png` e `.json`. Algumas versões abrem a câmera em vez da galeria: se o nome da mídia não estiver exposto, solicita ao operador abrir **somente a galeria**, sem selecionar mídia, e confirmar com `GALERIA`. Salva outra captura `step-04-gallery-confirmed`.
 
-Em caso de configuração ausente, seletor inválido, ambíguo ou falha de navegação, o teste salva a hierarquia da etapa e retorna código 1. Com a configuração vazia do exemplo ele deliberadamente para, sem inventar seletores. A sessão Appium é encerrada em `finally` usando `noReset=true` e `shouldTerminateApp=false`, sem comando para fechar o Instagram, apagar mídia ou alterar login. O editor deve permanecer aberto; esse comportamento ainda precisa ser confirmado na instalação local.
+### Seleção controlada da miniatura
 
-No cloud foram executados apenas typecheck e build, sem conexão a Appium/ADB. A abertura do fluxo, seleção da miniatura e identificação do editor não foram validadas no Instagram real. Não considere o teste de integração aprovado até preencher os seletores e executar no Windows.
+Se a hierarquia expuser o nome/caminho exato da imagem validada e um seletor único visível, o teste seleciona por esse seletor. Caso contrário, lista apenas elementos de imagem com atributos reais e seletores únicos derivados de resource-id, descrição e texto; não usa IDs presumidos, XPath, posições nem coordenadas. O operador compara visualmente com a imagem local, escolhe o número e digita o nome do arquivo para confirmar. O teste revalida a hierarquia antes de clicar.
+
+Se nenhuma miniatura tiver seletor confiável, o fallback `MANUAL` pede seleção no próprio emulador e confirmação pelo nome do arquivo. É uma limitação explícita: nesse caso a seleção não é automática. Enter ou uma confirmação diferente cancela o fluxo. Controles identificados como envio, publicação, stickers ou links não são oferecidos para clique.
+
+Depois da seleção, aguarda mudança de tela e salva `step-05-editor-candidate` em XML/PNG/JSON. **Ainda não temos um resource-id confirmado do editor ou da prévia.** Portanto, exige confirmação visual explícita `EDITOR <nome-do-arquivo>` de que a imagem correta está no editor. Somente depois imprime sucesso e salva `step-06-editor-confirmed` e `summary.json`, registrando o seletor utilizado e os trechos confirmados pelo operador. Essa confirmação visual não é apresentada como validação automática do editor.
+
+O teste para no editor: nenhum sticker, URL, botão de avançar ou compartilhar é acionado. Mantém mídia, dados, login e `DRY_RUN`; encerra apenas a sessão Appium com `shouldTerminateApp=false`. Em erro, tenta salvar `error.xml`, `error.png` e `error.json` na pasta da execução. Sem conexão Appium não é possível capturar a tela. Capturas podem conter dados pessoais e estão ignoradas pelo Git.
+
+O antigo `story-selectors.local.json` não é necessário para este fluxo. Os seletores reais da galeria e do editor ainda precisam ser encontrados na instalação local; a versão cloud não executa ADB/Appium. A captura da galeria e o resumo local permitirão substituir as confirmações humanas por seletores reais nas próximas etapas.
 
 ## Inspecionar os elementos reais do Instagram
 
@@ -165,4 +148,4 @@ Aguarda `STATE_CREATE` e confirma `cam_dest_story` existente e visível. Não cl
 
 `DRY_RUN` não é alterado. A sessão Appium é encerrada com `shouldTerminateApp=false`, sem apagar dados, mídia ou alterar login. Os artefatos continuam ignorados pelo Git e podem conter dados pessoais. A validação de navegação real depende do Windows local; testes offline validam apenas as transições e ações esperadas.
 
-Para validar as transições sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs`. Esses testes simulam os três estados, não substituem o teste local no Instagram.
+Para validar as transições sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs tests/storyMediaInspection.test.mjs`. Esses testes simulam os três estados, não substituem o teste local no Instagram.

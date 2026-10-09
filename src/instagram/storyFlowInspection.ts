@@ -39,11 +39,11 @@ async function clickNavigation(session: Session, id: string): Promise<void> {
   await element.click();
 }
 
-export async function reachStoryCreation(session: Session, initialState: InstagramState): Promise<void> {
+export async function reachStoryCreation(session: Session, initialState: InstagramState, log: (message: string) => void = console.log): Promise<void> {
   if (initialState === 'STATE_CREATE') {
-    console.log('[2] Navegação necessária: nenhuma; já está em STATE_CREATE');
+    log('[2] Navegação necessária: nenhuma; já está em STATE_CREATE');
   } else {
-    console.log(`[2] Navegação necessária: ${initialState === 'STATE_UNKNOWN' ? 'aba Home e botão Criar' : 'botão Criar'}`);
+    log(`[2] Navegação necessária: ${initialState === 'STATE_UNKNOWN' ? 'aba Home e botão Criar' : 'botão Criar'}`);
     if (initialState === 'STATE_UNKNOWN') {
       await clickNavigation(session, HOME_TAB_ID);
       await session.waitUntil(async () => await detectInstagramState(session) === 'STATE_HOME', {
@@ -62,7 +62,7 @@ export async function reachStoryCreation(session: Session, initialState: Instagr
   await story.waitForExist(WAIT);
   await story.waitForDisplayed(WAIT);
   if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
-  console.log('[3] Tela de criação confirmada');
-  console.log(`[4] STORY encontrado por resource-id: ${STORY_ID}`);
+  log('[3] Tela de criação confirmada');
+  log(`[4] STORY encontrado por resource-id: ${STORY_ID}`);
   // Intencionalmente não há story.click().
 }
