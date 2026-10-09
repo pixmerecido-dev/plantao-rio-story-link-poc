@@ -24,15 +24,15 @@ try {
   const { elements } = await saveScreenArtifacts(driver, directory, 'stickers');
   const relevant = relevantStickerElements(elements);
   const links = linkStickerElements(elements);
-  console.log(`[5] Elementos encontrados: ${relevant.length}`);
+  console.log(`Elementos relacionados encontrados: ${relevant.length}`);
   for (const element of relevant) {
     console.log(JSON.stringify(element));
     console.log(`Seletor derivado dos atributos observados (não clicado): ${selectorForObservedElement(element)}`);
   }
   if (links.length) {
-    for (const link of links) console.log(`[6] LINK encontrado: ${JSON.stringify(link)}`);
+    for (const link of links) console.log(`[5] LINK encontrado: ${JSON.stringify(link)}`);
   } else {
-    console.log('[6] LINK não observado com rótulo exato nesta captura; nenhum clique adicional.');
+    console.log('[5] LINK não observado com rótulo exato nesta captura; nenhum clique adicional.');
   }
   await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ clickedSelector, relevant, links, published: false, linkClicked: false }, null, 2)}\n`, 'utf8');
   console.log('[7] Pronto para próxima etapa');

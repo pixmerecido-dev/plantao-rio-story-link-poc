@@ -7,7 +7,7 @@ const originalDryRun = process.env.DRY_RUN;
 process.env.DRY_RUN = 'true';
 after(() => { if (originalDryRun === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = originalDryRun; });
 
-function fixture({ primary = true, fallback = true, panelOpens = true, shareOnly = false } = {}) {
+function fixture({ primary = true, fallback = true, panelOpens = true, shareOnly = false, primaryDescription = 'Stickers', clickable = true } = {}) {
   let opened = false;
   const clicks = [];
   const session = {
@@ -19,9 +19,9 @@ function fixture({ primary = true, fallback = true, panelOpens = true, shareOnly
         isExisting: async () => available,
         isDisplayed: async () => available,
         isEnabled: async () => available,
-        getAttribute: async name => name === 'clickable' ? 'true' : 'Stickers',
-        waitForExist: async () => assert.ok(available),
-        waitForDisplayed: async () => assert.ok(available),
+        getAttribute: async name => name === 'clickable' ? String(clickable) : selector === STICKERS_SELECTORS[0] ? primaryDescription : 'Stickers',
+        waitForExist: async () => { if (!available) throw new Error('timeout: elemento ausente'); },
+        waitForDisplayed: async () => { if (!available) throw new Error('timeout: elemento não visível'); },
         click: async () => {
           assert.ok(isButton, 'Link, compartilhar e opções do painel nunca devem receber clique');
           clicks.push(selector);
@@ -34,7 +34,7 @@ function fixture({ primary = true, fallback = true, panelOpens = true, shareOnly
     getCurrentPackage: async () => 'com.instagram.android',
     getPageSource: async () => opened
       ? '<hierarchy><node text="LINK" resource-id="fixture:id/link" class="button"/><node text="Location" class="button"/></hierarchy>'
-      : '<hierarchy><node content-desc="Stickers" resource-id="asset_button" class="button"/></hierarchy>',
+      : `<hierarchy><node resource-id="asset_button" class="button"/><node content-desc="Stickers" class="label"/></hierarchy>`,
   };
   return { session, clicks };
 }
@@ -68,5 +68,31 @@ test('lista atributos reais, deduplica e distingue LINK exato de termos relacion
   const element = text => ({ text, 'content-desc': '', 'resource-id': '', class: 'fixture' });
   const nodes = [element('LINK'), element('LINK'), element('Link account'), element('Location'), element('Mention'), element('GIF'), element('Poll'), element('Music'), element('Hashtag'), element('Share')];
   assert.equal(relevantStickerElements(nodes).length, 8);
+  assert.deepEqual(linkStickerElements(nodes), [element('LINK')]);
+});
+
+
+test('asset_button sem descrição no mesmo nó aceita Stickers em elemento separado', async () => {
+  const mock = fixture({ primaryDescription: null });
+  assert.equal(await openStickersPanel(mock.session), STICKERS_SELECTORS[0]);
+  assert.deepEqual(mock.clicks, [STICKERS_SELECTORS[0]]);
+});
+
+test('asset_button continua válido sem descrição Stickers em qualquer nó', async () => {
+  const mock = fixture({ primaryDescription: '', fallback: false });
+  assert.equal(await openStickersPanel(mock.session), STICKERS_SELECTORS[0]);
+  assert.deepEqual(mock.clicks, [STICKERS_SELECTORS[0]]);
+});
+
+test('asset_button presente mas não clicável não usa fallback nem clica', async () => {
+  const mock = fixture({ clickable: false });
+  await assert.rejects(openStickersPanel(mock.session), /timeout/);
+  assert.deepEqual(mock.clicks, []);
+});
+
+test('Website e URL entram no diagnóstico sem serem classificados como LINK exato', () => {
+  const element = text => ({ text, 'content-desc': '', 'resource-id': '', class: 'fixture' });
+  const nodes = [element('Website'), element('URL'), element('Add URL'), element('LINK')];
+  assert.equal(relevantStickerElements(nodes).length, 4);
   assert.deepEqual(linkStickerElements(nodes), [element('LINK')]);
 });
