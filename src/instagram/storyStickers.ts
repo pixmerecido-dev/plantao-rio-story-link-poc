@@ -1,8 +1,7 @@
 import type { InstagramDriver } from './InstagramDriver.js';
-import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
-import { detectInstagramState, resourceIdSelector, waitForClickable, STICKERS_ID, SHARE_SHORTCUT_ID } from './instagramStateMachine.js';
+import type { InstagramElement } from './inspectElements.js';
+import { detectInstagramState, resourceIdSelector, waitForClickable, waitForState, STICKERS_ID, SHARE_SHORTCUT_ID } from './instagramStateMachine.js';
 export { STICKERS_ID, SHARE_SHORTCUT_ID } from './instagramStateMachine.js';
-import { selectorForObservedElement } from './storyMediaInspection.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 export const STICKERS_DESCRIPTION = 'Stickers';
@@ -27,7 +26,7 @@ export function relevantStickerElements(elements: InstagramElement[]): Instagram
 
 export function linkStickerElements(elements: InstagramElement[]): InstagramElement[] {
   return relevantStickerElements(elements).filter(element =>
-    [element.text, element['content-desc']].some(label => /^link$/i.test(label.trim())));
+    [element.text, element['content-desc']].some(label => /^link(?: sticker)?$/i.test(label.trim())));
 }
 
 /** Abre somente o painel. Nunca procura Link para clicar nem aciona compartilhar. */
@@ -51,23 +50,22 @@ export async function openStickersPanel(session: Session): Promise<string> {
   const separateDescriptionVisible = await descriptionNode.isExisting() && await descriptionNode.isDisplayed();
   console.log(`Confirmação adicional: descrição Stickers visível na tela=${separateDescriptionVisible}`);
   console.log(useResourceId ? '[3] Stickers confirmado por resource-id' : '[3] Stickers confirmado por accessibility id');
-  const before = extractInstagramElements(await session.getPageSource());
-  const baseline = new Set(relevantStickerElements(before).map(element => JSON.stringify(element)));
   console.log(`Abrindo painel de stickers com um único clique: ${selectedSelector}`);
   await button.click();
-  // Mudança de XML isolada não basta: exige nova opção de sticker observada e visível.
-  await session.waitUntil(async () => {
-    if (await session.getCurrentPackage() !== 'com.instagram.android') return false;
-    const elements = extractInstagramElements(await session.getPageSource());
-    for (const element of relevantStickerElements(elements)) {
-      if (baseline.has(JSON.stringify(element))) continue;
-      const selector = selectorForObservedElement(element);
-      if (!selector) continue;
-      const option = await session.$(selector);
-      if (await option.isExisting() && await option.isDisplayed()) return true;
-    }
-    return false;
-  }, { ...WAIT, timeoutMsg: 'Nenhuma nova opção de sticker visível apareceu após o único clique.' });
+  await waitForState(session, 'STATE_STICKERS');
   console.log('[4] Painel aberto');
   return selectedSelector;
+}
+
+
+/** Retoma o painel existente ou abre somente a partir do editor confirmado. */
+export async function ensureStickersPanel(session: Session): Promise<string | undefined> {
+  const state = await detectInstagramState(session);
+  console.log(`[STATE] ${state}`);
+  if (state === 'STATE_STICKERS') {
+    await waitForState(session, 'STATE_STICKERS');
+    return undefined;
+  }
+  if (state !== 'STATE_EDITOR') throw new Error(`${state}: obtenha o editor antes de abrir o painel de stickers.`);
+  return await openStickersPanel(session);
 }

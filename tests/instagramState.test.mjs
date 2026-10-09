@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectInstagramState, navigateToStoryEditor, resourceIdSelector,
-  HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID } from '../dist/instagram/instagramStateMachine.js';
+  HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from '../dist/instagram/instagramStateMachine.js';
 import { reachStoryCreation } from '../dist/instagram/storyFlowInspection.js';
 
 const originalDryRun = process.env.DRY_RUN;
@@ -11,8 +11,9 @@ after(() => { if (originalDryRun === undefined) delete process.env.DRY_RUN; else
 function mockSession(ids, { hidden = [] } = {}) {
   const existing = new Set(ids);
   const clicks = [], waits = [], probes = [];
-  const selectors = new Map([HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID].map(id => [resourceIdSelector(id), id]));
+  const selectors = new Map([HOME_CREATE_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID].map(id => [resourceIdSelector(id), id]));
   selectors.set('~Stickers', 'description:Stickers');
+  selectors.set(`~${LINK_STICKER_DESCRIPTION}`, 'description:Link Sticker');
   const session = {
     $: async selector => {
       const id = selectors.get(selector);
@@ -48,7 +49,7 @@ test('EDITOR prevalece e retorna sem Home, ADB/seleção ou esperas', async () =
   assert.deepEqual(mock.clicks, []);
   assert.equal(mock.selections(), 0);
   assert.deepEqual(mock.waits, []);
-  assert.deepEqual(mock.probes, [STICKERS_ID]);
+  assert.deepEqual(mock.probes, [STICKER_ITEM_ID, 'description:Link Sticker', STICKERS_ID]);
 });
 
 test('GALERIA prevalece sobre CREATE/HOME e só seleciona uma imagem', async () => {
@@ -117,4 +118,23 @@ test('inspeção de criação continua sem clicar em STORY', async () => {
   const mock = mockSession([STORY_ID]);
   await reachStoryCreation(mock.session, 'STATE_CREATE');
   assert.deepEqual(mock.clicks, []);
+});
+
+
+test('STICKERS prevalece sobre editor e nunca dispara seleção de imagem', async () => {
+  for (const marker of [STICKER_ITEM_ID, 'description:Link Sticker']) {
+    const mock = mockSession([marker, STICKERS_ID, SHARE_SHORTCUT_ID]);
+    assert.equal(await detectInstagramState(mock.session), 'STATE_STICKERS');
+    await assert.rejects(navigateToStoryEditor(mock.session, mock.selectImage), /painel já aberto/);
+    assert.deepEqual(mock.clicks, []);
+    assert.equal(mock.selections(), 0);
+    assert.deepEqual(mock.waits, []);
+  }
+});
+
+
+test('existência do item compartilhado reconhece Stickers sem espera longa', async () => {
+  const mock = mockSession([STICKER_ITEM_ID], { hidden: [STICKER_ITEM_ID] });
+  assert.equal(await detectInstagramState(mock.session), 'STATE_STICKERS');
+  assert.deepEqual(mock.waits, []);
 });

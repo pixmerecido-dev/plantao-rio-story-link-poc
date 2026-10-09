@@ -2,12 +2,14 @@ import type { InstagramDriver } from './InstagramDriver.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
-export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_UNKNOWN';
+export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_STICKERS' | 'STATE_UNKNOWN';
 export const HOME_CREATE_ID = 'com.instagram.android:id/action_bar_left_button';
 export const HOME_TAB_ID = 'com.instagram.android:id/feed_tab';
 export const STORY_ID = 'com.instagram.android:id/cam_dest_story';
 export const GALLERY_ID = 'com.instagram.android:id/gallery_grid_container';
 export const STICKERS_ID = 'asset_button';
+export const STICKER_ITEM_ID = 'com.instagram.android:id/sticker_sheet_redesign_item';
+export const LINK_STICKER_DESCRIPTION = 'Link Sticker';
 export const SHARE_SHORTCUT_ID = 'com.instagram.android:id/your_story_share_shortcut_button';
 const WAIT = { timeout: 20_000, interval: 500 };
 
@@ -18,6 +20,7 @@ export function resourceIdSelector(id: string): string {
 /** Probes sem waitForExist: ausência normal não causa timeout ou exceção. */
 export async function detectInstagramState(session: Session): Promise<InstagramState> {
   const probes: { state: InstagramState; selectors: string[] }[] = [
+    { state: 'STATE_STICKERS', selectors: [resourceIdSelector(STICKER_ITEM_ID), `~${LINK_STICKER_DESCRIPTION}`] },
     { state: 'STATE_EDITOR', selectors: [resourceIdSelector(STICKERS_ID), resourceIdSelector(SHARE_SHORTCUT_ID), '~Stickers'] },
     { state: 'STATE_GALLERY', selectors: [resourceIdSelector(GALLERY_ID)] },
     { state: 'STATE_CREATE', selectors: [resourceIdSelector(STORY_ID)] },
@@ -27,7 +30,7 @@ export async function detectInstagramState(session: Session): Promise<InstagramS
     for (const selector of probe.selectors) {
       try {
         const element = await session.$(selector);
-        if (await element.isExisting() && await element.isDisplayed()) return probe.state;
+        if (await element.isExisting() && (probe.state === 'STATE_STICKERS' || await element.isDisplayed())) return probe.state;
       } catch (error: unknown) {
         // Não ocultar erros de conexão/servidor; só ausência ou stale em uma transição.
         if (!(error instanceof Error) || !/no such element|stale element reference/i.test(error.message)) throw error;
@@ -73,6 +76,7 @@ export async function navigateToStoryEditor(session: Session, selectImage: () =>
       console.log('[OK] Editor do Story confirmado');
       return { initialState, finalState: state, transitions };
     }
+    if (state === 'STATE_STICKERS') throw new Error('STATE_STICKERS: painel já aberto; não voltar ao editor nem selecionar mídia.');
     if (state === 'STATE_UNKNOWN') throw new Error('STATE_UNKNOWN: abortando sem tentar Home ou clicar em controles desconhecidos.');
     if (state === 'STATE_HOME') {
       console.log('[NAV] HOME -> CREATE: clicando uma vez em Criar');

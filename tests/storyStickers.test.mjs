@@ -96,3 +96,9 @@ test('Website e URL entram no diagnóstico sem serem classificados como LINK exa
   assert.equal(relevantStickerElements(nodes).length, 4);
   assert.deepEqual(linkStickerElements(nodes), [element('LINK')]);
 });
+
+
+test('diagnóstico reconhece a descrição real Link Sticker', () => {
+  const link = { text: '', 'content-desc': 'Link Sticker', 'resource-id': 'com.instagram.android:id/sticker_sheet_redesign_item', class: 'android.view.ViewGroup' };
+  assert.deepEqual(linkStickerElements([link]), [link]);
+});

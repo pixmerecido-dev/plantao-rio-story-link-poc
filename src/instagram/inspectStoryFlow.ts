@@ -38,7 +38,7 @@ try {
   console.log(`[1] Estado inicial detectado: ${initialState}`);
   reached = initialState;
   await capture('step-01-initial');
-  if (initialState === 'STATE_EDITOR' || initialState === 'STATE_GALLERY') {
+  if (initialState === 'STATE_EDITOR' || initialState === 'STATE_GALLERY' || initialState === 'STATE_STICKERS') {
     console.log(`[NAV] Já está em ${initialState}; não voltar à Home nem selecionar mídia neste diagnóstico.`);
     await capture('step-02-current');
   } else {

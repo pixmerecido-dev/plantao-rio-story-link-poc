@@ -128,13 +128,14 @@ A sessão Appium é encerrada com as mesmas capabilities de preservação (`noRe
 
 A ordem de prioridade é:
 
+- `STATE_STICKERS`: existe `com.instagram.android:id/sticker_sheet_redesign_item` ou descrição `Link Sticker` (antes de Editor).
 - `STATE_EDITOR`: marcador visível `asset_button`, `your_story_share_shortcut_button` ou descrição `Stickers`.
 - `STATE_GALLERY`: `gallery_grid_container` visível.
 - `STATE_CREATE`: `cam_dest_story` visível.
 - `STATE_HOME`: `feed_tab` ou `action_bar_left_button` visível.
 - `STATE_UNKNOWN`: nenhum marcador disponível.
 
-Os IDs com namespace usam o prefixo confirmado `com.instagram.android:id/`. A visibilidade evita que um elemento oculto de uma tela anterior desvie a detecção. Editor/Galeria têm prioridade quando marcadores coexistem.
+Os IDs com namespace usam o prefixo confirmado `com.instagram.android:id/`. A visibilidade evita que um elemento oculto de uma tela anterior desvie a detecção. Stickers/Editor/Galeria têm prioridade quando marcadores coexistem. A detecção de Stickers usa existência, conforme os seletores confirmados; o clique no item ainda exige visibilidade.
 
 `smoke:story-image` abre/ativa Instagram preservando a sessão e retoma da tela atual:
 
@@ -146,7 +147,7 @@ Os IDs com namespace usam o prefixo confirmado `com.instagram.android:id/`. A vi
 
 As esperas longas só acontecem depois de reconhecer um estado e iniciar uma navegação, com timeout de 20 segundos. O helper nativo de clicabilidade usa existência, visibilidade, habilitação e `clickable=true`; não chama a API de browser do WebdriverIO. Nenhum sticker ou botão de compartilhamento é clicado pelo fluxo de imagem. `summary.json` informa estado inicial, transições e reutilização do rascunho.
 
-O diagnóstico `npm run inspect:story-flow` reutiliza a detecção: chega somente à criação partindo de Home/Criação, para sem navegar se já está em Galeria/Editor e aborta em Unknown. O módulo de stickers usa a mesma máquina para obter o editor antes de abrir seu painel.
+O diagnóstico `npm run inspect:story-flow` reutiliza a detecção: chega somente à criação partindo de Home/Criação, para sem navegar se já está em Galeria/Editor e aborta em Unknown. O módulo de stickers retoma diretamente um painel já aberto; só usa a máquina para obter o editor se precisar abrir o painel. O fluxo de imagem não tenta voltar do painel para o editor nem selecionar outra imagem.
 
 Para validar sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs tests/storyMediaInspection.test.mjs tests/storyGallery.test.mjs tests/storyStickers.test.mjs`. Esses testes usam sessões simuladas; a execução real permanece no Windows. `DRY_RUN=true` continua obrigatório e não é alterado. Não são usadas coordenadas, XPath ou índices de coleções vazias. Capturas locais podem conter dados pessoais e ficam ignoradas pelo Git.
 
@@ -162,8 +163,27 @@ Reutiliza o rascunho se o editor já estiver aberto. Caso contrário, usa o flux
 
 Confirma o editor por pelo menos um marcador visível: resource-id `asset_button`, accessibility id `Stickers` ou `com.instagram.android:id/your_story_share_shortcut_button`. O marcador de compartilhamento é somente consultado, nunca clicado. Localiza Stickers primeiro por `asset_button`, com fallback pela descrição `Stickers`. Se `asset_button` existir, exige seletor único e botão visível/habilitado/clicável, sem exigir descrição nesse nó. `Stickers` pode estar em outro elemento da tela e é apenas confirmação adicional. O fallback pelo accessibility id só é usado quando o resource-id não existe; se o ID existir mas não ficar clicável, encerra com erro, sem clicar em outro nó.
 
-Aguarda que uma nova opção relacionada a stickers, ausente na captura anterior, apareça visível no Instagram. Não basta uma mudança genérica no XML. Salva `stickers.xml`, `stickers.png`, `stickers.json` e `summary.json` em `artifacts/story-stickers-<timestamp>/`, além da captura anterior `editor-before-stickers`. Filtra atributos observados relacionados a Link, LINK, Website, URL, Location, Mention, GIF, Poll, Music e Hashtag. Registra `text`, `content-desc`, `resource-id` e `class`; somente rótulo exato Link/LINK é reportado como LINK encontrado. Os seletores derivados são apresentados para diagnóstico, sem afirmar que cada um é único.
+Aguarda `STATE_STICKERS` pelos marcadores reais do painel. Não basta uma mudança genérica no XML. Salva `stickers.xml`, `stickers.png`, `stickers.json` e `summary.json` em `artifacts/story-stickers-<timestamp>/`, além da captura anterior `editor-before-stickers`. Filtra atributos observados relacionados a Link, LINK, Website, URL, Location, Mention, GIF, Poll, Music e Hashtag. Registra `text`, `content-desc`, `resource-id` e `class`; somente rótulo exato Link/LINK ou descrição confirmada Link Sticker é reportado como LINK encontrado. Os seletores derivados são apresentados para diagnóstico, sem afirmar que cada um é único.
 
 Nenhum seletor do painel foi inventado. Não clica em LINK, insere URL, aciona Your story, compartilha ou publica. Não usa XPath nem coordenadas. Se LINK não aparecer na captura, informa isso e para sem procurar por cliques ou rolagem. Erros geram `error.xml`, `error.png` e `error.json` quando possível. A sessão Appium é encerrada sem terminar o Instagram, alterar login ou apagar dados; `DRY_RUN` permanece inalterado.
 
 Os IDs e rótulos reais das opções do painel só serão conhecidos após execução local. Envie a captura revisada de dados pessoais para identificar o próximo seletor. O cloud executa typecheck, build e testes offline, sem acessar o emulador.
+
+
+## Inspecionar a configuração do sticker LINK sem preencher URL
+
+No Windows com Appium, emulador, Instagram autenticado e `DRY_RUN=true`:
+
+```powershell
+npm run smoke:story-link
+```
+
+Se já estiver em `STATE_STICKERS`, retoma diretamente sem clicar em Stickers novamente nem voltar ao editor. Se estiver no editor, abre o painel com o botão validado. Nos estados Home/Criação/Galeria, reutiliza a preparação da imagem; Unknown aborta com diagnóstico.
+
+O ID `com.instagram.android:id/sticker_sheet_redesign_item` é compartilhado. O teste lista a quantidade de itens e filtra a coleção pelo **content-desc exato `Link Sticker`**, respeitando maiúsculas e espaços. Só prossegue quando existe exatamente um item correspondente; zero ou mais de um abortam sem clique. Revalida ID, descrição, visibilidade, habilitação e cardinalidade do seletor composto antes de clicar uma única vez. Não escolhe o primeiro item e não clica pelo ID compartilhado sozinho. Não usa índices, XPath ou coordenadas.
+
+Após o clique, aguarda mudança na hierarquia, saída do painel e atributos observados relacionados à configuração do link. Salva `link-editor.xml`, `link-editor.png`, `link-editor.json` e `summary.json` em `artifacts/story-link-<timestamp>/`. Mesmo se a próxima tela não for reconhecida, tenta preservar `link-editor` e também `error.xml/.png/.json`.
+
+Lista atributos reais relacionados a URL, link, website, web address, Done, Customize sticker text e sticker text. Um campo `EditText` só é listado como candidato de URL se algum atributo observado indicar essa finalidade; um campo sem rótulo/ID relacionado não é presumido como URL. Done é registrado como candidato de confirmação quando o rótulo exato estiver presente. Se não forem identificáveis, isso é informado no terminal para análise do XML. Todos os candidatos incluem resource-id, content-desc, text e class; os IDs do editor de link não são inventados.
+
+Para na tela de configuração. Não preenche nenhum campo, confirma, clica em Your story ou publica. Os scripts antigos de imagem/stickers continuam parando nas respectivas etapas. A sessão Appium é encerrada sem fechar Instagram ou apagar dados/login, e `DRY_RUN` permanece inalterado. Os seletores reais dos campos só serão conhecidos na execução local; o cloud valida código e testes simulados.

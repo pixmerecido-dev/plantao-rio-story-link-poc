@@ -4,7 +4,8 @@ import { resolve, join } from 'node:path';
 import { InstagramDriver } from './InstagramDriver.js';
 import { StoryLinkPublisher } from './StoryLinkPublisher.js';
 import { saveScreenArtifacts } from './diagnostics.js';
-import { openStickersPanel, relevantStickerElements, linkStickerElements } from './storyStickers.js';
+import { ensureStickersPanel, relevantStickerElements, linkStickerElements } from './storyStickers.js';
+import { detectInstagramState } from './instagramStateMachine.js';
 import { selectorForObservedElement } from './storyMediaInspection.js';
 
 const driver = new InstagramDriver();
@@ -18,9 +19,11 @@ try {
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
-  await publisher.loadImageIntoStory(process.argv[2] ?? 'assets/story-test.jpg', join(directory, 'image-flow'));
-  await saveScreenArtifacts(driver, directory, 'editor-before-stickers');
-  const clickedSelector = await openStickersPanel(driver.getSession());
+  if (await detectInstagramState(driver.getSession()) !== 'STATE_STICKERS') {
+    await publisher.loadImageIntoStory(process.argv[2] ?? 'assets/story-test.jpg', join(directory, 'image-flow'));
+    await saveScreenArtifacts(driver, directory, 'editor-before-stickers');
+  }
+  const clickedSelector = await ensureStickersPanel(driver.getSession());
   const { elements } = await saveScreenArtifacts(driver, directory, 'stickers');
   const relevant = relevantStickerElements(elements);
   const links = linkStickerElements(elements);
