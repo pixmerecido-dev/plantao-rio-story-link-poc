@@ -79,3 +79,46 @@ npm run smoke:instagram
 O teste verifica `/status`, cria a sessão UiAutomator2, ativa `com.instagram.android`, aguarda três segundos e confirma o package em primeiro plano (com até 15 segundos adicionais de espera). Não verifica se o usuário está logado: preserva o login existente com `noReset=true`, `fullReset=false` e sem forçar reinicialização. Ao terminar, inclusive em caso de erro após a conexão, tenta encerrar apenas a sessão Appium, mantendo o aplicativo aberto com `shouldTerminateApp=false`. Falhas de execução ou encerramento exibem o erro completo e retornam código 1.
 
 Este teste abre o aplicativo localmente mesmo com `DRY_RUN=true`: não lê nem altera essa variável. Não publica Stories ou outro conteúdo, não usa coordenadas nem API privada do Instagram e não armazena senhas. No Codex Cloud execute apenas `npm run typecheck` e `npm run build`; a integração real precisa ser validada no Windows.
+
+## Carregar imagem no editor de Story (sem publicar)
+
+Esta etapa reutiliza `InstagramDriver` e acrescenta `StoryLinkPublisher`. Não há implementação de sticker, URL ou publicação. `DRY_RUN` deve continuar `true`: neste teste isso permite preparar um rascunho local, mas não publicar. O script recusa outro valor e não modifica `.env`.
+
+Pré-requisitos locais: Appium em `http://127.0.0.1:4723`, UiAutomator2, Instagram já autenticado, `emulator-5554` e `adb` no PATH. Se necessário, defina `ADB_PATH` no seu `.env` para o caminho completo de `adb.exe`, sem aspas embutidas. Não são necessários `adb_shell` no Appium nem senhas.
+
+### Identificar os seletores no Windows
+
+Os controles reais dependem da versão e do idioma do Instagram. **Nenhum resource-id foi presumido.** É necessário preencher seletores reais antes de completar o fluxo. No PowerShell:
+
+```powershell
+Copy-Item story-selectors.example.json story-selectors.local.json
+npm run diagnose:instagram
+```
+
+O diagnóstico conecta sem abrir ou navegar no aplicativo e salva a tela atual em `artifacts/<timestamp>-manual/hierarchy.xml` e `screen.png`. Abra manualmente cada tela relevante e repita o diagnóstico. Esses arquivos podem conter dados pessoais; eles e a configuração local estão ignorados pelo Git.
+
+Preencha `story-selectors.local.json` usando atributos observados no XML:
+
+- `openStory`: sequência de controles para entrar especificamente no modo Story, partindo da tela inicial do Instagram.
+- `openGallery`: sequência para abrir a galeria e, se necessário, o álbum `PlantaoRio`.
+- `image`: seletor único da imagem enviada, não de qualquer miniatura. Se a interface expuser o nome do arquivo, use `{{filename}}` no valor: o script substitui pelo nome registrado no log. Se o nome não estiver disponível, colete a hierarquia da galeria após o primeiro envio e identifique a miniatura correta pelos atributos reais.
+- `editorMarker`: controle exclusivo do editor de Story, ausente na galeria.
+- `editorPreview`: elemento da prévia da imagem carregada no editor, identificado na hierarquia real.
+
+Priorize `accessibility id` (atributo `content-desc`), depois `resource-id` e `text` exato. O formato de cada seletor é `{ "strategy": "accessibility id", "value": "valor observado" }`. Não há XPath ou coordenadas neste fluxo. Deixe apenas passos necessários de abertura: nunca configure compartilhar, enviar, publicar, avançar ou stickers. Controles reconhecidos como publicação por texto, descrição ou ID são recusados, mas os seletores locais ainda precisam ser revisados para a versão do aplicativo.
+
+### Executar
+
+```powershell
+npm run smoke:story-image
+# Ou receber outro JPEG local:
+npm run smoke:story-image -- "C:\imagens\meu-teste.jpg"
+```
+
+O fixture padrão é `assets/story-test.jpg`, uma imagem sintética sem dados pessoais. A imagem é copiada por `adb -s emulator-5554 push` para `/sdcard/Pictures/PlantaoRio/` com nome novo; um broadcast do MediaScanner solicita sua indexação na galeria. A mídia é mantida, inclusive em falhas. Caso o Android ainda não mostre a imagem, aguarde a indexação e confira a pasta no dispositivo; não substitua o seletor por uma miniatura genérica.
+
+O script apresenta os seis passos e exige que o marcador do editor passe de ausente para visível após selecionar a imagem, além de verificar a prévia visível e o package ativo. Isso confirma a estrutura da tela; a correspondência visual com a imagem enviada depende de selecionar corretamente a miniatura. O diagnóstico final permite conferir essa correspondência. Nenhum botão é clicado após a seleção da imagem.
+
+Em caso de configuração ausente, seletor inválido, ambíguo ou falha de navegação, o teste salva a hierarquia da etapa e retorna código 1. Com a configuração vazia do exemplo ele deliberadamente para, sem inventar seletores. A sessão Appium é encerrada em `finally` usando `noReset=true` e `shouldTerminateApp=false`, sem comando para fechar o Instagram, apagar mídia ou alterar login. O editor deve permanecer aberto; esse comportamento ainda precisa ser confirmado na instalação local.
+
+No cloud foram executados apenas typecheck e build, sem conexão a Appium/ADB. A abertura do fluxo, seleção da miniatura e identificação do editor não foram validadas no Instagram real. Não considere o teste de integração aprovado até preencher os seletores e executar no Windows.

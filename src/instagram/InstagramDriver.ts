@@ -63,6 +63,11 @@ export class InstagramDriver {
     });
   }
 
+  getSession(): Awaited<ReturnType<typeof remote>> {
+    if (!this.session) throw new Error('Não há sessão Appium conectada.');
+    return this.session;
+  }
+
   async disconnect(): Promise<void> {
     if (!this.session) return;
     // Apenas DELETE /session: sem terminateApp, reset, uninstall ou logout.

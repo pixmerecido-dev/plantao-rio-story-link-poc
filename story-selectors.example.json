@@ -1,0 +1,7 @@
+{
+  "openStory": [{ "strategy": "accessibility id", "value": "" }],
+  "openGallery": [{ "strategy": "accessibility id", "value": "" }],
+  "image": { "strategy": "accessibility id", "value": "" },
+  "editorMarker": { "strategy": "resource-id", "value": "" },
+  "editorPreview": { "strategy": "resource-id", "value": "" }
+}

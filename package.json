@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "appium": "appium",
-    "smoke:instagram": "tsx src/instagram/smokeTest.ts"
+    "smoke:instagram": "tsx src/instagram/smokeTest.ts",
+    "smoke:story-image": "tsx src/instagram/storyImageSmokeTest.ts",
+    "diagnose:instagram": "tsx src/instagram/diagnoseInstagram.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
