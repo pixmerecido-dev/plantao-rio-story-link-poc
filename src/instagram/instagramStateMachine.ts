@@ -19,8 +19,16 @@ export function resourceIdSelector(id: string): string {
 
 /** Probes sem waitForExist: ausência normal não causa timeout ou exceção. */
 export async function detectInstagramState(session: Session): Promise<InstagramState> {
+  // ID compartilhado: nunca usar $() ou seleção estrita nesta descoberta.
+  for (const selector of [resourceIdSelector(STICKER_ITEM_ID), `~${LINK_STICKER_DESCRIPTION}`]) {
+    try {
+      const items = await session.$$(selector);
+      if (items.length > 0) return 'STATE_STICKERS';
+    } catch (error: unknown) {
+      if (!(error instanceof Error) || !/no such element|stale element reference/i.test(error.message)) throw error;
+    }
+  }
   const probes: { state: InstagramState; selectors: string[] }[] = [
-    { state: 'STATE_STICKERS', selectors: [resourceIdSelector(STICKER_ITEM_ID), `~${LINK_STICKER_DESCRIPTION}`] },
     { state: 'STATE_EDITOR', selectors: [resourceIdSelector(STICKERS_ID), resourceIdSelector(SHARE_SHORTCUT_ID), '~Stickers'] },
     { state: 'STATE_GALLERY', selectors: [resourceIdSelector(GALLERY_ID)] },
     { state: 'STATE_CREATE', selectors: [resourceIdSelector(STORY_ID)] },
@@ -30,7 +38,7 @@ export async function detectInstagramState(session: Session): Promise<InstagramS
     for (const selector of probe.selectors) {
       try {
         const element = await session.$(selector);
-        if (await element.isExisting() && (probe.state === 'STATE_STICKERS' || await element.isDisplayed())) return probe.state;
+        if (await element.isExisting() && await element.isDisplayed()) return probe.state;
       } catch (error: unknown) {
         // Não ocultar erros de conexão/servidor; só ausência ou stale em uma transição.
         if (!(error instanceof Error) || !/no such element|stale element reference/i.test(error.message)) throw error;

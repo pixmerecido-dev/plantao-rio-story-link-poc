@@ -34,7 +34,7 @@ try {
   // Mesmo se a tela não for reconhecida, preserva a captura para descobrir atributos.
   const { elements } = await saveScreenArtifacts(driver, directory, 'link-editor');
   if (transitionError) throw transitionError;
-  console.log('[5] Tela de configuração do link aberta');
+  console.log('[5] Tela de configuração aberta');
   const observed = inspectLinkEditorElements(elements);
   for (const element of observed.relevant) {
     console.log(`Elemento relacionado observado: ${JSON.stringify(element)}`);

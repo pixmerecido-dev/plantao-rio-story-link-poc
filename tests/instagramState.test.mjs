@@ -15,7 +15,14 @@ function mockSession(ids, { hidden = [] } = {}) {
   selectors.set('~Stickers', 'description:Stickers');
   selectors.set(`~${LINK_STICKER_DESCRIPTION}`, 'description:Link Sticker');
   const session = {
+    $$: async selector => {
+      const id = selectors.get(selector);
+      assert.ok([STICKER_ITEM_ID, 'description:Link Sticker'].includes(id));
+      probes.push(id);
+      return existing.has(id) ? [{}] : [];
+    },
     $: async selector => {
+      assert.notEqual(selector, resourceIdSelector(STICKER_ITEM_ID), 'ID compartilhado nunca pode usar seleção única');
       const id = selectors.get(selector);
       assert.ok(id, 'somente seletores confirmados podem ser consultados');
       probes.push(id);
@@ -92,9 +99,9 @@ test('marcadores ocultos não desviam a detecção da galeria visível', async (
 });
 
 test('ausência de elemento é ignorada, mas erro de conexão não é ocultado', async () => {
-  const missing = { $: async () => { throw new Error('no such element'); } };
+  const missing = { $$: async () => [], $: async () => { throw new Error('no such element'); } };
   assert.equal(await detectInstagramState(missing), 'STATE_UNKNOWN');
-  await assert.rejects(detectInstagramState({ $: async () => { throw new Error('connection refused'); } }), /connection refused/);
+  await assert.rejects(detectInstagramState({ $$: async () => { throw new Error('connection refused'); } }), /connection refused/);
 });
 
 test('share shortcut e descrição Stickers são marcadores só de leitura', async () => {

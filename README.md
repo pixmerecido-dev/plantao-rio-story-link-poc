@@ -124,7 +124,7 @@ A sessão Appium é encerrada com as mesmas capabilities de preservação (`noRe
 
 ## Máquina de estados reutilizável
 
-`instagramStateMachine.ts` é compartilhado pelos fluxos de imagem, diagnóstico e stickers. A detecção usa somente `$`, `isExisting` e `isDisplayed`, sem `waitForExist` ou espera por Home. A sessão Appium configura `implicit=0` para que seletor ausente não cause espera longa. Ausência/stale durante uma transição é tratada como probe negativo; erros de conexão continuam sendo reportados.
+`instagramStateMachine.ts` é compartilhado pelos fluxos de imagem, diagnóstico e stickers. A detecção usa `$$` para o ID compartilhado de stickers e a descrição Link Sticker: qualquer coleção não vazia confirma `STATE_STICKERS`, sem seleção estrita nem índices. Para os demais marcadores únicos, usa `$`, `isExisting` e `isDisplayed`, sem `waitForExist` ou espera por Home. A sessão Appium configura `implicit=0` para que seletor ausente não cause espera longa. Ausência/stale durante uma transição é tratada como probe negativo; erros de conexão continuam sendo reportados.
 
 A ordem de prioridade é:
 
@@ -180,7 +180,7 @@ npm run smoke:story-link
 
 Se já estiver em `STATE_STICKERS`, retoma diretamente sem clicar em Stickers novamente nem voltar ao editor. Se estiver no editor, abre o painel com o botão validado. Nos estados Home/Criação/Galeria, reutiliza a preparação da imagem; Unknown aborta com diagnóstico.
 
-O ID `com.instagram.android:id/sticker_sheet_redesign_item` é compartilhado. O teste lista a quantidade de itens e filtra a coleção pelo **content-desc exato `Link Sticker`**, respeitando maiúsculas e espaços. Só prossegue quando existe exatamente um item correspondente; zero ou mais de um abortam sem clique. Revalida ID, descrição, visibilidade, habilitação e cardinalidade do seletor composto antes de clicar uma única vez. Não escolhe o primeiro item e não clica pelo ID compartilhado sozinho. Não usa índices, XPath ou coordenadas.
+O ID `com.instagram.android:id/sticker_sheet_redesign_item` é compartilhado. O teste usa `$$` no ID compartilhado, confirma coleção não vazia e registra content-desc, text, resource-id e displayed de cada item. Filtra a coleção pelo **content-desc exato `Link Sticker`**, respeitando maiúsculas e espaços. Só prossegue quando existe exatamente um item correspondente; zero ou mais de um abortam sem clique. Revalida ID, descrição, visibilidade, habilitação e cardinalidade do seletor composto antes de clicar uma única vez. Não escolhe o primeiro item e não clica pelo ID compartilhado sozinho. Não usa índices, XPath ou coordenadas.
 
 Após o clique, aguarda mudança na hierarquia, saída do painel e atributos observados relacionados à configuração do link. Salva `link-editor.xml`, `link-editor.png`, `link-editor.json` e `summary.json` em `artifacts/story-link-<timestamp>/`. Mesmo se a próxima tela não for reconhecida, tenta preservar `link-editor` e também `error.xml/.png/.json`.
 

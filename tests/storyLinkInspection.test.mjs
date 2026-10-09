@@ -12,16 +12,21 @@ function fixture(descriptions, { transition = true } = {}) {
   const items = descriptions.map(description => ({
     isDisplayed: async () => panel,
     isEnabled: async () => true,
+    getText: async () => '',
     getAttribute: async name => name === 'content-desc' ? description : STICKER_ITEM_ID,
     waitForExist: async () => {},
     waitForDisplayed: async () => assert.equal(panel, true),
     click: async () => { assert.equal(description, 'Link Sticker'); clicks.push(description); if (transition) panel = false; },
   }));
   const session = {
-    $: async selector => ({ isExisting: async () => panel && [resourceIdSelector(STICKER_ITEM_ID), '~Link Sticker'].includes(selector), isDisplayed: async () => panel }),
+    $: async selector => {
+      assert.notEqual(selector, resourceIdSelector(STICKER_ITEM_ID), 'StrictSelectorError: ID compartilhado exige coleção');
+      return { isExisting: async () => false, isDisplayed: async () => false };
+    },
     $$: async selector => {
       if (!panel) return [];
       if (selector === resourceIdSelector(STICKER_ITEM_ID)) return items;
+      if (selector === '~Link Sticker') return [{ isDisplayed: async () => panel }];
       assert.equal(selector, LINK_ITEM_SELECTOR);
       const matches = [];
       for (const item of items) if (await item.getAttribute('content-desc') === 'Link Sticker') matches.push(item);
@@ -85,4 +90,12 @@ test('DRY_RUN diferente de true impede qualquer clique', async () => {
   try { await assert.rejects(clickExactLinkSticker(mock.session), /DRY_RUN=true/); }
   finally { process.env.DRY_RUN = 'true'; }
   assert.deepEqual(mock.clicks, []);
+});
+
+
+test('17 itens compartilhados selecionam apenas LINK no meio da coleção sem seleção estrita', async () => {
+  const descriptions = Array.from({ length: 17 }, (_, index) => index === 9 ? 'Link Sticker' : `Sticker ${index}`);
+  const mock = fixture(descriptions);
+  await clickExactLinkSticker(mock.session);
+  assert.deepEqual(mock.clicks, ['Link Sticker']);
 });
