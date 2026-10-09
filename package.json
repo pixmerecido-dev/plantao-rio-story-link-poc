@@ -15,10 +15,12 @@
     "appium": "appium",
     "smoke:instagram": "tsx src/instagram/smokeTest.ts",
     "smoke:story-image": "tsx src/instagram/storyImageSmokeTest.ts",
-    "diagnose:instagram": "tsx src/instagram/diagnoseInstagram.ts"
+    "diagnose:instagram": "tsx src/instagram/diagnoseInstagram.ts",
+    "inspect:instagram": "tsx src/instagram/inspectInstagram.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
+    "fast-xml-parser": "^5.11.2",
     "webdriverio": "^10.0.2"
   },
   "devDependencies": {

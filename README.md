@@ -122,3 +122,23 @@ O script apresenta os seis passos e exige que o marcador do editor passe de ause
 Em caso de configuração ausente, seletor inválido, ambíguo ou falha de navegação, o teste salva a hierarquia da etapa e retorna código 1. Com a configuração vazia do exemplo ele deliberadamente para, sem inventar seletores. A sessão Appium é encerrada em `finally` usando `noReset=true` e `shouldTerminateApp=false`, sem comando para fechar o Instagram, apagar mídia ou alterar login. O editor deve permanecer aberto; esse comportamento ainda precisa ser confirmado na instalação local.
 
 No cloud foram executados apenas typecheck e build, sem conexão a Appium/ADB. A abertura do fluxo, seleção da miniatura e identificação do editor não foram validadas no Instagram real. Não considere o teste de integração aprovado até preencher os seletores e executar no Windows.
+
+## Inspecionar os elementos reais do Instagram
+
+No Windows, com Appium e `emulator-5554` disponíveis:
+
+```powershell
+npm ci
+npm run inspect:instagram
+```
+
+Este comando não depende de `story-selectors.local.json`. Ele abre/ativa `com.instagram.android` preservando os dados e o login, aguarda a confirmação do package ativo e captura a hierarquia atual via Appium. Salva:
+
+- `artifacts/instagram-page-source.xml`: page source completo, sem modificações.
+- `artifacts/instagram-elements.json`: lista de elementos com pelo menos um atributo não vazio entre `text`, `content-desc`, `resource-id` e `class`. Cada objeto inclui os quatro campos; atributos ausentes aparecem como strings vazias.
+
+Os elementos também são listados no terminal, sem inventar resource-ids ou transformar atributos em seletores presumidos. Os arquivos fixos são substituídos a cada execução bem-sucedida. Em caso de erro, o comando retorna código 1; não considere relatórios anteriores como uma captura nova. XML é validado antes da extração, sem aceitar DTD ou declarações de entidades.
+
+A tela capturada é a que aparece após ativar o Instagram: o comando não navega para Story nem clica em controles. Para coletar outra tela sem ativar o aplicativo novamente, navegue manualmente e use o já existente `npm run diagnose:instagram`.
+
+A sessão Appium é encerrada com as mesmas capabilities de preservação (`noReset=true`, `shouldTerminateApp=false`). Não há publicação, logout, limpeza de dados ou alteração de `DRY_RUN`. Relatórios e saída do terminal podem conter dados pessoais; `artifacts/` permanece ignorado pelo Git. A execução real deve ocorrer no Windows, não no Codex Cloud.
