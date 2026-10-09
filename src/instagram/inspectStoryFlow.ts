@@ -1,116 +1,115 @@
 import 'dotenv/config';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { createInterface } from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
 import { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements } from './inspectElements.js';
-import { observedCreationControls, storyOptionObserved } from './storyFlowInspection.js';
+import { HOME_CREATE_DESCRIPTION, HOME_CREATE_SELECTORS, observedCreationOptions } from './storyFlowInspection.js';
 
 const driver = new InstagramDriver();
 const directory = resolve('artifacts', `story-flow-${Date.now()}`);
-const clicks: { selector: string; observedElement: unknown }[] = [];
-let reached = 'não iniciado';
 let connected = false;
-let input: ReturnType<typeof createInterface> | undefined;
-let lastStep = 0;
+let reached = 'não iniciado';
+let clickedSelector: string | undefined;
+const foundOptions: { element: unknown; selector: string | null; exactStory: boolean }[] = [];
 
-async function capture(step: number, label: string) {
+async function capture(base: string) {
   const session = driver.getSession();
   const source = await session.getPageSource();
-  const base = `instagram-step-${String(step).padStart(2, '0')}-${label}`;
-  // Preserva o XML mesmo se a extração falhar.
   await writeFile(join(directory, `${base}.xml`), source, 'utf8');
+  await session.saveScreenshot(join(directory, `${base}.png`));
   const elements = extractInstagramElements(source);
   await writeFile(join(directory, `${base}.json`), `${JSON.stringify(elements, null, 2)}\n`, 'utf8');
-  await session.saveScreenshot(join(directory, `${base}.png`));
-  lastStep = step;
-  console.log(`Captura: ${base} (${elements.length} elementos).`);
-  return elements;
+  console.log(`Captura salva: ${base}.xml / .png / .json`);
+  return { source, elements };
 }
 
 try {
   if (process.env.DRY_RUN !== 'true') throw new Error('Este diagnóstico exige DRY_RUN=true; não altera a variável.');
-  if (!stdin.isTTY || !stdout.isTTY) throw new Error('Execute em um terminal interativo local no Windows.');
   await mkdir(directory, { recursive: true });
-  console.log('Conectando ao Appium e abrindo Instagram sem alterar dados/login.');
   await driver.checkAppium();
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
-  input = createInterface({ input: stdin, output: stdout });
-  let elements = await capture(1, 'home');
-  reached = 'tela atual após ativar Instagram (não classificada)';
-
-  for (let step = 2; step <= 4; step++) {
-    if (storyOptionObserved(elements)) {
-      reached = 'opção Story/Stories observada na hierarquia';
-      console.log(`${reached}. Parando sem clicar na opção ou selecionar mídia.`);
-      break;
+  const session = driver.getSession();
+  console.log('Aguardando botão de criação observado na Home.');
+  let homeButton: Awaited<ReturnType<typeof session.$>> | undefined;
+  for (const selector of HOME_CREATE_SELECTORS) {
+    let available = false;
+    try {
+      await session.waitUntil(async () => {
+        const matches = await session.$$(selector);
+        if (matches.length > 1) throw new Error(`Botão da Home ambíguo: ${selector}`);
+        const candidate = matches[0];
+        if (!candidate || !(await candidate.isDisplayed()) || !(await candidate.isEnabled())) return false;
+        // O ID pode ser reutilizado em outra tela: exige a descrição e classe observadas.
+        if (await candidate.getAttribute('content-desc') !== HOME_CREATE_DESCRIPTION ||
+            await candidate.getAttribute('class') !== 'android.widget.Button') return false;
+        homeButton = candidate;
+        available = true;
+        return true;
+      }, { timeout: 15_000, interval: 500, timeoutMsg: `Home indisponível pelo seletor ${selector}` });
+    } catch (error: unknown) {
+      if (selector === HOME_CREATE_SELECTORS[1]) throw error;
+      console.log('Resource-id indisponível ou inseguro; tentando a descrição observada.');
     }
-    const state = (await input.question('A tela atual já é o seletor de mídia do Story? [s/N] (s encerra sem clicar): ')).trim().toLowerCase();
-    if (state === 's') {
-      reached = 'seletor de mídia do Story, confirmado pelo operador';
-      break;
-    }
-    const controls = observedCreationControls(elements);
-    if (controls.length === 0) {
-      reached = 'tela capturada sem controle de criação reconhecido; requer análise dos artefatos';
-      console.log('Nenhum controle seguro reconhecido. Nenhum seletor será inventado.');
-      break;
-    }
-    controls.forEach((control, index) => console.log(`${index + 1}. ${JSON.stringify(control.element)}\n   ${control.selector}`));
-    const choice = (await input.question('Escolha o número do controle de ENTRADA de criação observado, ou Enter para parar: ')).trim();
-    if (!choice) break;
-    if (!/^\d+$/.test(choice)) throw new Error('Escolha inválida; nenhum clique realizado.');
-    const control = controls[Number(choice) - 1];
-    if (!control) throw new Error('Número fora da lista; nenhum clique realizado.');
-    const confirmation = (await input.question('Confira a tela: este controle apenas ABRE criação, sem selecionar mídia/publicar? Digite ABRIR para clicar: ')).trim();
-    if (confirmation !== 'ABRIR') break;
-    // Reconsulta a tela: nunca clica usando apenas um seletor de captura antiga.
-    const freshElements = extractInstagramElements(await driver.getSession().getPageSource());
-    if (storyOptionObserved(freshElements)) {
-      elements = await capture(step, 'story-option');
-      reached = 'opção Story/Stories observada antes do clique; clique cancelado';
-      break;
-    }
-    const stillPresent = observedCreationControls(freshElements).some(candidate =>
-      candidate.selector === control.selector && JSON.stringify(candidate.element) === JSON.stringify(control.element));
-    if (!stillPresent) throw new Error('A interface mudou; controle escolhido não está mais na hierarquia.');
-    const matches = await driver.getSession().$$(control.selector);
-    if (matches.length !== 1) throw new Error(`Seletor ambíguo ou ausente (${matches.length} resultados); clique cancelado.`);
-    const target = matches[0]!;
-    if (!(await target.isDisplayed()) || !(await target.isEnabled())) throw new Error('Controle não está visível/habilitado.');
-    if (await driver.getSession().getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
-    console.log(`Clicando somente no controle observado: ${control.selector}`);
-    await target.click();
-    clicks.push({ selector: control.selector, observedElement: control.element });
-    await driver.getSession().pause(1_500);
-    elements = await capture(step, 'create');
-    reached = `tela após ${clicks.length} clique(s) de entrada de criação; não classificada`;
-    if (storyOptionObserved(elements)) {
-      reached = 'opção Story/Stories observada na hierarquia';
-      break;
-    }
-    if (step === 4) {
-      const finalState = (await input.question('A última tela é o seletor de mídia do Story? [s/N]: ')).trim().toLowerCase();
-      if (finalState === 's') reached = 'seletor de mídia do Story, confirmado pelo operador';
-    }
+    if (available) { clickedSelector = selector; break; }
   }
-  console.log(`Parado em: ${reached}. Nenhuma mídia selecionada.`);
+  if (!homeButton || !clickedSelector) throw new Error('Botão de criação da Home não encontrado de forma inequívoca.');
+  const home = await capture('step-01-home');
+  if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
+  // Revalida o alvo imediatamente antes do único clique permitido.
+  if (!(await homeButton.isDisplayed()) || !(await homeButton.isEnabled()) ||
+      await homeButton.getAttribute('content-desc') !== HOME_CREATE_DESCRIPTION) {
+    throw new Error('Botão mudou antes do clique; operação cancelada.');
+  }
+  console.log(`Abrindo criação pelo seletor real: ${clickedSelector}`);
+  await homeButton.click();
+  reached = 'botão de criação clicado; próxima tela ainda não confirmada';
+  let transitionError: unknown;
+  try {
+    await session.waitUntil(async () => await session.getPageSource() !== home.source, {
+      timeout: 15_000, interval: 500, timeoutMsg: 'Hierarquia não mudou após clicar no botão de criação.',
+    });
+    // Curta espera de animação antes da captura imediata da tela seguinte.
+    await session.pause(500);
+  } catch (error: unknown) { transitionError = error; }
+  const creation = await capture('step-02-create');
+  if (transitionError) throw transitionError;
+  if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('A próxima tela não pertence ao Instagram.');
+  reached = 'tela após abertura de criação capturada';
+  for (const option of observedCreationOptions(creation.elements)) {
+    let uniqueSelector: string | null = null;
+    for (const selector of option.selectors) {
+      const matches = await session.$$(selector);
+      if (matches.length === 1 && await matches[0]!.isDisplayed()) {
+        uniqueSelector = selector;
+        break;
+      }
+    }
+    foundOptions.push({ element: option.element, selector: uniqueSelector, exactStory: option.exactStory });
+    console.log(`Opção observada: ${JSON.stringify(option.element)}`);
+    console.log(`Seletor: ${uniqueSelector ?? 'nenhum seletor único e visível; opção ambígua ou oculta'}`);
+  }
+  const stories = foundOptions.filter(option => option.exactStory && option.selector !== null);
+  if (stories.length === 1) {
+    reached = 'opção Story inequívoca e visível encontrada; nenhum clique na opção';
+    console.log(`Story: ${stories[0]!.selector}`);
+  } else {
+    console.log(`Story ainda não identificado de forma inequívoca (${stories.length} opções únicas visíveis). Revise step-02-create.`);
+  }
+  console.log(`Parado: ${reached}. Não selecionou imagem nem publicou.`);
 } catch (error: unknown) {
-  console.error('Falha no diagnóstico interativo:', error);
+  console.error('Falha no diagnóstico da criação:', error);
   process.exitCode = 1;
   if (connected) {
-    try { await capture(lastStep + 1, 'error'); }
-    catch (captureError: unknown) { console.error('Falha ao capturar tela do erro:', captureError); }
+    try { await capture('error'); }
+    catch (captureError: unknown) { console.error('Falha na captura de erro:', captureError); }
   }
 } finally {
-  input?.close();
   if (connected) {
     try {
-      await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ reached, clicks, lastStep }, null, 2)}\n`, 'utf8');
-      console.log(`Artefatos locais: ${directory} (podem conter dados pessoais; ignorados pelo Git).`);
+      await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ reached, clickedSelector, foundOptions }, null, 2)}\n`, 'utf8');
+      console.log(`Artefatos: ${directory} (podem conter dados pessoais; ignorados pelo Git).`);
     } catch (error: unknown) { console.error('Falha ao salvar resumo:', error); process.exitCode = 1; }
   }
   try { await driver.disconnect(); }

@@ -143,20 +143,22 @@ A tela capturada é a que aparece após ativar o Instagram: o comando não naveg
 
 A sessão Appium é encerrada com as mesmas capabilities de preservação (`noReset=true`, `shouldTerminateApp=false`). Não há publicação, logout, limpeza de dados ou alteração de `DRY_RUN`. Relatórios e saída do terminal podem conter dados pessoais; `artifacts/` permanece ignorado pelo Git. A execução real deve ocorrer no Windows, não no Codex Cloud.
 
-## Diagnóstico interativo da entrada de Story
+## Inspecionar o menu de criação pelo botão real da Home
 
-No terminal Windows com Appium, emulador e `DRY_RUN=true`:
+No Windows com Appium, `emulator-5554`, Instagram autenticado e `DRY_RUN=true`:
 
 ```powershell
 npm run inspect:story-flow
 ```
 
-Não depende de `story-selectors.local.json`. Abre Instagram e usa somente atributos da hierarquia capturada ao vivo. A cada tela lista controles cujos textos/descrições observados correspondem a rótulos de entrada de criação reconhecidos em português/inglês. Esses rótulos servem como filtro; IDs não são presumidos. O seletor é derivado do elemento observado, priorizando `resource-id`, depois `content-desc` e texto exato, sem XPath ou coordenadas.
+O comando não depende de `story-selectors.local.json` nem de perguntas interativas. Ativa o Instagram e aguarda até 15 segundos pelo resource-id observado localmente `com.instagram.android:id/action_bar_left_button`. Se não estiver disponível, aguarda até mais 15 segundos pelo accessibility id `Create a post, story, reel or live video.`. Antes de clicar, exige um resultado único, visível, habilitado, com essa descrição e classe `android.widget.Button`; isso evita usar o mesmo ID em outra tela.
 
-Confira a tela, escolha um número e confirme com `ABRIR`. Apenas confirme um controle que entre em criação: nunca o botão de envio de um Story já editado. Se o aplicativo estiver em uma tela inesperada, pressione Enter para parar. O script revalida a presença do elemento em uma nova hierarquia e exige exatamente um resultado visível e habilitado antes de clicar. Não navega automaticamente por seletores desconhecidos.
+Realiza apenas um clique: o botão de criação da Home. Aguarda mudança na hierarquia e captura a nova tela sem navegar além dela. Em `artifacts/story-flow-<timestamp>/`, salva:
 
-Cada clique produz nova captura XML, JSON de atributos e screenshot. As execuções ficam separadas em `artifacts/story-flow-<timestamp>/`, por exemplo `instagram-step-01-home.xml`, `instagram-step-02-create.xml` e seus arquivos JSON/PNG. O nome `home` indica a captura inicial após ativar o aplicativo, sem afirmar que a tela inicial foi reconhecida. O `summary.json` registra seletores efetivamente clicados e o ponto de parada.
+- `step-01-home.xml`, `.png` e `.json`;
+- `step-02-create.xml`, `.png` e `.json`;
+- `summary.json`, com o seletor da Home, as opções encontradas e a situação final.
 
-O fluxo para assim que o texto/descrição exato Story ou Stories aparece, sem clicar nessa opção. Também permite ao operador confirmar que já está no seletor de mídia e parar. Há um limite de três cliques; controles desconhecidos ou ambíguos interrompem o diagnóstico. A presença de Story na hierarquia indica apenas que a opção foi observada, não que o editor abriu. Se nenhum controle seguro for reconhecido, analise os artefatos reais antes de ampliar o filtro.
+Analisa textos/descrições observados contendo Story, Post, Reel ou Live. Lista os atributos reais e procura um seletor único e visível, priorizando resource-id, accessibility id e texto exato. Não presume IDs de opções, não usa XPath ou coordenadas. Story só é declarado inequívoco quando há uma única opção com rótulo exato Story/Stories e seletor único visível. Mesmo nesse caso, não clica na opção e encerra a inspeção. Se não houver opção inequívoca, registra a captura para análise sem afirmar que chegou ao seletor de mídia.
 
-Não seleciona imagem, abre stickers, insere URL ou publica. Não apaga mídia nem altera login ou `DRY_RUN`. A sessão Appium é encerrada sem comando de fechamento do Instagram. Artefatos podem conter dados pessoais e continuam fora do Git. A execução real e os seletores dependem do Windows local; nenhum resultado de navegação é presumido a partir dos testes offline.
+Não seleciona imagem, abre stickers, insere URL, compartilha ou publica. `DRY_RUN` não é alterado. A sessão Appium é encerrada com `noReset=true` e `shouldTerminateApp=false`, preservando dados e login. Em falhas, salva também `error.xml`, `.png` e `.json` quando possível. Os artefatos ficam ignorados pelo Git e podem conter dados pessoais. A descoberta de opções reais depende da execução no Windows; o cloud valida somente o código.
