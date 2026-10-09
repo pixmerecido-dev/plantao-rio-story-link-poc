@@ -96,7 +96,7 @@ Busca somente `com.instagram.android:id/gallery_grid_item_thumbnail` dentro da g
 
 Não há cliques por coordenadas ou XPath. A posição/tamanho dinâmica é consultada somente para excluir miniaturas fora da janela. Não há mais seleção ou confirmação manual neste fluxo.
 
-A confirmação desta etapa é a galeria deixar de estar visível enquanto Instagram continua em primeiro plano. Ainda não há resource-id específico do editor confirmado: esse critério não comprova sozinho a identidade visual da imagem nem distingue todas as telas possíveis. As capturas permitem conferir o resultado localmente antes da próxima etapa.
+A confirmação desta etapa exige que a galeria deixe de estar visível, Instagram continue em primeiro plano e um marcador real do editor apareça: `asset_button`, descrição `Stickers` ou `your_story_share_shortcut_button`. Isso confirma a tela; a identidade da imagem continua dependendo da premissa de ordem em Recents. As capturas permitem conferir o resultado localmente.
 
 Salva `gallery.xml`, `.png`, `.json`, depois `editor.xml`, `editor.png`, `editor.json` e `summary.json` em `artifacts/story-image-<timestamp>/`. Erros geram `error.xml`, `error.png`, `error.json` quando houver sessão Appium disponível. Os logs seguem os sete passos, e o resumo documenta o critério de seleção e confirmação.
 
@@ -144,4 +144,22 @@ Aguarda `STATE_CREATE` e confirma `cam_dest_story` existente e visível. Não cl
 
 `DRY_RUN` não é alterado. A sessão Appium é encerrada com `shouldTerminateApp=false`, sem apagar dados, mídia ou alterar login. Os artefatos continuam ignorados pelo Git e podem conter dados pessoais. A validação de navegação real depende do Windows local; testes offline validam apenas as transições e ações esperadas.
 
-Para validar as transições sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs tests/storyMediaInspection.test.mjs tests/storyGallery.test.mjs`. Esses testes simulam os três estados, não substituem o teste local no Instagram.
+Para validar as transições sem Appium, execute `npm run build` e `node --test tests/instagramState.test.mjs tests/storyMediaInspection.test.mjs tests/storyGallery.test.mjs tests/storyStickers.test.mjs`. Esses testes simulam os três estados, não substituem o teste local no Instagram.
+
+## Abrir e inspecionar o painel de stickers (sem clicar em LINK)
+
+No Windows, com Appium, emulador, Instagram autenticado e `DRY_RUN=true`:
+
+```powershell
+npm run smoke:story-stickers
+```
+
+Reutiliza o rascunho se o editor já estiver aberto. Caso contrário, usa o fluxo de imagem validado: a foto da POC deve continuar sendo a mais recente em Recents e estar em `/sdcard/Pictures/PlantaoRio/`. As capturas dessa preparação ficam na subpasta `image-flow/`. `npm run smoke:story-image` continua parando no editor, sem abrir stickers.
+
+Confirma o editor por pelo menos um marcador visível: resource-id `asset_button`, accessibility id `Stickers` ou `com.instagram.android:id/your_story_share_shortcut_button`. O marcador de compartilhamento é somente consultado, nunca clicado. Localiza Stickers primeiro por `asset_button`, com fallback pela descrição `Stickers`. Exige seletor único, botão visível/habilitado/clicável e a descrição confirmada antes de um único clique.
+
+Aguarda que uma nova opção relacionada a stickers, ausente na captura anterior, apareça visível no Instagram. Não basta uma mudança genérica no XML. Salva `stickers.xml`, `stickers.png`, `stickers.json` e `summary.json` em `artifacts/story-stickers-<timestamp>/`, além da captura anterior `editor-before-stickers`. Filtra atributos observados relacionados a Link, Location, Mention, GIF, Poll, Music e Hashtag. Registra `text`, `content-desc`, `resource-id` e `class`; somente rótulo exato Link/LINK é reportado como LINK encontrado. Os seletores derivados são apresentados para diagnóstico, sem afirmar que cada um é único.
+
+Nenhum seletor do painel foi inventado. Não clica em LINK, insere URL, aciona Your story, compartilha ou publica. Não usa XPath nem coordenadas. Se LINK não aparecer na captura, informa isso e para sem procurar por cliques ou rolagem. Erros geram `error.xml`, `error.png` e `error.json` quando possível. A sessão Appium é encerrada sem terminar o Instagram, alterar login ou apagar dados; `DRY_RUN` permanece inalterado.
+
+Os IDs e rótulos reais das opções do painel só serão conhecidos após execução local. Envie a captura revisada de dados pessoais para identificar o próximo seletor. O cloud executa typecheck, build e testes offline, sem acessar o emulador.

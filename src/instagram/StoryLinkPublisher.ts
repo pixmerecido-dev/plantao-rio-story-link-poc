@@ -8,6 +8,7 @@ import { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 import { detectInstagramState, reachStoryCreation, resourceIdSelector, STORY_ID, waitForClickable } from './storyFlowInspection.js';
 import { selectFirstVisiblePhoto, waitForGallery, waitForGalleryExit } from './storyGallery.js';
+import { isStoryEditor } from './storyStickers.js';
 
 const runFile = promisify(execFile);
 
@@ -69,11 +70,14 @@ export class StoryLinkPublisher {
     const selected = await selectFirstVisiblePhoto(session);
     console.log('[4] Imagem de teste selecionada');
     await waitForGalleryExit(session);
-    console.log('[5] Editor do Story aberto (galeria fechada, Instagram em primeiro plano)');
+    await session.waitUntil(async () => await isStoryEditor(session), {
+      timeout: 20_000, interval: 500, timeoutMsg: 'Nenhum marcador confirmado do editor apareceu após selecionar a foto.',
+    });
+    console.log('[5] Editor do Story aberto (galeria fechada e marcador real visível)');
     await saveScreenArtifacts(this.driver, directory, 'editor');
     console.log('[6] Captura do editor salva');
     await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ filename, storyId: STORY_ID, ...selected,
-      editorConfirmation: 'galeria não visível e Instagram em primeiro plano; sem ID específico de editor confirmado', published: false }, null, 2)}\n`, 'utf8');
+      editorConfirmation: 'galeria não visível, Instagram em primeiro plano e marcador asset_button/Stickers/your_story_share_shortcut_button visível', published: false }, null, 2)}\n`, 'utf8');
     console.log('[7] Pronto para próxima etapa');
     // Pare aqui: nenhum outro clique após selecionar uma única miniatura.
   }
