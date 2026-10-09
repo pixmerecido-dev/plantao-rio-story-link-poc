@@ -142,3 +142,21 @@ Os elementos também são listados no terminal, sem inventar resource-ids ou tra
 A tela capturada é a que aparece após ativar o Instagram: o comando não navega para Story nem clica em controles. Para coletar outra tela sem ativar o aplicativo novamente, navegue manualmente e use o já existente `npm run diagnose:instagram`.
 
 A sessão Appium é encerrada com as mesmas capabilities de preservação (`noReset=true`, `shouldTerminateApp=false`). Não há publicação, logout, limpeza de dados ou alteração de `DRY_RUN`. Relatórios e saída do terminal podem conter dados pessoais; `artifacts/` permanece ignorado pelo Git. A execução real deve ocorrer no Windows, não no Codex Cloud.
+
+## Diagnóstico interativo da entrada de Story
+
+No terminal Windows com Appium, emulador e `DRY_RUN=true`:
+
+```powershell
+npm run inspect:story-flow
+```
+
+Não depende de `story-selectors.local.json`. Abre Instagram e usa somente atributos da hierarquia capturada ao vivo. A cada tela lista controles cujos textos/descrições observados correspondem a rótulos de entrada de criação reconhecidos em português/inglês. Esses rótulos servem como filtro; IDs não são presumidos. O seletor é derivado do elemento observado, priorizando `resource-id`, depois `content-desc` e texto exato, sem XPath ou coordenadas.
+
+Confira a tela, escolha um número e confirme com `ABRIR`. Apenas confirme um controle que entre em criação: nunca o botão de envio de um Story já editado. Se o aplicativo estiver em uma tela inesperada, pressione Enter para parar. O script revalida a presença do elemento em uma nova hierarquia e exige exatamente um resultado visível e habilitado antes de clicar. Não navega automaticamente por seletores desconhecidos.
+
+Cada clique produz nova captura XML, JSON de atributos e screenshot. As execuções ficam separadas em `artifacts/story-flow-<timestamp>/`, por exemplo `instagram-step-01-home.xml`, `instagram-step-02-create.xml` e seus arquivos JSON/PNG. O nome `home` indica a captura inicial após ativar o aplicativo, sem afirmar que a tela inicial foi reconhecida. O `summary.json` registra seletores efetivamente clicados e o ponto de parada.
+
+O fluxo para assim que o texto/descrição exato Story ou Stories aparece, sem clicar nessa opção. Também permite ao operador confirmar que já está no seletor de mídia e parar. Há um limite de três cliques; controles desconhecidos ou ambíguos interrompem o diagnóstico. A presença de Story na hierarquia indica apenas que a opção foi observada, não que o editor abriu. Se nenhum controle seguro for reconhecido, analise os artefatos reais antes de ampliar o filtro.
+
+Não seleciona imagem, abre stickers, insere URL ou publica. Não apaga mídia nem altera login ou `DRY_RUN`. A sessão Appium é encerrada sem comando de fechamento do Instagram. Artefatos podem conter dados pessoais e continuam fora do Git. A execução real e os seletores dependem do Windows local; nenhum resultado de navegação é presumido a partir dos testes offline.
