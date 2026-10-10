@@ -16,7 +16,7 @@ try {
   connected = true;
   const result = await publishStoryOnce(driver, directory);
   await writeFile(join(directory, 'summary.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  if (result.outcome !== 'provável sucesso' || result.captureError) process.exitCode = 2;
+  if (result.outcome !== 'SUCCESS' || result.captureErrors.length > 0) process.exitCode = 2;
 } catch (error: unknown) {
   console.error('Publicação interrompida; não execute novamente sem conferir o Story localmente:', error);
   process.exitCode = 1;

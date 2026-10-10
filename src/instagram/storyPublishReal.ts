@@ -1,6 +1,9 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
-import { extractInstagramElements } from './inspectElements.js';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { verifyPublishedStory, draftFingerprint, type PublicationObservation } from './verifyPublishedStory.js';
 import { detectInstagramState, isEditorState, resourceIdSelector, SHARE_SHORTCUT_ID, type InstagramState } from './instagramStateMachine.js';
 
 type Driver = Pick<InstagramDriver, 'getSession'>;
@@ -12,14 +15,16 @@ export function assertRealPublishAllowed(): void {
   }
 }
 
-export type PublicationResult = {
+export type PublicationResult = ReturnType<typeof verifyPublishedStory> & {
+  job_id: string; media_id: string; media_identity_source: string;
   clickAttempted: boolean; clickCount: number; state: InstagramState;
-  outcome: 'provável sucesso' | 'inconclusivo' | 'falha'; evidence: string[];
-  clickError?: string; observationError?: string; captureError?: string; retryAllowed: boolean;
+  clickError?: string; observationErrors: string[]; captureErrors: string[];
+  observations: { elapsed_ms: number; state: InstagramState; source_hash: string; error?: string }[];
 };
+type ObservationClock = { now: () => number; pause: (milliseconds: number) => Promise<void> };
 
 /** Publica somente o rascunho final existente. Não prepara ou altera o Story. */
-export async function publishStoryOnce(driver: Driver, directory: string): Promise<PublicationResult> {
+export async function publishStoryOnce(driver: Driver, directory: string, clock?: ObservationClock): Promise<PublicationResult> {
   assertRealPublishAllowed();
   const session = driver.getSession();
   const validate = async () => {
@@ -42,36 +47,58 @@ export async function publishStoryOnce(driver: Driver, directory: string): Promi
   // Revalidar após a captura, sem usar um handle antigo ou uma autorização revogada.
   const button = await validate();
   assertRealPublishAllowed();
+  const job_id = randomUUID();
+  const media_id = `${job_id}:draft-sha256:${draftFingerprint(beforeSource)}`;
+  await mkdir(directory, { recursive: true });
+  const pending = { job_id, media_id, media_identity_source: 'editor-hierarchy-snapshot', status: 'PUBLISH_PENDING_CONFIRMATION', clickAttempted: true, retryAllowed: false };
+  // Persistir antes do envio: mesmo uma interrupção conserva tarefa e proibição de retry.
+  await writeFile(join(directory, 'pending-publication.json'), `${JSON.stringify(pending, null, 2)}\n`, 'utf8');
+  assertRealPublishAllowed();
   let state: InstagramState = 'STATE_EDITOR_WITH_LINK';
   let clickError: string | undefined;
-  let observationError: string | undefined;
-  let evidence: string[] = [];
-  let outcome: 'provável sucesso' | 'inconclusivo' | 'falha' = 'inconclusivo';
+  const observationErrors: string[] = [], captureErrors: string[] = [];
+  const observations: PublicationObservation[] = [];
+  const timing = clock ?? { now: Date.now, pause: (milliseconds: number) => session.pause(milliseconds) };
+  const started = timing.now();
+  console.log(`[PUBLISH] job_id=${job_id} media_id=${media_id}`);
   console.log('[PUBLISH] clicando uma única vez');
-  // Uma única chamada. Falha no transporte também pode ter ocorrido após publicar.
-  // Comando direto evita reconsulta/retry automático do wrapper em elemento stale.
   try { await session.elementClick(button.elementId); }
   catch (error: unknown) { clickError = String(error); console.error('[PUBLISH] erro no clique; não repetir:', error); }
-  console.log('[PUBLISH] aguardando resultado');
-  try {
-    await session.waitUntil(async () => {
-      if (await session.getCurrentPackage() !== 'com.instagram.android') return false;
+  console.log('[PUBLISH] PUBLISH_PENDING_CONFIRMATION');
+  console.log('[PUBLISH] aguardando evidências por até 15 segundos');
+  const observe = async () => {
+    let source = '';
+    try {
+      if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
       state = await detectInstagramState(session);
-      const source = await session.getPageSource();
-      evidence = extractInstagramElements(source).flatMap(element => [element.text, element['content-desc']])
-        .filter(label => /story shared|shared to your story|upload failed|couldn't share|failed to upload|story publicado|não foi possível (compartilhar|enviar)|enviando|uploading/i.test(label));
-      if (evidence.some(label => /failed|couldn't|não foi possível/i.test(label))) { outcome = 'falha'; return true; }
-      if (state === 'STATE_HOME' || evidence.some(label => /story shared|shared to your story|story publicado/i.test(label))) {
-        outcome = 'provável sucesso'; return true;
-      }
-      // Saída do editor é observável, mas sozinha não prova envio concluído.
-      return !isEditorState(state) && source !== beforeSource;
-    }, { timeout: 15_000, interval: 500, timeoutMsg: 'Resultado após publicação inconclusivo; não repetir o clique.' });
-  } catch (error: unknown) { observationError = String(error); console.error('[PUBLISH] observação inconclusiva; não repetir:', error); }
-  let captureError: string | undefined;
-  try { await saveScreenArtifacts(driver, directory, 'post-publish'); }
-  catch (error: unknown) { captureError = String(error); console.error('Falha na captura pós-publicação:', error); }
+      source = await session.getPageSource();
+      observations.push({ elapsed_ms: timing.now() - started, state, source });
+    } catch (error: unknown) {
+      const message = String(error); observationErrors.push(message);
+      observations.push({ elapsed_ms: timing.now() - started, state, source, error: message });
+    }
+  };
+  const capture = async (name: string) => {
+    try {
+      const { source } = await saveScreenArtifacts(driver, directory, name);
+      observations.push({ elapsed_ms: timing.now() - started, state, source });
+    } catch (error: unknown) { captureErrors.push(`${name}: ${String(error)}`); }
+  };
+  await observe();
+  await capture('immediate-post-click');
+  for (const seconds of [5, 10, 15]) {
+    while (timing.now() - started < seconds * 1_000) {
+      await timing.pause(Math.min(500, seconds * 1_000 - (timing.now() - started)));
+      await observe(); // coleta também mensagens transitórias entre screenshots.
+    }
+    await capture(`post-publish-${seconds}s`);
+  }
+  const verification = verifyPublishedStory(beforeSource, observations);
   console.log(`[PUBLISH] estado após clique: ${state}`);
-  console.log(`[PUBLISH] ${outcome}`);
-  return { clickAttempted: true, clickCount: 1, state, outcome, evidence, clickError, observationError, captureError, retryAllowed: false };
+  console.log(`[PUBLISH] ${verification.outcome}`);
+  const result: PublicationResult = { ...verification, job_id, media_id, media_identity_source: 'editor-hierarchy-snapshot',
+    clickAttempted: true, clickCount: 1, state, clickError, observationErrors, captureErrors,
+    observations: observations.map(({ source, ...rest }) => ({ ...rest, source_hash: draftFingerprint(source) })) };
+  await writeFile(join(directory, 'publication-observations.json'), `${JSON.stringify(observations, null, 2)}\n`, 'utf8');
+  return result;
 }
