@@ -37,7 +37,7 @@ function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, 
     $$: async selector => selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
     getCurrentPackage: async () => 'com.instagram.android',
     execute: async (name, { elementId }) => { assert.equal(name, 'mobile: clickGesture'); assert.equal(elementId, `id-${STICKER_ITEM_ID}`); actions.push(['gesture', elementId]); state = 'STATE_LINK_EDITOR'; },
-    getPageSource: async () => `<hierarchy>${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
+    getPageSource: async () => `<hierarchy>${state === 'STATE_HOME' ? '<node text="For you"/><node resource-id="com.instagram.android:id/reel_empty_badge" content-desc="Add to story"/>' : state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK' ? '<node resource-id="asset_button"/>' : ''}${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
     saveScreenshot: async path => writeFile(path, 'fixture'),
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
   };
@@ -56,7 +56,7 @@ test('novo job usa URL e CTA exatos e termina no editor com link sem publicar', 
 for (const initial of ['STATE_EDITOR', 'STATE_EDITOR_WITH_LINK', 'STATE_LINK_EDITOR', 'STATE_STICKERS']) {
   test(`falha de normalização impede reutilização de tarefa anterior em ${initial}`, async () => {
     const mock = fixture({ initial });
-    await assert.rejects(prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-existing-'), mock.prepareImage), /normalização falhou/);
+    await assert.rejects(prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-existing-'), mock.prepareImage), /normalização falhou|STATE_UNKNOWN/);
     assert.equal(mock.imageCalls(), 0); assert.deepEqual(mock.actions, []);
   });
 }

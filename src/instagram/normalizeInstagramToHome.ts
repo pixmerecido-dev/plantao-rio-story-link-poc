@@ -1,8 +1,9 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
-import { detectInstagramState, resourceIdSelector, type InstagramState } from './instagramStateMachine.js';
+import { detectInstagramState, resourceIdSelector, LINK_STICKER_HOLDER_ID, SHARE_SHORTCUT_ID, STICKERS_ID, GALLERY_ID, STORY_ID, HOME_CREATE_ID, HOME_STORY_ID, type InstagramState } from './instagramStateMachine.js';
 import { saveScreenArtifacts } from './diagnostics.js';
+import { LINK_EDITOR_MARKERS } from './linkEditorSelectors.js';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 
@@ -10,9 +11,27 @@ type Driver = Pick<InstagramDriver, 'getSession'>;
 type ResetState = InstagramState | 'STATE_SHARE' | 'STATE_DRAFT_DIALOG' | 'STATE_UNSAFE_DIALOG';
 const intermediate = new Set<ResetState>(['STATE_EDITOR', 'STATE_EDITOR_WITH_LINK', 'STATE_STICKERS', 'STATE_LINK_EDITOR', 'STATE_GALLERY', 'STATE_CREATE', 'STATE_SHARE']);
 
+function visibleResetElements(source: string): InstagramElement[] {
+  extractInstagramElements(source); // Validação segura antes do segundo parse.
+  const elements: InstagramElement[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const child of value) visit(child); return; }
+    if (!value || typeof value !== 'object') return;
+    const node = value as Record<string, unknown>;
+    if (node['@_displayed'] === 'false') return;
+    if (Object.keys(node).some(key => key.startsWith('@_'))) {
+      const read = (name: string) => String(node[`@_${name}`] ?? '');
+      elements.push({ text: read('text'), 'content-desc': read('content-desc'), 'resource-id': read('resource-id'), class: read('class') });
+    }
+    for (const [key, child] of Object.entries(node)) if (!key.startsWith('@_')) visit(child);
+  };
+  visit(new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseAttributeValue: false, trimValues: false }).parse(source));
+  return elements;
+}
+
 /** Só considera controles e texto do mesmo diálogo observado no XML. */
 export function inspectResetScreen(source: string) {
-  const elements = extractInstagramElements(source);
+  const elements = visibleResetElements(source);
   const dialogScopes: InstagramElement[][] = [];
   function visit(value: unknown): void {
     if (Array.isArray(value)) { for (const child of value) visit(child); return; }
@@ -61,20 +80,61 @@ export function inspectResetScreen(source: string) {
   return { state: undefined, evidence: elements };
 }
 
+/** Home é inferida somente do snapshot; tabs e containers não contam como sinais. */
+export function analyzeResetHierarchy(source: string) {
+  const elements = visibleResetElements(source);
+  const hasId = (id: string) => elements.some(element => element['resource-id'] === id);
+  const label = (value: string) => elements.some(element => element.text.trim() === value || element['content-desc'].trim() === value);
+  const buttonLabel = (value: string) => elements.some(element =>
+    element['content-desc'].trim() === value || /Button$/.test(element.class) && element.text.trim() === value);
+  const homeSignals: string[] = [];
+  if (label('For you')) homeSignals.push('home-feed-header');
+  if (hasId(HOME_CREATE_ID) || hasId(HOME_STORY_ID) && buttonLabel('Add to story')) homeSignals.push('home-create-or-own-story-shortcut');
+  if (elements.some(element => element['resource-id'] === 'com.instagram.android:id/username' && element.text === 'Your story') && hasId(HOME_STORY_ID)) homeSignals.push('own-story-tray');
+  const blockers: string[] = [];
+  for (const id of [...LINK_EDITOR_MARKERS, STICKERS_ID, LINK_STICKER_HOLDER_ID, SHARE_SHORTCUT_ID, GALLERY_ID, STORY_ID,
+    'com.instagram.android:id/post_capture_button_share_container', 'com.instagram.android:id/story_share_controls_action_bar']) {
+    if (hasId(id)) blockers.push(id);
+  }
+  for (const name of ['Your story', 'Close Friends', 'Share to', 'Next', 'Aa', 'Stickers', 'Music', 'Link Sticker']) {
+    if (buttonLabel(name) || ['Close Friends', 'Aa', 'Stickers', 'Music'].includes(name) && label(name)) blockers.push(`editor/share:${name}`);
+  }
+  for (const element of elements) {
+    if (/story.*(?:editor|controls)|post_capture|editor_overlay/i.test(element['resource-id']) && !blockers.includes(element['resource-id'])) blockers.push(element['resource-id']);
+  }
+  let state: ResetState = 'STATE_UNKNOWN';
+  if (LINK_EDITOR_MARKERS.some(hasId)) state = 'STATE_LINK_EDITOR';
+  else if (hasId('com.instagram.android:id/sticker_sheet_redesign_item') || buttonLabel('Link Sticker')) state = 'STATE_STICKERS';
+  else if ((buttonLabel('Your story') || hasId(SHARE_SHORTCUT_ID)) && label('Close Friends') || buttonLabel('Share to') && label('Close Friends')) state = 'STATE_SHARE';
+  else if (hasId(STICKERS_ID) || hasId(SHARE_SHORTCUT_ID) || hasId(LINK_STICKER_HOLDER_ID) || blockers.some(value => value.startsWith('editor/share:') || /story.*(?:editor|controls)|post_capture|editor_overlay/i.test(value)) || hasId('com.instagram.android:id/post_capture_button_share_container') || hasId('com.instagram.android:id/story_share_controls_action_bar')) state = 'STATE_EDITOR';
+  else if (hasId(GALLERY_ID)) state = 'STATE_GALLERY';
+  else if (hasId(STORY_ID)) state = 'STATE_CREATE';
+  else if (homeSignals.length >= 2 && blockers.length === 0) state = 'STATE_HOME';
+  return { state, homeSignals, blockers };
+}
+
 /** Entrada reutilizável de jobs novos; no máximo cinco Back e cinco descartes. */
 export async function normalizeInstagramToHome(driver: Driver, directory: string): Promise<void> {
   const session = driver.getSession();
-  let backs = 0, discards = 0;
+  let backs = 0, discards = 0, captures = 0;
   const trace: { state: ResetState; action: string }[] = [];
   const read = async () => {
     if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano; normalização cancelada.');
-    const screen = inspectResetScreen(await session.getPageSource());
-    const base = screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_UNSAFE_DIALOG' ? undefined : await detectInstagramState(session);
-    const state: ResetState = screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_UNSAFE_DIALOG'
-      ? screen.state : base && base !== 'STATE_UNKNOWN' ? base : screen.state ?? 'STATE_UNKNOWN';
-    return { ...screen, state };
+    const source = await session.getPageSource();
+    const screen = inspectResetScreen(source);
+    const snapshot = analyzeResetHierarchy(source);
+    let state: ResetState = snapshot.state;
+    if (screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_UNSAFE_DIALOG') state = screen.state;
+    else if (snapshot.state !== 'STATE_LINK_EDITOR' && snapshot.state !== 'STATE_STICKERS' && screen.state === 'STATE_SHARE') state = 'STATE_SHARE';
+    else if (state === 'STATE_EDITOR') {
+      // Preserva os critérios existentes do link; Home não usa probes genéricos.
+      const base = await detectInstagramState(session);
+      if (base === 'STATE_EDITOR_WITH_LINK') state = base;
+    }
+    return { ...screen, ...snapshot, state };
   };
   try {
+    await saveScreenArtifacts(driver, directory, 'reset-before');
     let screen = await read();
     console.log(`[RESET] estado inicial: ${screen.state}`);
     console.log('[RESET] normalizando Instagram para Home');
@@ -82,12 +142,19 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
     for (let step = 0; step < 11; step++) {
       if (screen.state === 'STATE_HOME') {
         console.log('[RESET] STATE_HOME confirmado');
-        await session.pause(500);
+        await session.pause(2_000);
+        await saveScreenArtifacts(driver, directory, 'reset-home-confirmation');
         screen = await read();
-        if (screen.state !== 'STATE_HOME') throw new Error('Home não estabilizou; job cancelado.');
+        if (screen.state !== 'STATE_HOME') {
+          trace.push({ state: screen.state, action: 'home-not-stable-continue' });
+          continue;
+        }
+        await saveScreenArtifacts(driver, directory, 'reset-final');
+        const final = await read();
+        if (final.state !== 'STATE_HOME') { screen = final; continue; }
         console.log('[RESET] Home estabilizada');
-        await saveScreenArtifacts(driver, directory, 'normalized-home');
-        await writeFile(join(directory, 'normalization.json'), `${JSON.stringify({ backs, discards, trace, finalState: screen.state }, null, 2)}\n`, 'utf8');
+        console.log('[RESET] estado visual final confirmado: STATE_HOME');
+        await writeFile(join(directory, 'normalization.json'), `${JSON.stringify({ backs, discards, trace, finalState: screen.state, homeSignals: final.homeSignals, blockers: final.blockers }, null, 2)}\n`, 'utf8');
         return;
       }
       if (screen.state === 'STATE_DRAFT_DIALOG') {
@@ -104,7 +171,8 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
           await session.elementClick(control.elementId);
         }
         trace.push({ state: screen.state, action: 'discard-local-draft' });
-        await session.pause(300);
+        await session.pause(500);
+        await saveScreenArtifacts(driver, directory, `reset-step-${++captures}`);
         screen = await read();
         if (screen.state === 'STATE_DRAFT_DIALOG') throw new Error('Descarte não fechou o diálogo; não repetir clique.');
         console.log('[RESET] draft descartado');
@@ -113,15 +181,23 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
         if (backs >= 5) throw new Error('Limite de cinco retornos atingido; job cancelado.');
         console.log(`[RESET] voltando de ${screen.state}`);
         trace.push({ state: screen.state, action: 'back' }); backs++;
+        const previousState = screen.state;
         await session.back();
-        await session.pause(300);
+        for (let probe = 0; probe < 4; probe++) {
+          await session.pause(500);
+          screen = await read();
+          if (screen.state !== previousState) break;
+        }
+        await saveScreenArtifacts(driver, directory, `reset-step-${++captures}`);
         screen = await read();
       }
     }
     throw new Error('Limite total da normalização atingido; job cancelado.');
   } catch (error: unknown) {
-    try { await saveScreenArtifacts(driver, directory, 'normalize-error'); }
-    catch (captureError: unknown) { console.error('Falha na captura da normalização:', captureError); }
+    for (const name of ['reset-final', 'normalize-error']) {
+      try { await saveScreenArtifacts(driver, directory, name); }
+      catch (captureError: unknown) { console.error(`Falha na captura ${name}:`, captureError); }
+    }
     throw error;
   }
 }
