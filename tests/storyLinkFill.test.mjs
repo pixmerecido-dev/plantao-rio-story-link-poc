@@ -78,7 +78,7 @@ test('URL aceita parâmetro, variável e padrão sem normalizar valor', () => {
 });
 
 // Executa os navegadores reais sobre uma sessão simulada para todos os estados.
-function endToEndFixture(initialState, { modern = false, destination = 'STATE_GALLERY', description = 'Add to story', separate = false, buttonClass = 'android.widget.Button', enabled = true, clickable = 'true' } = {}) {
+function endToEndFixture(initialState, { modern = false, destination = 'STATE_GALLERY', description = 'Add to story', separate = false, buttonClass = 'android.widget.Button', enabled = true, clickable = 'true', allowDone = false, doneReturns = 'STATE_EDITOR' } = {}) {
   let state = initialState;
   let value = 'previous';
   const actions = [];
@@ -100,7 +100,10 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
     getAttribute: async name => name === 'class' ? buttonClass : name === 'clickable' ? clickable : name === 'content-desc' ? resource === 'com.instagram.android:id/reel_empty_badge' ? description : resource === 'accessible-add' ? 'Add to story' : 'Stickers' : resource,
     waitForExist: async () => assert.ok(visible(resource)), waitForDisplayed: async () => assert.ok(visible(resource)),
     click: async () => {
-      assert.notEqual(resource, LINK_DONE_ID, 'Done nunca pode ser clicado');
+      if (resource === LINK_DONE_ID) {
+        assert.ok(allowDone, 'Done nunca pode ser clicado no fluxo fill');
+        actions.push('Done'); state = doneReturns; return;
+      }
       assert.notEqual(resource, 'com.instagram.android:id/reel_empty_badge', 'badge visual nunca pode ser clicado');
       const next = { 'com.instagram.android:id/reel_empty_badge': destination, 'accessible-add': destination, 'com.instagram.android:id/action_bar_left_button': 'STATE_CREATE', 'com.instagram.android:id/cam_dest_story': 'STATE_GALLERY', asset_button: 'STATE_STICKERS' }[resource];
       assert.ok(next, 'controle inesperado não pode ser clicado');
@@ -218,4 +221,27 @@ test('badge ausente não impede clicar no botão acessível confirmado', async (
   };
   await fillStoryLinkUrl(mock.session, DEFAULT_STORY_URL, () => navigateToStoryEditor(mock.session, mock.selectImage));
   assert.equal(mock.actions[0], 'accessible-add');
+});
+
+const { applyStoryLink, inspectAppliedLink } = await import('../dist/instagram/storyLinkApply.js');
+for (const state of ['STATE_HOME', 'STATE_CREATE', 'STATE_GALLERY', 'STATE_EDITOR', 'STATE_STICKERS', 'STATE_LINK_EDITOR']) {
+  test(`aplica link partindo de ${state} com DRY_RUN=true e clica somente um Done`, async () => {
+    const mock = endToEndFixture(state, { allowDone: true });
+    assert.equal(await applyStoryLink(mock.session, DEFAULT_STORY_URL,
+      () => navigateToStoryEditor(mock.session, mock.selectImage)), DEFAULT_STORY_URL);
+    assert.equal(mock.actions.filter(action => action === 'Done').length, 1);
+    assert.equal(mock.actions.at(-1), 'Done');
+  });
+}
+test('timeout após Done não repete clique nem tenta publicar', async () => {
+  const mock = endToEndFixture('STATE_LINK_EDITOR', { allowDone: true, doneReturns: 'STATE_LINK_EDITOR' });
+  await assert.rejects(applyStoryLink(mock.session, DEFAULT_STORY_URL), /timeout/);
+  assert.deepEqual(mock.actions, ['clear', ['type', DEFAULT_STORY_URL], 'Done']);
+});
+test('evidência de link usa atributos reais e não confunde botão Stickers com sticker aplicado', () => {
+  const button = { text: '', 'content-desc': 'Stickers', 'resource-id': 'asset_button', class: 'android.widget.Button' };
+  assert.equal(inspectAppliedLink([button], DEFAULT_STORY_URL).confirmedByHierarchy, false);
+  const link = { ...button, 'content-desc': 'Link sticker plantaorio.com.br' };
+  assert.equal(inspectAppliedLink([button, link], DEFAULT_STORY_URL).confirmedByHierarchy, true);
+  assert.equal(inspectAppliedLink([], DEFAULT_STORY_URL).confirmedByHierarchy, false);
 });

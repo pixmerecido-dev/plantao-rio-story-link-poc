@@ -218,3 +218,17 @@ Validação offline: `npm run typecheck`, `npm run build`, `node --test tests/*.
 
 
 Os testes do preenchimento cobrem início em cada um dos seis estados conhecidos, usando os navegadores de produção sobre uma sessão simulada, além de Unknown, divergência de valor e DRY_RUN desabilitado. O sucesso só é registrado depois de conferir a URL e salvar `link-filled.xml/.png/.json`. A execução integrada real deve ser feita no Windows; o cloud não acessa Appium/ADB.
+
+### Confirmar o Link Sticker sem publicar
+
+Execute no Windows local:
+
+```powershell
+$env:DRY_RUN="true"
+$env:STORY_URL="https://plantaorio.com.br/"
+npm run smoke:story-link-apply
+```
+
+O script reutiliza o fluxo completo dos estados conhecidos, preenche a URL e verifica o valor exato antes de clicar uma única vez em `com.instagram.android:id/link_sticker_list_done_button`. Nesta etapa, `DRY_RUN=true` permite confirmar o sticker; a publicação continua bloqueada. Não clica em Your story, Share, Close Friends, Next ou Publish. O script anterior `smoke:story-link-fill` continua parando antes de Done.
+
+Após confirmar novamente `STATE_EDITOR`, salva `story-with-link.xml`, `story-with-link.png` e `story-with-link.json` em `artifacts/story-link-apply-<timestamp>/`. Lista atributos reais relacionados ao link, sticker e domínio da URL informada. O botão Stickers e termos genéricos não são tratados como prova de aplicação. Sem evidência textual na hierarquia, informa apenas que retornou ao editor e pede conferência do screenshot; não publica. O resumo distingue confirmação do editor e evidência do sticker. Erros salvam `error.xml`, `error.png` e `error.json`, sem repetir o clique em Done. Encerra apenas a sessão Appium preservando o aplicativo, login e dados.

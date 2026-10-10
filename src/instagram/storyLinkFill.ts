@@ -17,7 +17,7 @@ export function resolveStoryUrl(argument?: string, environmentUrl?: string): str
   return value;
 }
 
-export async function fillStoryLinkUrl(session: Session, url: string, prepareStoryEditor?: () => Promise<void>): Promise<string> {
+export async function fillStoryLinkUrl(session: Session, url: string, prepareStoryEditor?: () => Promise<void>, options: { confirmationFollows?: boolean } = {}): Promise<string> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Preencher link exige DRY_RUN=true.');
   resolveStoryUrl(url);
   await navigateToLinkEditor(session, prepareStoryEditor);
@@ -40,7 +40,7 @@ export async function fillStoryLinkUrl(session: Session, url: string, prepareSto
   await done.waitForExist(WAIT);
   await done.waitForDisplayed(WAIT);
   console.log(`[5] Done encontrado: ${LINK_DONE_ID}`);
-  console.log('[6] DRY_RUN: Done NÃO clicado');
+  if (!options.confirmationFollows) console.log('[6] DRY_RUN: Done NÃO clicado');
   // Done é somente observado: não há click, submit ou tecla Enter.
   return actual;
 }
