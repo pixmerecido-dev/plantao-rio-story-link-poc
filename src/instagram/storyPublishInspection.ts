@@ -1,7 +1,7 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
 import { detectInstagramState, resourceIdSelector, SHARE_SHORTCUT_ID, isEditorState, type InstagramState } from './instagramStateMachine.js';
-import { applyStoryLink, inspectAppliedLink } from './storyLinkApply.js';
+import { applyStoryLink } from './storyLinkApply.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 export { LINK_STICKER_HOLDER_ID } from './instagramStateMachine.js';
@@ -22,26 +22,17 @@ export function assertPublishAllowed(value = process.env.ALLOW_PUBLISH): void {
 
 export async function ensureEditorWithLink(session: Session, url: string, prepareStoryEditor: () => Promise<void>) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Inspeção exige DRY_RUN=true.');
-  let confirmedBy = 'validated-flow';
   const state = await detectPublishReadyState(session);
   console.log(`[STATE] ${state}`);
   if (state === 'STATE_EDITOR_WITH_LINK') {
     if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
     console.log('[LINK] Link Sticker já aplicado; pulando reaplicação');
     console.log('[NAV] seguindo diretamente para publish-ready');
-    console.log('[1] Editor final com holder de sticker e controles de publicação confirmado; nenhuma navegação');
-    return { state, confirmedBy: 'editor-sticker-holder-and-publish-controls', url } as const;
+    return { state, confirmedBy: 'visible-canvas-link-evidence', url } as const;
   }
-  const elements = state === 'STATE_EDITOR' ? extractInstagramElements(await session.getPageSource()) : [];
-  const host = new URL(url).hostname.toLowerCase();
-  const visibleUrl = inspectAppliedLink(elements, url).evidence.some(element =>
-    [element.text, element['content-desc']].some(label => label.includes(url) || label.toLowerCase().includes(host)));
-  if (state === 'STATE_EDITOR' && visibleUrl) confirmedBy = 'editor-hierarchy-domain';
-  else await applyStoryLink(session, url, prepareStoryEditor);
-  if (!isEditorState(await detectInstagramState(session))) throw new Error('Editor final não confirmado.');
-  console.log('[1] Story com LINK confirmado');
-  // Estado composto local: não interfere na detecção rápida usada pelos outros fluxos.
-  return { state: 'STATE_EDITOR_WITH_LINK', confirmedBy, url } as const;
+  await applyStoryLink(session, url, prepareStoryEditor);
+  if (await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw new Error('Link aplicado não pôde ser confirmado no canvas; revise os artefatos, sem publicar.');
+  return { state: 'STATE_EDITOR_WITH_LINK', confirmedBy: 'visible-canvas-link-evidence', url } as const;
 }
 
 export type PublishControl = InstagramElement & { selector: string; clickable: string | null; enabled: boolean; displayed: boolean };

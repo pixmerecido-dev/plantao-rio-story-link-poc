@@ -30,7 +30,8 @@
     "smoke:open-story": "tsx src/instagram/openStorySmokeTest.ts",
     "smoke:open-story-with-media": "tsx src/instagram/openStoryWithMediaSmokeTest.ts",
     "smoke:media-index": "tsx src/instagram/mediaIndexSmokeTest.ts",
-    "compare:story-open": "tsx src/instagram/compareStoryOpen.ts"
+    "compare:story-open": "tsx src/instagram/compareStoryOpen.ts",
+    "smoke:inspect-editor-link-state": "tsx src/instagram/inspectEditorLinkStateSmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",

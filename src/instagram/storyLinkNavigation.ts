@@ -1,3 +1,4 @@
+import { assertNoUnconfirmedAppliedSticker } from './appliedLinkSticker.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { detectInstagramState, navigateFromHome, waitForState } from './instagramStateMachine.js';
 import { ensureStickersPanel } from './storyStickers.js';
@@ -23,6 +24,7 @@ export async function navigateToLinkEditor(session: Session, prepareStoryEditor?
     throw new Error('STATE_EDITOR_WITH_LINK: use smoke:story-publish-ready; nenhuma reaplicação permitida.');
   }
   if (state === 'STATE_EDITOR') {
+    await assertNoUnconfirmedAppliedSticker(session);
     console.log('[NAV] EDITOR -> STICKERS');
     await ensureStickersPanel(session);
     await waitForState(session, 'STATE_STICKERS');

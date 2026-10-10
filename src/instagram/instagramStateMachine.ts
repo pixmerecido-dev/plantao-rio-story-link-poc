@@ -1,3 +1,4 @@
+import { hasAppliedLinkSticker } from './appliedLinkSticker.js';
 import { openAddStory } from './addStoryInteraction.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { LINK_EDITOR_MARKERS } from './linkEditorSelectors.js';
@@ -43,17 +44,7 @@ export async function detectInstagramState(session: Session): Promise<InstagramS
         const element = await session.$(selector);
         if (await element.isExisting() && await element.isDisplayed()) {
           if (probe.state === 'STATE_EDITOR') {
-            let holderVisible = false;
-            for (const holder of await session.$$(resourceIdSelector(LINK_STICKER_HOLDER_ID))) {
-              if (await holder.isExisting() && await holder.isDisplayed()) { holderVisible = true; break; }
-            }
-            if (holderVisible) {
-              for (const controlSelector of [resourceIdSelector(SHARE_SHORTCUT_ID), '~Your story', 'android=new UiSelector().text("Your story")']) {
-                for (const control of await session.$$(controlSelector)) {
-                  if (await control.isExisting() && await control.isDisplayed()) return 'STATE_EDITOR_WITH_LINK';
-                }
-              }
-            }
+            if (await hasAppliedLinkSticker({ getSession: () => session })) return 'STATE_EDITOR_WITH_LINK';
           }
           return probe.state;
         }

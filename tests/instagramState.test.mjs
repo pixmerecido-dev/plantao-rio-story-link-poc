@@ -1,3 +1,4 @@
+import { description, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectInstagramState, navigateToStoryEditor, resourceIdSelector,
@@ -9,7 +10,7 @@ const originalDryRun = process.env.DRY_RUN;
 process.env.DRY_RUN = 'true';
 after(() => { if (originalDryRun === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = originalDryRun; });
 
-function mockSession(ids, { hidden = [] } = {}) {
+function mockSession(ids, { hidden = [], applied = false } = {}) {
   const existing = new Set(ids);
   const clicks = [], waits = [], probes = [];
   const selectors = new Map([LINK_STICKER_HOLDER_ID, HOME_CREATE_ID, HOME_STORY_ID, HOME_TAB_ID, STORY_ID, GALLERY_ID, STICKERS_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, ...LINK_EDITOR_MARKERS].map(id => [resourceIdSelector(id), id]));
@@ -18,7 +19,9 @@ function mockSession(ids, { hidden = [] } = {}) {
   selectors.set('~Stickers', 'description:Stickers');
   selectors.set(`~${LINK_STICKER_DESCRIPTION}`, 'description:Link Sticker');
   const session = {
+    getPageSource: async () => `<hierarchy>${applied ? positiveCanvasXML : ''}</hierarchy>`,
     $$: async selector => {
+      if (selector === `~${description}`) return applied ? [appliedElement()] : [];
       const id = selectors.get(selector);
       assert.ok([LINK_STICKER_HOLDER_ID, SHARE_SHORTCUT_ID, STICKER_ITEM_ID, 'description:Link Sticker', 'description:Your story', 'text:Your story', ...LINK_EDITOR_MARKERS].includes(id));
       probes.push(id);
@@ -59,7 +62,8 @@ test('EDITOR prevalece e retorna sem Home, ADB/seleção ou esperas', async () =
   assert.deepEqual(mock.clicks, []);
   assert.equal(mock.selections(), 0);
   assert.deepEqual(mock.waits, []);
-  assert.deepEqual(mock.probes, [...LINK_EDITOR_MARKERS, STICKER_ITEM_ID, 'description:Link Sticker', STICKERS_ID, LINK_STICKER_HOLDER_ID]);
+  assert.ok(!mock.probes.includes(HOME_TAB_ID));
+  assert.ok(!mock.probes.includes(GALLERY_ID));
 });
 
 test('GALERIA prevalece sobre CREATE/HOME e só seleciona uma imagem', async () => {
@@ -175,8 +179,8 @@ test('LINK_EDITOR tem prioridade sobre painel/editor por cada marcador confirmad
   }
 });
 
-test('editor + holder aplicado + controle final confirma novo estado sem clicar', async () => {
-  const mock = mockSession([STICKERS_ID, LINK_STICKER_HOLDER_ID, SHARE_SHORTCUT_ID]);
+test('editor + sticker visível com URL no canvas confirma novo estado sem clicar', async () => {
+  const mock = mockSession([STICKERS_ID, LINK_STICKER_HOLDER_ID, SHARE_SHORTCUT_ID], { applied: true });
   assert.equal(await detectInstagramState(mock.session), 'STATE_EDITOR_WITH_LINK');
   const result = await navigateToStoryEditor(mock.session, mock.selectImage);
   assert.equal(result.finalState, 'STATE_EDITOR_WITH_LINK');

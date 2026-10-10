@@ -1,3 +1,4 @@
+import { description, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -26,12 +27,13 @@ function fixture({ target = 'STATE_HOME', clickable = 'true', enabled = true, am
     $: async selector => ({ isExisting: async () => (!clicked || target === 'STATE_EDITOR_WITH_LINK') && selector === resourceIdSelector('asset_button') || clicked && target === 'STATE_HOME' && selector === resourceIdSelector('com.instagram.android:id/feed_tab'), isDisplayed: async () => true }),
     $$: async selector => {
       if (clicked && target !== 'STATE_EDITOR_WITH_LINK') return [];
+      if (selector === `~${description}`) return holder ? [appliedElement()] : [];
       if (selector === resourceIdSelector(LINK_STICKER_HOLDER_ID)) return holder ? [visible] : [];
       if (selector === resourceIdSelector(SHARE_SHORTCUT_ID)) return ambiguous ? [button, button] : [button];
       return [];
     },
     getCurrentPackage: async () => 'com.instagram.android',
-    getPageSource: async () => `<hierarchy><node text="${clicked ? failure ? 'Failed to upload' : 'after' : 'before'}"/></hierarchy>`,
+    getPageSource: async () => `<hierarchy>${holder && (!clicked || target === 'STATE_EDITOR_WITH_LINK') ? positiveCanvasXML : ''}<node text="${clicked ? failure ? 'Failed to upload' : 'after' : 'before'}"/></hierarchy>`,
     saveScreenshot: async path => { await writeFile(path, 'fixture'); if (revoke && path.includes('pre-publish')) process.env.CONFIRM_REAL_PUBLISH = 'NO'; },
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
   };

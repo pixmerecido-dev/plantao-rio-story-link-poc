@@ -1,3 +1,4 @@
+import { description, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertPublishAllowed, ensureEditorWithLink, inspectPublishControls, detectPublishReadyState, LINK_STICKER_HOLDER_ID } from '../dist/instagram/storyPublishInspection.js';
@@ -10,7 +11,7 @@ after(() => {
   if (originalDry === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = originalDry;
   if (originalAllow === undefined) delete process.env.ALLOW_PUBLISH; else process.env.ALLOW_PUBLISH = originalAllow;
 });
-function fixture({ fallback = false, ambiguous = false, holder = false, holderDisplayed = true, publication = true, domain = true, editor = true } = {}) {
+function fixture({ fallback = false, ambiguous = false, holder = false, holderDisplayed = true, publication = true, domain = true, editor = true, applied = false } = {}) {
   const queries = [];
   const button = (label, id = '') => ({
     isExisting: async () => true, isDisplayed: async () => true, isEnabled: async () => true,
@@ -22,6 +23,7 @@ function fixture({ fallback = false, ambiguous = false, holder = false, holderDi
     $: async selector => ({ isExisting: async () => editor && selector === resourceIdSelector('asset_button'), isDisplayed: async () => true }),
     $$: async selector => {
       queries.push(selector);
+      if (selector === `~${description}`) return applied ? [appliedElement()] : [];
       if (selector === resourceIdSelector(LINK_STICKER_HOLDER_ID)) return holder ? [{ ...button('', LINK_STICKER_HOLDER_ID), isDisplayed: async () => holderDisplayed }] : [];
       if (selector === resourceIdSelector(SHARE_SHORTCUT_ID) && !fallback && publication) {
         const item = button('Your story', SHARE_SHORTCUT_ID);
@@ -33,7 +35,7 @@ function fixture({ fallback = false, ambiguous = false, holder = false, holderDi
       return [];
     },
     getCurrentPackage: async () => 'com.instagram.android',
-    getPageSource: async () => domain ? '<hierarchy><node text="plantaorio.com.br" content-desc="Link sticker" class="android.view.View"/><node text="Next" class="android.widget.Button"/></hierarchy>' : '<hierarchy/>',
+    getPageSource: async () => applied ? `<hierarchy>${positiveCanvasXML}</hierarchy>` : domain ? '<hierarchy><node text="plantaorio.com.br" content-desc="Link sticker" class="android.view.View"/><node text="Next" class="android.widget.Button"/></hierarchy>' : '<hierarchy/>',
   };
   return { session, queries };
 }
@@ -67,24 +69,24 @@ test('Your story ambíguo aborta sem escolher índice', async () => {
   await assert.rejects(inspectPublishControls(fixture({ ambiguous: true }).session), /ambíguo/);
 });
 test('editor final com domínio e link evidenciado é retomado sem duplicar sticker', async () => {
-  const mock = fixture();
+  const mock = fixture({ applied: true });
   const result = await ensureEditorWithLink(mock.session, 'https://plantaorio.com.br/', () => { throw new Error('não selecionar imagem'); });
   assert.equal(result.state, 'STATE_EDITOR_WITH_LINK');
-  assert.equal(result.confirmedBy, 'editor-hierarchy-domain');
+  assert.equal(result.confirmedBy, 'visible-canvas-link-evidence');
 });
 
-test('holder real e controles finais retomam editor sem URL no XML e sem qualquer clique', async () => {
-  const mock = fixture({ holder: true, domain: false });
+test('sticker aplicado com evidência positiva retoma editor sem recriar link e sem qualquer clique', async () => {
+  const mock = fixture({ holder: true, domain: false, applied: true });
   const result = await ensureEditorWithLink(mock.session, 'https://plantaorio.com.br/', () => { throw new Error('fluxo de imagem não deve ser chamado'); });
   assert.equal(result.state, 'STATE_EDITOR_WITH_LINK');
-  assert.equal(result.confirmedBy, 'editor-sticker-holder-and-publish-controls');
+  assert.equal(result.confirmedBy, 'visible-canvas-link-evidence');
   const controls = await inspectPublishControls(mock.session);
   assert.equal(controls.published, false);
-  assert.ok(mock.queries.includes(resourceIdSelector(LINK_STICKER_HOLDER_ID)));
+  assert.ok(mock.queries.includes(`~${description}`));
   assert.ok(mock.queries.includes(resourceIdSelector(SHARE_SHORTCUT_ID)));
 });
 test('detecção do editor com link aceita controles por accessibility id', async () => {
-  assert.equal(await detectPublishReadyState(fixture({ holder: true, domain: false, fallback: true }).session), 'STATE_EDITOR_WITH_LINK');
+  assert.equal(await detectPublishReadyState(fixture({ holder: true, domain: false, applied: true, fallback: true }).session), 'STATE_EDITOR_WITH_LINK');
 });
 for (const options of [{ holder: false }, { holder: true, holderDisplayed: false }, { holder: true, publication: false }]) {
   test(`combinação incompleta não confirma editor com link: ${JSON.stringify(options)}`, async () => {
@@ -96,13 +98,13 @@ test('holder e controles sem editor ativo não confirmam estado final', async ()
 });
 
 test('aplicar link no editor final tem sucesso idempotente sem navegar, preencher ou clicar', async () => {
-  const mock = fixture({ holder: true, domain: false });
+  const mock = fixture({ holder: true, domain: false, applied: true });
   assert.equal(await applyStoryLink(mock.session, 'https://example.org/new-url', () => { throw new Error('não preparar imagem'); }), 'https://example.org/new-url');
   // Fakes não oferecem mutações de campo ou cliques de editor: qualquer reentrada falharia.
   assert.equal(await detectPublishReadyState(mock.session), 'STATE_EDITOR_WITH_LINK');
 });
 
 test('fill não entra na navegação de link quando o sticker já está aplicado', async () => {
-  const mock = fixture({ holder: true, domain: false });
+  const mock = fixture({ holder: true, domain: false, applied: true });
   await assert.rejects(fillStoryLinkUrl(mock.session, 'https://plantaorio.com.br/', () => { throw new Error('não preparar'); }), /Link já aplicado/);
 });
