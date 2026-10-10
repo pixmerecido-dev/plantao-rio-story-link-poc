@@ -4,6 +4,7 @@ import { detectInstagramState, resourceIdSelector, waitForClickable, waitForStat
 import { fillStoryLinkUrl } from './storyLinkFill.js';
 import { LINK_CUSTOM_CTA_ID, LINK_URL_ID, LINK_DONE_ID } from './linkEditorSelectors.js';
 import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
+import { normalizeInstagramToHome } from './normalizeInstagramToHome.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 
 type Driver = Pick<InstagramDriver, 'getSession'>;
@@ -23,8 +24,9 @@ export function discoverCustomTextField(elements: InstagramElement[]): string {
 export async function prepareNewStory(driver: Driver, job: StoryJob, directory: string, prepareNewImage: () => Promise<void>) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Preparação exige DRY_RUN=true.');
   const session = driver.getSession();
-  // Não voltar de um rascunho anterior nem reaproveitá-lo silenciosamente.
-  if (await detectInstagramState(session) !== 'STATE_HOME') throw new Error('Novo job exige STATE_HOME; rascunho anterior não será reutilizado.');
+  await normalizeInstagramToHome(driver, directory);
+  if (await detectInstagramState(session) !== 'STATE_HOME') throw new Error('Novo job exige STATE_HOME estabilizado.');
+  console.log('[JOB] iniciando novo Story');
   await prepareNewImage();
   if (await detectInstagramState(session) !== 'STATE_EDITOR') throw new Error('Imagem nova não confirmou editor sem link anterior; job cancelado.');
   await fillStoryLinkUrl(session, job.story_url, undefined, { confirmationFollows: true });

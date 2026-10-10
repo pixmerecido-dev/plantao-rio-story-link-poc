@@ -291,7 +291,7 @@ O contrato futuro `src/config/StoryJob.ts` e o exemplo `assets/story-job.example
 
 ### Preparar novo Story com dados externos (sem publicar)
 
-Na Home do Instagram, com Appium e emulador locais disponíveis, execute no CMD:
+Com Instagram, Appium e emulador locais disponíveis, execute no CMD:
 
 ```cmd
 set DRY_RUN=true
@@ -306,8 +306,19 @@ npm run smoke:story-prepare
 
 `STORY_IMAGE`, `STORY_URL` e `STICKER_TEXT` são obrigatórios, sem conteúdo padrão. Valida arquivo JPEG local, URL HTTP(S) e texto não vazio antes de conectar ao Appium ou abrir Instagram. Preserva exatamente caminho informado, URL e texto, incluindo espaços no texto. Não gera conteúdo, não normaliza URL e não altera imagem. `JOB_ID` é opcional; gera UUID somente para identidade quando ausente. O contrato `StoryJob` inclui job_id, image, story_url, sticker_text, publish_instagram e publish_facebook; este smoke registra os dois destinos como false e não chama publicação, mesmo com travas habilitadas.
 
-Exige começar na Home. Não volta de rascunho anterior nem reutiliza editor já aberto. Envia uma nova cópia da imagem, valida que é a mídia mais recente correspondente ao arquivo fornecido e exige uma seleção nova na galeria Recents antes de aplicar o link. Se a Home retomar diretamente um editor anterior, aborta sem reutilizar esse Story.
+Antes de preparar a tarefa, normaliza o Instagram até Home, voltando de estados residuais conhecidos e descartando somente draft local comprovado. Envia uma nova cópia da imagem, valida que é a mídia mais recente correspondente ao arquivo fornecido e exige uma seleção nova na galeria Recents antes de aplicar o link. Se a Home retomar diretamente um editor anterior, aborta sem reutilizar esse Story.
 
 Após conferir a URL, abre o controle **já observado** `com.instagram.android:id/link_sticker_custom_cta_row`. Salva `link-before-custom-cta.xml/png/json` e `custom-cta.xml/png/json`. O campo personalizado ainda não tem resource-id confirmado no cloud: deriva o seletor apenas da hierarquia local após expandir custom CTA, exigindo exatamente um EditText fora do campo URL e um resource-id ou content-desc observável. Ausência/ambiguidade aborta com diagnóstico, sem inventar seletor. O seletor real escolhido aparece no terminal e em `summary.json`.
 
-Preenche STICKER_TEXT e lê o valor para igualdade exata; revalida que a URL não mudou e só então clica Done uma vez. Exige `STATE_EDITOR_WITH_LINK` e salva `story-prepared.xml/png/json` em `artifacts/story-prepare-<timestamp>/`, além do resumo com dados externos, hash da imagem e selector observado. Campos não verificáveis ou erro salvam `error.xml/png/json` e abortam. Não abre qualquer controle de publicação, preserva login/mídia e mantém o editor final aberto ao encerrar somente a sessão Appium. Cada nova execução deve começar novamente na Home; não reaproveita o Story desta execução.
+Preenche STICKER_TEXT e lê o valor para igualdade exata; revalida que a URL não mudou e só então clica Done uma vez. Exige `STATE_EDITOR_WITH_LINK` e salva `story-prepared.xml/png/json` em `artifacts/story-prepare-<timestamp>/`, além do resumo com dados externos, hash da imagem e selector observado. Campos não verificáveis ou erro salvam `error.xml/png/json` e abortam. Não abre qualquer controle de publicação, preserva login/mídia e mantém o editor final aberto ao encerrar somente a sessão Appium. Cada nova execução normaliza novamente até Home; não reaproveita o Story desta execução.
+
+
+### Normalização obrigatória no início de cada job novo
+
+`normalizeInstagramToHome(driver, directory)` é a entrada reutilizável para tarefas novas. `prepareNewStory()` a executa obrigatoriamente antes de preparar imagem ou link; o smoke valida os parâmetros externos antes de conectar. A futura fila deverá chamar essa mesma preparação para cada job, inclusive jobs com publicação ao final. A publicação isolada de um editor já preparado continua sendo uma etapa posterior do mesmo job; não descarta o rascunho que deve publicar.
+
+Detecta Home, Editor, Editor com Link, Stickers, Link Editor, Galeria, Criação e Share identificável por seus rótulos reais. Executa no máximo cinco comandos Back, sem logout, reset de dados, clear storage/cache, manipulação de conta, coordenadas ou XPath. Chegando à Home, espera 500 ms e confirma novamente; só então registra `[JOB] iniciando novo Story`. Diálogo/tela desconhecidos, saída do Instagram, falta de estabilização ou limite de passos abortam sem começar a tarefa.
+
+Diálogos de descarte são analisados dentro do próprio ramo da hierarquia (classe Dialog ou container dialog/alert observado). Só descarta com evidência explícita de Story/draft local, como Save draft junto a Discard, sem sinais de exclusão de conteúdo publicado. O seletor é derivado do resource-id/content-desc/text realmente presente e exige controle único, visível, enabled e clickable; não usa índices. Revalida o diálogo antes do clique e não repete descarte que não fechou a tela. Diálogos genéricos ou ambíguos abortam e precisam de inspeção local. Nenhum resource-id de descarte foi inventado.
+
+Salva `normalized-home.xml/png/json` e `normalization.json` com o histórico de ações. Diálogos comprovados têm capturas `discard-dialog-<n>.xml/png/json`; falhas salvam `normalize-error.xml/png/json`. Mantém login, sessão e mídia do emulador. Rascunhos locais comprovados podem ser descartados conforme esta regra; Stories publicados não são excluídos.

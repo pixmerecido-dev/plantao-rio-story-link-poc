@@ -31,6 +31,8 @@ function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, 
     },
   });
   const session = {
+    pause: async () => {},
+    back: async () => { throw new Error('normalização falhou sem saída segura simulada'); },
     $: async selector => element(parse(selector)),
     $$: async selector => selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
     getCurrentPackage: async () => 'com.instagram.android',
@@ -52,9 +54,9 @@ test('novo job usa URL e CTA exatos e termina no editor com link sem publicar', 
   assert.equal(mock.actions.filter(action => action[0] === 'click' && action[1] === LINK_DONE_ID).length, 1);
 });
 for (const initial of ['STATE_EDITOR', 'STATE_EDITOR_WITH_LINK', 'STATE_LINK_EDITOR', 'STATE_STICKERS']) {
-  test(`não reutiliza tarefa anterior em ${initial}`, async () => {
+  test(`falha de normalização impede reutilização de tarefa anterior em ${initial}`, async () => {
     const mock = fixture({ initial });
-    await assert.rejects(prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-existing-'), mock.prepareImage), /exige STATE_HOME/);
+    await assert.rejects(prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-existing-'), mock.prepareImage), /normalização falhou/);
     assert.equal(mock.imageCalls(), 0); assert.deepEqual(mock.actions, []);
   });
 }
