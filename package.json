@@ -26,7 +26,8 @@
     "smoke:story-publish-ready": "tsx src/instagram/storyPublishReadySmokeTest.ts",
     "smoke:story-publish-real": "tsx src/instagram/storyPublishRealSmokeTest.ts",
     "inspect:facebook-share-ready": "tsx src/instagram/inspectFacebookShareReady.ts",
-    "smoke:story-prepare": "tsx src/instagram/storyPrepareSmokeTest.ts"
+    "smoke:story-prepare": "tsx src/instagram/storyPrepareSmokeTest.ts",
+    "smoke:open-story": "tsx src/instagram/openStorySmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",

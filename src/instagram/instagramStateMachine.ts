@@ -1,3 +1,4 @@
+import { openAddStory } from './addStoryInteraction.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { LINK_EDITOR_MARKERS } from './linkEditorSelectors.js';
 import { hasStickerPanel } from './stickerCollection.js';
@@ -87,7 +88,7 @@ export async function waitForState(session: Session, expected: InstagramState): 
 }
 
 /** Duas variantes reais da Home; probes rápidos antes de esperar um controle. */
-export async function navigateFromHome(session: Session): Promise<InstagramState> {
+export async function navigateFromHome(session: Session, directory?: string): Promise<InstagramState> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Navegação exige DRY_RUN=true.');
   console.log('[HOME] procurando rota Create tradicional');
   const create = await session.$(resourceIdSelector(HOME_CREATE_ID));
@@ -98,43 +99,7 @@ export async function navigateFromHome(session: Session): Promise<InstagramState
     return 'STATE_CREATE';
   }
   console.log('[HOME] action_bar_left_button ausente');
-  const candidates = await session.$$(`~${HOME_STORY_DESCRIPTION}`);
-  const buttons: Element[] = [];
-  for (const candidate of candidates) {
-    if (await candidate.isExisting() && await candidate.isDisplayed() &&
-        await candidate.getAttribute('class') === 'android.widget.Button' &&
-        await candidate.getAttribute('content-desc') === HOME_STORY_DESCRIPTION) buttons.push(candidate);
-  }
-  // Sem evidência de associação na hierarquia real, não escolher entre botões
-  // duplicados nem usar a mera presença de Your story para atribuir um deles.
-  if (buttons.length !== 1) throw new Error(`Add to story ausente ou ambíguo: ${buttons.length} botões visíveis; associação a Your story não comprovada.`);
-  const [target] = buttons;
-  if (!target) throw new Error('Add to story ausente; clique cancelado.');
-  const clickable = await target.getAttribute('clickable');
-  if (!await target.isEnabled() || (clickable !== null && clickable !== '' && clickable !== 'true')) {
-    throw new Error('Add to story não está habilitado/clicável; clique cancelado.');
-  }
-  if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
-  console.log('[HOME] fallback "Add to story" encontrado: android.widget.Button');
-  await target.click();
-  console.log('[NAV] HOME -> STORY via accessibility id Add to story');
-  await session.pause(300);
-  const observed: { state: InstagramState } = { state: 'STATE_UNKNOWN' };
-  try {
-    await session.waitUntil(async () => {
-      observed.state = await detectInstagramState(session);
-      return observed.state === 'STATE_CREATE' || observed.state === 'STATE_GALLERY' || isEditorState(observed.state);
-    }, { timeout: 6_000, interval: 400, timeoutMsg: 'Nenhuma tela de Story comprovada apareceu após Add to story.' });
-  } catch (error: unknown) {
-    if (observed.state === 'STATE_HOME') {
-      const message = '[HOME] Add to story clicado, mas permaneceu na Home';
-      console.error(message);
-      throw new Error(message, { cause: error });
-    }
-    throw error;
-  }
-  console.log(`[STATE] novo estado detectado: ${observed.state}`);
-  return observed.state;
+  return openAddStory(session, directory);
 }
 
 /** Seleção de mídia é injetada; pode ser reutilizado por imagem e stickers. */
