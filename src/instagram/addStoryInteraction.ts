@@ -7,6 +7,8 @@ import { extractInstagramElements } from './inspectElements.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 import { detectInstagramState, isEditorState, resourceIdSelector, type InstagramState } from './instagramStateMachine.js';
 
+export class AddStoryRouteExhaustedError extends Error {}
+
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Node = Record<string, unknown>;
 const attr = (node: Node, name: string) => String(node[`@_${name}`] ?? '');
@@ -159,6 +161,6 @@ export async function openAddStory(session: Session, directory = resolve('artifa
     center: evidence.center, result: tapResult, error: tapError ? String(tapError) : undefined, attempts: 1 }, null, 2)}\n`, 'utf8');
   state = await wait(4);
   console.log(`[HOME] estado após native tap: ${state}`);
-  if (state === 'STATE_HOME') throw new Error('[HOME] Add to story clicado, mas permaneceu na Home; native tap não será repetido.', { cause: tapError });
+  if (state === 'STATE_HOME') throw new AddStoryRouteExhaustedError('[HOME] Add to story clicado, mas permaneceu na Home; native tap não será repetido.', { cause: tapError });
   return state;
 }

@@ -392,3 +392,29 @@ Com Appium iniciado e Instagram já no editor, execute `npm run smoke:inspect-ed
 Critérios: editor ativo, objeto aplicado no canvas observado (`capture_interactive_drawable_container` ou `post_capture_interactive_contents_container`), bounds dentro do canvas, nó/ancestrais não ocultos e confirmação do elemento vivo com mesmos bounds/descrição. O objeto deve identificar Link Sticker ou expor domínio/URL em texto/descrição. Uma palavra “link”, resource-id, holder vazio, URL fora do objeto, elemento oculto ou stale não bastam. A descrição real `Sticker. Touch and hold to reposition. Use two fingers to rotate or resize.` comprova apenas um sticker genérico; sem identificação do tipo Link, `applied=false` e `unconfirmedAppliedSticker=true`, bloqueando reaplicação automática.
 
 O XML anterior fornecido tem um holder vazio e um objeto aplicado com essa descrição genérica, mas não expõe URL/tipo Link. Por isso ele não permite confirmação inequívoca de Link pela hierarquia, mesmo quando visualmente aplicado. O novo diagnóstico preserva screenshot para revisão. A pasta local `story-prepare-1791661052722/` não está disponível no workspace cloud; o diagnóstico deve ser executado localmente tanto no editor só com imagem quanto após aplicar Link. Os testes positivos modelam uma interface que expõe evidência de Link no objeto aplicado; não representam seletores descobertos no emulador. Não há inferência pelo texto impresso na imagem ou relaxamento de travas de publicação.
+
+### Rota alternativa pelo botão Create/+
+
+`npm run smoke:open-story-via-create` normaliza o Instagram para Home, abre
+Create/+, identifica Story e para na galeria. Exige `DRY_RUN=true`; não seleciona
+imagem, não adiciona stickers e não publica.
+
+No XML real da Home fornecido, o + aparece como um único `android.widget.ImageView`
+clicável, sem descrição ou resource-id próprios, dentro de
+`com.instagram.android:id/action_bar_buttons_container_left`, na barra
+`com.instagram.android:id/main_feed_action_bar`. A rota usa o seletor nativo do
+container combinado com `childSelector` de ImageView clicável, validando unicidade,
+visibilidade, habilitação e atributos atuais. Não usa coordenadas ou XPath.
+
+Após o clique, a rota aceita a galeria ou procura o resource-id já confirmado
+`com.instagram.android:id/cam_dest_story`. Um menu diferente só pode ser utilizado
+quando a hierarquia atual comprovar opções de criação e uma única opção Story
+clicável, com seletor nativo observado. Menu desconhecido ou ambíguo aborta.
+
+`openStoryFromHome()` mantém Add to story como primeira opção quando disponível.
+Somente após esgotar suas tentativas e reconfirmar a Home real executa esta mesma
+rota alternativa. Nenhuma rotina de mídia, normalização, Link ou publicação muda.
+As capturas `create-route-home`, `create-route-after-plus`, `create-route-gallery`
+e `create-route-error`, além de `create-route.json`, ficam na pasta de artifacts da
+execução. A tela real exibida após + e o resultado precisam ser validados no Windows;
+os testes cloud usam sessões simuladas.

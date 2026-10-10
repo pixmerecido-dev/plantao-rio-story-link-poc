@@ -1,3 +1,6 @@
+import { openAddStory, AddStoryRouteExhaustedError } from './addStoryInteraction.js';
+import { openStoryViaCreate } from './storyCreateRoute.js';
+import type { AndroidRunner } from './addStoryAndroidDiagnostics.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { analyzeResetHierarchy } from './normalizeInstagramToHome.js';
 import { navigateFromHome, type InstagramState } from './instagramStateMachine.js';
@@ -6,7 +9,7 @@ import { saveScreenArtifacts } from './diagnostics.js';
 type Driver = Pick<InstagramDriver, 'getSession'>;
 
 /** Entrada única: nenhuma criação se a hierarquia atual não comprovar Home real. */
-export async function openStoryFromHome(driver: Driver, directory: string, options: { afterMediaScan?: boolean } = {}): Promise<InstagramState> {
+export async function openStoryFromHome(driver: Driver, directory: string, options: { afterMediaScan?: boolean; runAdb?: AndroidRunner } = {}): Promise<InstagramState> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Configure DRY_RUN=true.');
   const session = driver.getSession();
   if (options.afterMediaScan) {
@@ -22,7 +25,17 @@ export async function openStoryFromHome(driver: Driver, directory: string, optio
     console.log('[MEDIA] Home estabilizada');
     console.log('[HOME] reacquirindo Add to story após media scan');
   }
-  return navigateFromHome(session, directory);
+  let addAvailable = false;
+  for (const element of await session.$$('~Add to story')) if (await element.isExisting() && await element.isDisplayed()) addAvailable = true;
+  if (!addAvailable) return navigateFromHome(session, directory); // Compatibilidade com a Home antiga.
+  try { return await openAddStory(session, directory, { runAdb: options.runAdb }); }
+  catch (error) {
+    if (!(error instanceof AddStoryRouteExhaustedError)) throw error;
+    if (await session.getCurrentPackage() !== 'com.instagram.android' || analyzeResetHierarchy(await session.getPageSource()).state !== 'STATE_HOME') throw error;
+    console.log('[HOME] rota Add to story falhou');
+    console.log('[HOME] iniciando fallback Create/+');
+    return openStoryViaCreate(driver, directory);
+  }
 }
 
 /** Mesma sequência de injeção/abertura em story-prepare e no smoke isolado. */
