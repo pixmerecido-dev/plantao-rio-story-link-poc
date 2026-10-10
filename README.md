@@ -342,6 +342,29 @@ Nesta variante, tenta um clique normal, depois um descendente visual/clicável i
 
 `smoke:open-story` e `smoke:story-prepare` usam a mesma entrada `openStoryFromHome(driver, directory)`, preservando os seletores e a interação validados. A preparação usa `injectMediaAndOpenStory()` para enviar a imagem antes dessa entrada; a seleção da miniatura só ocorre depois. O smoke isolado com mídia usa exatamente essa mesma sequência.
 
-Após `push` e `MEDIA_SCANNER_SCAN_FILE`, a POC consulta o MediaStore por até 20 probes de 500 ms, exigindo uma linha com `_id` e caminho exato da cópia deste job. O término do broadcast, sozinho, não confirma scan. Erro de consulta ou falta de indexação aborta. Depois aguarda dois segundos, salva `media-home-stabilized.xml/png/json`, reconfirma Home real e adquire novamente `Add to story`. Cada fallback lê nova hierarquia e adquire novo botão; bounds/elementId de tentativas anteriores não são reutilizados.
+Após `push` e `MEDIA_SCANNER_SCAN_FILE`, a POC consulta o MediaStore por até 15 segundos, com intervalo de 500 ms. Exige `_display_name` exato desta tarefa, `relative_path` correspondente a `Pictures/PlantaoRio/` e `_size` igual ao arquivo local quando disponível. Não compara `_data` com `/sdcard`, pois o Android pode canonicalizar o caminho. O término do broadcast, sozinho, não confirma scan. No timeout, solicita um único novo scan (usando o caminho canonicalizado quando disponível) e faz um segundo ciclo de até 15 segundos, sem recopiar. Falta de confirmação ou erro de provider aborta. Depois aguarda dois segundos, salva `media-home-stabilized.xml/png/json`, reconfirma Home real e adquire novamente `Add to story`. Cada fallback lê nova hierarquia e adquire novo botão; bounds/elementId de tentativas anteriores não são reutilizados.
 
 Para reproduzir somente essa diferença no Windows, configure `DRY_RUN=true`, forneça `STORY_IMAGE` (JPEG local) e execute `npm run smoke:open-story-with-media`. Exige Home antes do envio; use o reset isolado primeiro se necessário. Não requer URL/texto de sticker, não seleciona imagem e não publica. Envia para `/sdcard/Pictures/PlantaoRio/`, confirma scan, estabiliza Home e abre criação. Na Home antiga, abre a opção STORY para chegar à galeria. Exige `STATE_GALLERY`, salva `story-gallery.xml/png/json` em `artifacts/open-story-with-media-<timestamp>/` e registra `[OK] Story creation opened after media injection`. Erros salvam `error.xml/png/json`. A rotina de normalização, Link e publicação permanece inalterada.
+
+
+### Indexar somente a mídia
+
+Com o emulador local `emulator-5554` e ADB disponíveis, sem precisar iniciar Appium ou Instagram:
+
+```bat
+set DRY_RUN=true
+set STORY_IMAGE=C:\caminho\imagem.jpg
+npm run smoke:media-index
+```
+
+O comando valida JPEG, copia uma única vez para `/sdcard/Pictures/PlantaoRio/`, solicita `MEDIA_SCANNER_SCAN_FILE` e usa a mesma função `prepareAndIndexImage()` chamada por `StoryLinkPublisher.prepareImage()` no `smoke:open-story-with-media` e na preparação do Story. Não abre Instagram nem cria ou publica Story.
+
+Consulta real executada no Android por ADB (nome gerado internamente, não valor interpolado da origem):
+
+```sh
+content query --uri content://media/external/images/media --projection _id:_display_name:relative_path:_size:_data --where "_display_name='plantao-story-<timestamp>.jpg'"
+```
+
+A sintaxe e a projeção são verificadas pelas respostas do provider durante a execução local: se o Android reportar coluna opcional `_data` ou `_size` inválida, ela é removida e a consulta é refeita. `_display_name` e `relative_path` continuam obrigatórios. Erros de provider, permissões ou sintaxe são registrados e abortam. Timeout de uma consulta individual é registrado e permite continuar o polling dentro do deadline. A comparação de tamanho é obrigatória quando retornado; arquivo de outra tarefa, outra pasta ou linhas ambíguas não confirmam sucesso.
+
+Salva `artifacts/media-index-<timestamp>/media-index.json` tanto no sucesso quanto na falha após validação da imagem: nome, caminho Android e canonicalizado, tamanho, identidade confirmada, consultas/comandos com stdout/stderr, tentativas, scans solicitados e tempo total. Limite de polling: 15 segundos por ciclo, 500 ms entre probes; apenas um scan adicional, até dois ciclos. Copy/broadcast e outros comandos ADB têm seus próprios timeouts. O smoke registra `[OK] mídia indexada e confirmada no MediaStore` somente após evidência da mídia deste job. Os comandos Android reais devem ser validados no computador local; os testes cloud simulam suas respostas.

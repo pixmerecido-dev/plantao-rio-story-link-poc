@@ -4,7 +4,6 @@ import { mkdtemp, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openStoryFromHome, injectMediaAndOpenStory } from '../dist/instagram/openStoryFromHome.js';
-import { waitForIndexedMedia } from '../dist/instagram/mediaScan.js';
 
 const previous = process.env.DRY_RUN;
 process.env.DRY_RUN = 'true';
@@ -55,18 +54,6 @@ test('falha do scan impede estabilização/abertura', async () => {
   await assert.rejects(injectMediaAndOpenStory(mock.driver, mock.publisher, 'received.jpg', await mkdtemp(join(tmpdir(), 'open-media-'))), /scan não concluído/);
   assert.ok(!mock.events.includes('click'));
   assert.ok(!mock.events.includes('stabilized'));
-});
-test('MediaStore só confirma o arquivo exato desta tarefa, depois do processamento', async () => {
-  const destination = '/sdcard/Pictures/PlantaoRio/plantao-story-123.jpg';
-  let queries = 0, pauses = 0;
-  const outputs = ['No result found.', 'Row: 0 _id=9, _data=/sdcard/Pictures/PlantaoRio/plantao-story-122.jpg', `Row: 0 _id=10, _data=${destination}`];
-  await waitForIndexedMedia(destination, async () => outputs[queries++], async () => { pauses++; });
-  assert.equal(queries, 3); assert.equal(pauses, 2);
-});
-test('timeout de indexação aborta sem assumir que fim do broadcast é scan concluído', async () => {
-  let queries = 0, pauses = 0;
-  await assert.rejects(waitForIndexedMedia('/sdcard/Pictures/PlantaoRio/current.jpg', async () => { queries++; return 'Broadcast completed: result=0'; }, async () => { pauses++; }), /MediaStore não confirmou/);
-  assert.equal(queries, 20); assert.equal(pauses, 19);
 });
 test('estado inicial residual impede injeção de mídia e abertura', async () => {
   const mock = fixture();

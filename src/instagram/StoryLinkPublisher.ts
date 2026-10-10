@@ -8,7 +8,7 @@ import { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 import { navigateToStoryEditor, STORY_ID } from './instagramStateMachine.js';
 import { selectFirstVisiblePhoto, waitForGalleryExit } from './storyGallery.js';
-import { waitForIndexedMedia } from './mediaScan.js';
+import { prepareAndIndexImage } from './mediaIndex.js';
 
 const runFile = promisify(execFile);
 
@@ -35,30 +35,8 @@ export class StoryLinkPublisher {
     throw new Error('Nenhum dos 20 JPEGs recentes da POC corresponde à imagem local. Não selecionar mídia desconhecida.');
   }
   async prepareImage(imagePath: string): Promise<string> {
-    if (process.env.DRY_RUN !== 'true') throw new Error('Esta etapa exige DRY_RUN=true; a variável não será alterada.');
-    const localPath = resolve(imagePath);
-    const bytes = await readFile(localPath);
-    if (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
-      throw new Error('A imagem deve ser um arquivo JPEG válido.');
-    }
-    const filename = `plantao-story-${Date.now()}.jpg`;
-    const destination = `/sdcard/Pictures/PlantaoRio/${filename}`;
-    const adb = process.env.ADB_PATH || 'adb';
-    const options = { timeout: 30_000, windowsHide: true };
-    // execFile usa argumentos separados: caminhos Windows com espaços são suportados.
-    await runFile(adb, ['-s', 'emulator-5554', 'shell', 'mkdir', '-p', '/sdcard/Pictures/PlantaoRio'], options);
-    await runFile(adb, ['-s', 'emulator-5554', 'push', localPath, destination], options);
-    console.log(`[MEDIA] imagem enviada: ${destination}`);
-    const result = await runFile(adb, ['-s', 'emulator-5554', 'shell', 'am', 'broadcast',
-      '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', `file://${destination}`], options);
-    console.log(result.stdout.trim());
-    // Caminho gerado internamente: nunca interpolar STORY_IMAGE em comando shell.
-    const command = `content query --uri content://media/external/images/media --projection _id:_data --where "_data='${destination}'"`;
-    await waitForIndexedMedia(destination, async () => {
-      const indexed = await runFile(adb, ['-s', 'emulator-5554', 'shell', command], options);
-      return indexed.stdout;
-    }, () => new Promise<void>(resolveWait => setTimeout(resolveWait, 500)));
-    return filename;
+    const result = await prepareAndIndexImage(imagePath);
+    return result.filename;
   }
 
 
