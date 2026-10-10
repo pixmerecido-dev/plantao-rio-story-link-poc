@@ -23,7 +23,8 @@
     "smoke:story-link-fill": "tsx src/instagram/storyLinkFillSmokeTest.ts",
     "smoke:story-link-apply": "tsx src/instagram/storyLinkApplySmokeTest.ts",
     "smoke:story-publish-ready": "tsx src/instagram/storyPublishReadySmokeTest.ts",
-    "smoke:story-publish-real": "tsx src/instagram/storyPublishRealSmokeTest.ts"
+    "smoke:story-publish-real": "tsx src/instagram/storyPublishRealSmokeTest.ts",
+    "inspect:facebook-share-ready": "tsx src/instagram/inspectFacebookShareReady.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
