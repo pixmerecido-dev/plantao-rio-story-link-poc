@@ -21,7 +21,8 @@
     "smoke:story-stickers": "tsx src/instagram/storyStickersSmokeTest.ts",
     "smoke:story-link": "tsx src/instagram/storyLinkSmokeTest.ts",
     "smoke:story-link-fill": "tsx src/instagram/storyLinkFillSmokeTest.ts",
-    "smoke:story-link-apply": "tsx src/instagram/storyLinkApplySmokeTest.ts"
+    "smoke:story-link-apply": "tsx src/instagram/storyLinkApplySmokeTest.ts",
+    "smoke:story-publish-ready": "tsx src/instagram/storyPublishReadySmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
