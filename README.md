@@ -288,3 +288,26 @@ Salva `facebook-share-ready.xml/png/json` em `artifacts/facebook-share-<timestam
 Texto sozinho prova apenas disponibilidade. Ativação exige checked em switch/checkbox/radio/toggle, ou selected em controle real associado ao Facebook. A associação usa o próprio nó rotulado, seus controles descendentes ou um toggle irmão numa linha exclusivamente Facebook. Estado do botão Your story, TextView selecionado e controles em outros blocos não são tratados como confirmação. Se o estado não estiver exposto ou for ambíguo, `facebook_story_enabled=false` vem acompanhado de `facebook_story_state_known=false`; isso **não comprova desativação** e pede inspeção dos artefatos.
 
 O contrato futuro `src/config/StoryJob.ts` e o exemplo `assets/story-job.example.json` incluem `image`, `story_url`, `sticker_text`, `publish_instagram` e `publish_facebook`. Esses campos são intenção futura do job, não autorização de publicação ou alteração de configuração. Nenhum job é executado nesta etapa. Compartilhamento simultâneo será validado em comando separado posteriormente.
+
+### Preparar novo Story com dados externos (sem publicar)
+
+Na Home do Instagram, com Appium e emulador locais disponíveis, execute no CMD:
+
+```cmd
+set DRY_RUN=true
+set ALLOW_PUBLISH=false
+set CONFIRM_REAL_PUBLISH=NO
+set STORY_IMAGE=C:\caminho\imagem-do-job.jpg
+set STORY_URL=https://plantaorio.com.br/materia-x
+set STICKER_TEXT=Leia a matéria completa
+set JOB_ID=job-origem-001
+npm run smoke:story-prepare
+```
+
+`STORY_IMAGE`, `STORY_URL` e `STICKER_TEXT` são obrigatórios, sem conteúdo padrão. Valida arquivo JPEG local, URL HTTP(S) e texto não vazio antes de conectar ao Appium ou abrir Instagram. Preserva exatamente caminho informado, URL e texto, incluindo espaços no texto. Não gera conteúdo, não normaliza URL e não altera imagem. `JOB_ID` é opcional; gera UUID somente para identidade quando ausente. O contrato `StoryJob` inclui job_id, image, story_url, sticker_text, publish_instagram e publish_facebook; este smoke registra os dois destinos como false e não chama publicação, mesmo com travas habilitadas.
+
+Exige começar na Home. Não volta de rascunho anterior nem reutiliza editor já aberto. Envia uma nova cópia da imagem, valida que é a mídia mais recente correspondente ao arquivo fornecido e exige uma seleção nova na galeria Recents antes de aplicar o link. Se a Home retomar diretamente um editor anterior, aborta sem reutilizar esse Story.
+
+Após conferir a URL, abre o controle **já observado** `com.instagram.android:id/link_sticker_custom_cta_row`. Salva `link-before-custom-cta.xml/png/json` e `custom-cta.xml/png/json`. O campo personalizado ainda não tem resource-id confirmado no cloud: deriva o seletor apenas da hierarquia local após expandir custom CTA, exigindo exatamente um EditText fora do campo URL e um resource-id ou content-desc observável. Ausência/ambiguidade aborta com diagnóstico, sem inventar seletor. O seletor real escolhido aparece no terminal e em `summary.json`.
+
+Preenche STICKER_TEXT e lê o valor para igualdade exata; revalida que a URL não mudou e só então clica Done uma vez. Exige `STATE_EDITOR_WITH_LINK` e salva `story-prepared.xml/png/json` em `artifacts/story-prepare-<timestamp>/`, além do resumo com dados externos, hash da imagem e selector observado. Campos não verificáveis ou erro salvam `error.xml/png/json` e abortam. Não abre qualquer controle de publicação, preserva login/mídia e mantém o editor final aberto ao encerrar somente a sessão Appium. Cada nova execução deve começar novamente na Home; não reaproveita o Story desta execução.

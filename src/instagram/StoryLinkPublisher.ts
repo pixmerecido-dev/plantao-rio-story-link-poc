@@ -54,7 +54,7 @@ export class StoryLinkPublisher {
   }
 
 
-  async loadImageIntoStory(localReference: string, directory: string): Promise<void> {
+  async loadImageIntoStory(localReference: string, directory: string, options: { requireNewImage?: boolean; expectedFilename?: string } = {}): Promise<void> {
     let filename: string | undefined;
     let selected: Awaited<ReturnType<typeof selectFirstVisiblePhoto>> | undefined;
     const session = this.driver.getSession();
@@ -62,9 +62,11 @@ export class StoryLinkPublisher {
       // Só requer ADB/arquivo local quando realmente vai selecionar uma imagem.
       await saveScreenArtifacts(this.driver, directory, 'gallery');
       filename = await this.findExistingTestImage(localReference);
+      if (options.expectedFilename && filename !== options.expectedFilename) throw new Error('A mídia mais recente correspondente não é a cópia deste job; seleção cancelada.');
       selected = await selectFirstVisiblePhoto(session);
       await waitForGalleryExit(session);
     });
+    if (options.requireNewImage && !selected) throw new Error('Nenhuma imagem nova foi selecionada; rascunho anterior não será reutilizado.');
     await saveScreenArtifacts(this.driver, directory, 'editor');
     await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ ...result, filename, storyId: STORY_ID, selected,
       reusedExistingDraft: result.initialState === 'STATE_EDITOR' || result.initialState === 'STATE_EDITOR_WITH_LINK',
