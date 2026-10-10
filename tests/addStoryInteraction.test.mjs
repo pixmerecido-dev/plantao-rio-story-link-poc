@@ -54,3 +54,24 @@ test('bounds divergentes cancelam gesto', async () => {
   await assert.rejects(openAddStory(mock.session, await mkdtemp(join(tmpdir(), 'add-story-'))), /bounds atuais não comprovados/);
   assert.deepEqual(mock.actions, ['click']);
 });
+
+test('reacquire Add to story e hierarquia após cada tentativa sem navegação', async () => {
+  const mock = fixture(0, visual);
+  const query = mock.session.$$;
+  const source = mock.session.getPageSource;
+  const events = [];
+  let acquisition = 0;
+  mock.session.getPageSource = async () => { events.push('hierarchy'); return source(); };
+  mock.session.$$ = async selector => {
+    const result = await query(selector);
+    if (selector !== '~Add to story') return result;
+    const generation = ++acquisition;
+    events.push(`acquire-${generation}`);
+    return result.map(element => ({ ...element, elementId: `fresh-${generation}`, click: async () => { events.push(`click-${generation}`); await element.click(); } }));
+  };
+  await assert.rejects(openAddStory(mock.session, await mkdtemp(join(tmpdir(), 'add-story-fresh-'))), /permaneceu na Home/);
+  assert.equal(acquisition, 3);
+  assert.ok(events.slice(events.indexOf('click-1') + 1, events.indexOf('acquire-2')).includes('hierarchy'));
+  assert.ok(events.slice(events.indexOf('acquire-2') + 1, events.indexOf('acquire-3')).includes('hierarchy'));
+  assert.deepEqual(mock.actions, ['click', 'child', 'gesture']);
+});

@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import { resolve } from 'node:path';
 import { InstagramDriver } from './InstagramDriver.js';
-import { analyzeResetHierarchy } from './normalizeInstagramToHome.js';
-import { navigateFromHome } from './instagramStateMachine.js';
+import { openStoryFromHome } from './openStoryFromHome.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 
 const driver = new InstagramDriver();
@@ -14,9 +13,7 @@ try {
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
-  const session = driver.getSession();
-  if (analyzeResetHierarchy(await session.getPageSource()).state !== 'STATE_HOME') throw new Error('Este smoke exige STATE_HOME; execute smoke:instagram-reset-home antes.');
-  await navigateFromHome(session, directory);
+  await openStoryFromHome(driver, directory);
   await saveScreenArtifacts(driver, directory, 'story-opened');
   console.log('[OK] Story creation opened');
 } catch (error: unknown) {

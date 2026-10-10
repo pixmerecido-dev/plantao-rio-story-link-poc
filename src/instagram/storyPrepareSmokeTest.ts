@@ -5,6 +5,7 @@ import { InstagramDriver } from './InstagramDriver.js';
 import { StoryLinkPublisher } from './StoryLinkPublisher.js';
 import { validatePrepareJob } from '../config/prepareStoryJob.js';
 import { prepareNewStory } from './storyPrepare.js';
+import { injectMediaAndOpenStory } from './openStoryFromHome.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 
 const driver = new InstagramDriver();
@@ -20,7 +21,7 @@ try {
   await driver.openAndConfirmInstagram();
   const result = await prepareNewStory(driver, job, directory, async () => {
     // Cada execução envia uma cópia nova, tornando esta mídia a mais recente em Recents.
-    const filename = await publisher.prepareImage(job.image);
+    const { filename } = await injectMediaAndOpenStory(driver, publisher, job.image, join(directory, 'image-flow'));
     await publisher.loadImageIntoStory(job.image, join(directory, 'image-flow'), { requireNewImage: true, expectedFilename: filename });
     console.log(`[STORY] imagem carregada: ${filename}`);
   });

@@ -62,7 +62,7 @@ export async function openAddStory(session: Session, directory = resolve('artifa
   const logAttributes = async (element: Awaited<ReturnType<typeof find>>) => {
     const attributes: Record<string, unknown> = { elementId: element.elementId ?? null, displayed: await element.isDisplayed(), enabled: await element.isEnabled() };
     for (const name of ['resource-id', 'content-desc', 'text', 'class', 'clickable', 'bounds']) attributes[name] = await element.getAttribute(name);
-    console.log('[HOME] Add to story encontrado:', JSON.stringify(attributes));
+    console.log('[HOME] Add to story fresco encontrado:', JSON.stringify(attributes));
   };
   const wait = async (attempt: number) => {
     let state: InstagramState = 'STATE_HOME';
@@ -91,7 +91,12 @@ export async function openAddStory(session: Session, directory = resolve('artifa
   if (state !== 'STATE_HOME') return state;
 
   let evidence;
-  try { evidence = inspectAddStoryControl(await session.getPageSource()); }
+  // Reacquire o controle após a tentativa; nenhuma referência anterior é usada.
+  try {
+    evidence = inspectAddStoryControl(await session.getPageSource());
+    target = await find();
+    await logAttributes(target);
+  }
   catch (error) { throw new Error('[HOME] Add to story clicado, mas permaneceu na Home; fallback sem hierarquia inequívoca cancelado.', { cause: error }); }
   if (evidence.descendantSelector) {
     const children = await session.$$(evidence.descendantSelector);
@@ -107,8 +112,8 @@ export async function openAddStory(session: Session, directory = resolve('artifa
     }
   } else console.log('[HOME] tentativa 2: sem descendente inequívoco; clique omitido');
   // A hierarquia é lida novamente imediatamente antes do único gesto por bounds.
-  target = await find();
   evidence = inspectAddStoryControl(await session.getPageSource());
+  target = await find();
   if (!evidence.center || await target.getAttribute('bounds') !== evidence.bounds || await target.getAttribute('resource-id') !== evidence.resourceId) {
     throw new Error('[HOME] Add to story clicado, mas permaneceu na Home; bounds atuais não comprovados.');
   }

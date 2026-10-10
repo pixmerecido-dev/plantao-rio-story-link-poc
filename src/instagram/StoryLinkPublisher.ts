@@ -8,6 +8,7 @@ import { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 import { navigateToStoryEditor, STORY_ID } from './instagramStateMachine.js';
 import { selectFirstVisiblePhoto, waitForGalleryExit } from './storyGallery.js';
+import { waitForIndexedMedia } from './mediaScan.js';
 
 const runFile = promisify(execFile);
 
@@ -47,9 +48,16 @@ export class StoryLinkPublisher {
     // execFile usa argumentos separados: caminhos Windows com espaços são suportados.
     await runFile(adb, ['-s', 'emulator-5554', 'shell', 'mkdir', '-p', '/sdcard/Pictures/PlantaoRio'], options);
     await runFile(adb, ['-s', 'emulator-5554', 'push', localPath, destination], options);
+    console.log(`[MEDIA] imagem enviada: ${destination}`);
     const result = await runFile(adb, ['-s', 'emulator-5554', 'shell', 'am', 'broadcast',
       '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', `file://${destination}`], options);
-    console.log(`Imagem enviada: ${destination}\n${result.stdout.trim()}`);
+    console.log(result.stdout.trim());
+    // Caminho gerado internamente: nunca interpolar STORY_IMAGE em comando shell.
+    const command = `content query --uri content://media/external/images/media --projection _id:_data --where "_data='${destination}'"`;
+    await waitForIndexedMedia(destination, async () => {
+      const indexed = await runFile(adb, ['-s', 'emulator-5554', 'shell', command], options);
+      return indexed.stdout;
+    }, () => new Promise<void>(resolveWait => setTimeout(resolveWait, 500)));
     return filename;
   }
 
