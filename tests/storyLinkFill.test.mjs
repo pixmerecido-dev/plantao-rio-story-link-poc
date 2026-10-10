@@ -26,6 +26,15 @@ function fixture({ stickers = false, mismatch = false } = {}) {
     click: async () => { assert.equal(index, 7); actions.push('LINK'); panel = false; },
   }));
   const session = {
+    getPageSource: async () => '<hierarchy/>',
+    saveScreenshot: async path => { const { writeFile } = await import('node:fs/promises'); await writeFile(path, 'fixture'); },
+    execute: async (command, args) => {
+      assert.equal(command, 'mobile: clickGesture');
+      assert.deepEqual(Object.keys(args), ['elementId']);
+      const matching = items.filter(item => item.elementId === args.elementId);
+      assert.equal(matching.length, 1);
+      for (const item of matching) await item.click();
+    },
     $$: async selector => {
       if (LINK_EDITOR_MARKERS.some(id => resourceIdSelector(id) === selector)) return panel ? [] : [{}];
       if (selector === resourceIdSelector(STICKER_ITEM_ID)) return panel ? items : [];
@@ -121,6 +130,15 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
     click: async () => { assert.equal(index, 8); actions.push('LINK'); state = 'STATE_LINK_EDITOR'; },
   }));
   const session = {
+    getPageSource: async () => '<hierarchy/>',
+    saveScreenshot: async path => { const { writeFile } = await import('node:fs/promises'); await writeFile(path, 'fixture'); },
+    execute: async (command, args) => {
+      assert.equal(command, 'mobile: clickGesture');
+      assert.deepEqual(Object.keys(args), ['elementId']);
+      const matching = items.filter(item => item.elementId === args.elementId);
+      assert.equal(matching.length, 1);
+      for (const item of matching) await item.click();
+    },
     $: async selector => { assert.ok(!selector.includes(STICKER_ITEM_ID)); return element(id(selector)); },
     $$: async selector => {
       if (id(selector) === STICKER_ITEM_ID) return state === 'STATE_STICKERS' ? items : [];

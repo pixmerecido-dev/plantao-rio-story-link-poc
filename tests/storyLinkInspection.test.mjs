@@ -6,11 +6,15 @@ const originalDryRun = process.env.DRY_RUN;
 process.env.DRY_RUN = 'true';
 after(() => { if (originalDryRun === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = originalDryRun; });
 
-function fixture(descriptions, { transition = true, after = 1, hidden = false, enabled = true } = {}) {
-  const clicks = [];
+function fixture(descriptions, { transition = true, after = 1, hidden = false, enabled = true, gestureError = false, clickError = false, descendants = 0 } = {}) {
+  const clicks = [], gestures = [], elementClicks = [];
   let panel = true;
   const items = descriptions.map(description => ({
     elementId: `real-${description}`,
+    $$: async selector => {
+      assert.equal(selector, 'android=new UiSelector().className("android.widget.ImageView")');
+      return Array.from({ length: descendants }, (_, index) => ({ elementId: `visual-${index}`, isExisting: async () => true, isDisplayed: async () => true, isEnabled: async () => true }));
+    },
     isExisting: async () => panel,
     isDisplayed: async () => panel && !hidden,
     isEnabled: async () => enabled,
@@ -18,9 +22,18 @@ function fixture(descriptions, { transition = true, after = 1, hidden = false, e
     getAttribute: async name => name === 'content-desc' ? description : STICKER_ITEM_ID,
     waitForExist: async () => { throw new Error('StrictSelectorError: não esperar item por selector compartilhado'); },
     waitForDisplayed: async () => { throw new Error('StrictSelectorError: não esperar item por selector compartilhado'); },
-    click: async () => { assert.equal(description, 'Link Sticker'); clicks.push(description); if (transition && clicks.length >= after) panel = false; },
+    click: async () => { if (clickError) throw new Error('element.click failed'); assert.equal(description, 'Link Sticker'); elementClicks.push(description); clicks.push(description); if (transition && clicks.length >= after) panel = false; },
   }));
   const session = {
+    execute: async (command, args) => {
+      assert.equal(command, 'mobile: clickGesture');
+      assert.deepEqual(Object.keys(args), ['elementId']);
+      gestures.push(args.elementId);
+      if (gestureError && args.elementId === 'real-Link Sticker') throw new Error('unknown command: clickGesture unsupported');
+      assert.ok(args.elementId === 'real-Link Sticker' || args.elementId === 'visual-0');
+      clicks.push('Link Sticker');
+      if (transition && clicks.length >= after) panel = false;
+    },
     $: async selector => {
       assert.ok(!selector.includes(STICKER_ITEM_ID), 'StrictSelectorError: nenhum seletor desse ID pode usar $');
       return { isExisting: async () => false, isDisplayed: async () => false };
@@ -41,7 +54,7 @@ function fixture(descriptions, { transition = true, after = 1, hidden = false, e
     getPageSource: async () => panel ? '<hierarchy><node content-desc="Link Sticker" resource-id="com.instagram.android:id/sticker_sheet_redesign_item"/></hierarchy>'
       : '<hierarchy><node text="URL" resource-id="fixture:id/input" class="android.widget.EditText"/><node text="Done" class="android.widget.Button"/></hierarchy>',
   };
-  return { session, clicks };
+  return { session, clicks, gestures, elementClicks };
 }
 
 test('ID compartilhado: clica somente no item de descrição exata Link Sticker', async () => {
@@ -70,18 +83,21 @@ test('coleção vazia falha antes de selecionar um item', async () => {
   assert.deepEqual(mock.clicks, []);
 });
 
-test('painel permanece após dois cliques e salva diagnóstico antes de abortar', async () => {
+test('gesto sem transição e sem descendente e salva diagnóstico antes de abortar', async () => {
   const mock = fixture(['Link Sticker'], { transition: false });
   const { mkdtemp, readdir } = await import('node:fs/promises');
   const dir = await mkdtemp('/tmp/click-link-test-');
-  await assert.rejects(clickExactLinkSticker(mock.session, dir), /duas tentativas/);
-  assert.deepEqual(mock.clicks, ['Link Sticker', 'Link Sticker']);
-  assert.deepEqual((await readdir(dir)).sort(), ['click-link-failed.json', 'click-link-failed.png', 'click-link-failed.xml']);
+  await assert.rejects(clickExactLinkSticker(mock.session, dir), /clickGesture não abriu/);
+  assert.deepEqual(mock.clicks, ['Link Sticker']);
+  for (const name of ['click-link-before', 'click-link-after', 'click-link-failed']) {
+    for (const ext of ['json', 'png', 'xml']) assert.ok((await readdir(dir)).includes(`${name}.${ext}`));
+  }
 });
-test('primeiro clique ignorado repete uma vez e confirma marcadores reais', async () => {
-  const mock = fixture(['Link Sticker'], { after: 2 });
+test('falha técnica do gesto usa element.click uma única vez', async () => {
+  const mock = fixture(['Link Sticker'], { gestureError: true });
   await clickExactLinkSticker(mock.session);
-  assert.deepEqual(mock.clicks, ['Link Sticker', 'Link Sticker']);
+  assert.deepEqual(mock.clicks, ['Link Sticker']);
+  assert.deepEqual(mock.elementClicks, ['Link Sticker']);
 });
 for (const options of [{ hidden: true }, { enabled: false }]) {
   test(`LINK não interagível aborta sem clique: ${JSON.stringify(options)}`, async () => {
@@ -119,7 +135,7 @@ test('17 itens compartilhados selecionam apenas LINK no meio da coleção sem se
 
 test('marcadores reais confirmam transição sem depender de XML genérico', async () => {
   const mock = fixture(['Link Sticker']);
-  mock.session.getPageSource = async () => { throw new Error('não deve inferir estado pelo XML'); };
+  mock.session.getPageSource = async () => '<hierarchy/>'; // XML sem sinais de editor não impede marcadores reais.
   await clickExactLinkSticker(mock.session);
   assert.deepEqual(mock.clicks, ['Link Sticker']);
 });
@@ -132,4 +148,30 @@ test('falha de conexão após clique não é tratada como convite para repetir',
   };
   await assert.rejects(clickExactLinkSticker(mock.session), /connection refused/);
   assert.deepEqual(mock.clicks, ['Link Sticker']);
+});
+
+test('gesto usa elementId real sem executar element.click', async () => {
+  const mock = fixture(['Link Sticker']);
+  await clickExactLinkSticker(mock.session);
+  assert.deepEqual(mock.gestures, ['real-Link Sticker']);
+  assert.deepEqual(mock.elementClicks, []);
+});
+test('único descendente visual comprovado por busca no pai pode receber uma tentativa', async () => {
+  const mock = fixture(['Link Sticker'], { after: 2, descendants: 1 });
+  await clickExactLinkSticker(mock.session);
+  assert.deepEqual(mock.gestures, ['real-Link Sticker', 'visual-0']);
+  assert.deepEqual(mock.elementClicks, []);
+});
+test('descendentes ambíguos nunca são escolhidos por índice', async () => {
+  const mock = fixture(['Link Sticker'], { transition: false, descendants: 2 });
+  await assert.rejects(clickExactLinkSticker(mock.session), /clickGesture não abriu/);
+  assert.deepEqual(mock.gestures, ['real-Link Sticker']);
+  assert.deepEqual(mock.elementClicks, []);
+});
+
+test('gesto e fallback tecnicamente falhos permitem um descendente comprovado', async () => {
+  const mock = fixture(['Link Sticker'], { gestureError: true, clickError: true, descendants: 1 });
+  await clickExactLinkSticker(mock.session);
+  assert.deepEqual(mock.gestures, ['real-Link Sticker', 'visual-0']);
+  assert.deepEqual(mock.elementClicks, []);
 });
