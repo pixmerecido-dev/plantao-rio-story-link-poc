@@ -336,7 +336,7 @@ Após cada Back, faz probes de transição por até dois segundos e salva a capt
 
 No Windows, execute `npm run smoke:open-story` com `DRY_RUN=true`, Appium e emulador disponíveis, após `npm run smoke:instagram-reset-home`. Exige Home real e não seleciona imagem, abre Stickers ou publica. A rota tradicional usa Create; a variante atual usa somente o botão exato `Add to story`.
 
-Nesta variante, tenta um clique normal, depois um descendente visual/clicável inequivocamente pertencente ao botão (somente se houver um único candidato e seletor nativo único), e por último um único `mobile: clickGesture` no centro dos bounds atuais comprovados do botão. Não usa coordenadas fixas, XPath ou índice. Detecta o estado após cada tentativa e só continua os fallbacks enquanto permanecer na Home. Estados desconhecidos abortam. Salva `add-story-before.xml/png/json` e `add-story-click-1/2/3.xml/png/json` para as tentativas efetivamente executadas. Registra os atributos reais do controle no terminal; sem hierarquia/bounds confiáveis, cancela o gesto. O comando mantém a tela inicial de criação aberta e encerra apenas a sessão Appium.
+Nesta variante, tenta um clique normal, depois um descendente visual/clicável inequivocamente pertencente ao botão (somente se houver um único candidato e seletor nativo único), um único `mobile: clickGesture` no centro dos bounds atuais comprovados do botão e, se ainda permanecer na Home, um único native ADB tap com bounds relidos. Não usa coordenadas fixas, XPath ou índice. Detecta o estado após cada tentativa e só continua os fallbacks enquanto permanecer na Home. Estados desconhecidos abortam. Salva `add-story-before.xml/png/json` e `add-story-click-1/2/3/4.xml/png/json` para as tentativas efetivamente executadas. Registra os atributos reais do controle no terminal; sem hierarquia/bounds confiáveis, cancela o gesto. O comando mantém a tela inicial de criação aberta e encerra apenas a sessão Appium.
 
 ### Diagnosticar abertura após injeção de mídia
 
@@ -368,3 +368,18 @@ content query --uri content://media/external/images/media --projection _id:_disp
 A sintaxe e a projeção são verificadas pelas respostas do provider durante a execução local: se o Android reportar coluna opcional `_data` ou `_size` inválida, ela é removida e a consulta é refeita. `_display_name` e `relative_path` continuam obrigatórios. Erros de provider, permissões ou sintaxe são registrados e abortam. Timeout de uma consulta individual é registrado e permite continuar o polling dentro do deadline. A comparação de tamanho é obrigatória quando retornado; arquivo de outra tarefa, outra pasta ou linhas ambíguas não confirmam sucesso.
 
 Salva `artifacts/media-index-<timestamp>/media-index.json` tanto no sucesso quanto na falha após validação da imagem: nome, caminho Android e canonicalizado, tamanho, identidade confirmada, consultas/comandos com stdout/stderr, tentativas, scans solicitados e tempo total. Limite de polling: 15 segundos por ciclo, 500 ms entre probes; apenas um scan adicional, até dois ciclos. Copy/broadcast e outros comandos ADB têm seus próprios timeouts. O smoke registra `[OK] mídia indexada e confirmada no MediaStore` somente após evidência da mídia deste job. Os comandos Android reais devem ser validados no computador local; os testes cloud simulam suas respostas.
+
+
+### Native tap e comparação de foco na Home
+
+Após as tentativas anteriores sem transição, reacquire o botão exato `Add to story`, exige displayed/enabled/clickable, valida a classe e o package atual `com.instagram.android` e compara os bounds do elemento com uma nova hierarquia. Calcula `x = floor((left + right) / 2)` e `y = floor((top + bottom) / 2)`. Executa `adb -s <UDID efetivo da sessão Appium> shell input tap <x> <y>` com argumentos separados, sem coordenadas fixas ou serial padrão. Não repete o native tap, inclusive se o comando apresentar timeout. Verifica a transição e salva `add-story-click-4.xml/png/json` e `native-adb-tap.json`. Home persistente ou estado não comprovado aborta; somente Criação/Galeria/Editor conhecidos confirmam abertura.
+
+Os dois smokes salvam automaticamente `add-story-before-context.json/xml`, com currentPackage, currentActivity, bounds, elementId, hierarquia/hash e dados de foco obtidos via `adb shell dumpsys window`. Foco/activity indisponíveis são registrados como erro de diagnóstico, sem valores inventados. Antes da última tentativa salva também `add-story-native-before-context.json/xml`.
+
+Depois de executar os dois smokes localmente, compare suas capturas (substitua as pastas pelos caminhos exibidos no terminal):
+
+```sh
+npm run compare:story-open -- artifacts/open-story-<timestamp>/add-story-before-context.json artifacts/open-story-with-media-<timestamp>/add-story-before-context.json
+```
+
+A comparação não conecta ao emulador nem envia interação. Exibe diferenças em pacote, activity, foco, bounds, elementId e hash da hierarquia e salva `artifacts/story-open-comparison-<timestamp>.json`. IDs podem variar entre sessões; diferenças de foco/hierarquia sozinhas não provam a causa. A investigação das diferenças reais depende das capturas locais. Normalização, MediaStore, `openStoryFromHome()`, Link e publicação não foram modificados por este fallback.

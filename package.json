@@ -29,7 +29,8 @@
     "smoke:story-prepare": "tsx src/instagram/storyPrepareSmokeTest.ts",
     "smoke:open-story": "tsx src/instagram/openStorySmokeTest.ts",
     "smoke:open-story-with-media": "tsx src/instagram/openStoryWithMediaSmokeTest.ts",
-    "smoke:media-index": "tsx src/instagram/mediaIndexSmokeTest.ts"
+    "smoke:media-index": "tsx src/instagram/mediaIndexSmokeTest.ts",
+    "compare:story-open": "tsx src/instagram/compareStoryOpen.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",

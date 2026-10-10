@@ -1,5 +1,7 @@
+import { connectedAndroidDevice, saveAddStoryContext, runAndroidCommand, type AndroidRunner } from './addStoryAndroidDiagnostics.js';
 import { XMLParser } from 'fast-xml-parser';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements } from './inspectElements.js';
 import { saveScreenArtifacts } from './diagnostics.js';
@@ -43,7 +45,8 @@ export function inspectAddStoryControl(source: string) {
   return { descendantSelector, center, bounds, resourceId: attr(control, 'resource-id') };
 }
 
-export async function openAddStory(session: Session, directory = resolve('artifacts', `add-story-${Date.now()}`)): Promise<InstagramState> {
+export async function openAddStory(session: Session, directory = resolve('artifacts', `add-story-${Date.now()}`), options: { runAdb?: AndroidRunner } = {}): Promise<InstagramState> {
+  if (process.env.DRY_RUN !== 'true') throw new Error('Abertura exige DRY_RUN=true.');
   const capture = (name: string) => saveScreenArtifacts({ getSession: () => session }, directory, name);
   const find = async () => {
     const buttons = [];
@@ -63,6 +66,7 @@ export async function openAddStory(session: Session, directory = resolve('artifa
     const attributes: Record<string, unknown> = { elementId: element.elementId ?? null, displayed: await element.isDisplayed(), enabled: await element.isEnabled() };
     for (const name of ['resource-id', 'content-desc', 'text', 'class', 'clickable', 'bounds']) attributes[name] = await element.getAttribute(name);
     console.log('[HOME] Add to story fresco encontrado:', JSON.stringify(attributes));
+    return attributes;
   };
   const wait = async (attempt: number) => {
     let state: InstagramState = 'STATE_HOME';
@@ -84,7 +88,8 @@ export async function openAddStory(session: Session, directory = resolve('artifa
   };
   await capture('add-story-before');
   let target = await find();
-  await logAttributes(target);
+  const initialAttributes = await logAttributes(target);
+  await saveAddStoryContext(session, directory, 'add-story-before-context', initialAttributes, options.runAdb);
   console.log('[HOME] tentativa 1: element.click()');
   await target.click();
   let state = await wait(1);
@@ -121,6 +126,39 @@ export async function openAddStory(session: Session, directory = resolve('artifa
   console.log(`[HOME] tentativa 3: gesture bounds center ${JSON.stringify(evidence.center)}`);
   await session.execute('mobile: clickGesture', evidence.center);
   state = await wait(3);
-  if (state === 'STATE_HOME') throw new Error('[HOME] Add to story clicado, mas permaneceu na Home');
+  if (state !== 'STATE_HOME') return state;
+
+  // Última tentativa: novo elemento e nova hierarquia, nunca bounds da tentativa 3.
+  target = await find();
+  await saveAddStoryContext(session, directory, 'add-story-native-before-context', await logAttributes(target), options.runAdb);
+  evidence = inspectAddStoryControl(await session.getPageSource());
+  target = await find();
+  if (!evidence.center || await target.getAttribute('bounds') !== evidence.bounds ||
+    await target.getAttribute('resource-id') !== evidence.resourceId || await target.getAttribute('clickable') !== 'true') {
+    throw new Error('Bounds/controle frescos não comprovados; native adb tap cancelado.');
+  }
+  const currentPackage = await session.getCurrentPackage();
+  if (currentPackage !== 'com.instagram.android') throw new Error('Pacote mudou antes do native tap; clique cancelado.');
+  const device = connectedAndroidDevice(session);
+  console.log('[HOME] tentativa 4: native adb tap');
+  console.log(`[HOME] bounds frescos: ${evidence.bounds}`);
+  console.log(`[HOME] centro calculado: x=${evidence.center.x}, y=${evidence.center.y}`);
+  console.log(`[HOME] pacote antes do tap: ${currentPackage}`);
+  // execFile com argumentos separados; serial extraído da sessão, sem dispositivo padrão.
+  const nativeAttributes = await logAttributes(target);
+  let tapError: unknown;
+  let tapResult: { stdout: string; stderr: string } | undefined;
+  try {
+    tapResult = await (options.runAdb ?? runAndroidCommand)(device, ['shell', 'input', 'tap', String(evidence.center.x), String(evidence.center.y)]);
+    console.log('[HOME] adb input tap executado');
+  } catch (error) {
+    tapError = error;
+    console.error('[HOME] native tap sem confirmação do comando; verificando estado sem repetir:', error);
+  }
+  await writeFile(join(directory, 'native-adb-tap.json'), `${JSON.stringify({ device, attributes: nativeAttributes, bounds: evidence.bounds,
+    center: evidence.center, result: tapResult, error: tapError ? String(tapError) : undefined, attempts: 1 }, null, 2)}\n`, 'utf8');
+  state = await wait(4);
+  console.log(`[HOME] estado após native tap: ${state}`);
+  if (state === 'STATE_HOME') throw new Error('[HOME] Add to story clicado, mas permaneceu na Home; native tap não será repetido.', { cause: tapError });
   return state;
 }
