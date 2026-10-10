@@ -256,3 +256,19 @@ Se ainda não houver navegação, pode tentar uma única vez um descendente visu
 `detectInstagramState` agora retorna explicitamente `STATE_EDITOR_WITH_LINK`, antes de `STATE_EDITOR`, quando combina editor ativo, holder aplicado visível `com.instagram.android:id/video_sticker_ltr_holder` e controle final Your story visível (ID confirmado, accessibility id ou texto exato). Holder isolado, oculto ou sem controle final não confirma esse estado. A combinação retoma o Story desta POC já validado visualmente; não prova isoladamente o destino de uma URL nem interpreta qualquer sticker genérico como link. As capturas conservam as evidências adicionais do domínio/link quando expostas pela interface.
 
 Em `smoke:story-link-apply`, esse estado resulta em sucesso idempotente: `[LINK] sticker já aplicado` e `[OK] nenhuma alteração necessária`. Não abre Stickers, não preenche URL, não clica Done nem chama a navegação do Link Editor. O resumo registra `alreadyApplied=true`, `doneClicked=false` e a URL solicitada, sem alegar que releu o campo. `smoke:story-link-fill` também impede reentrada nesse estado e orienta usar publish-ready. `smoke:story-publish-ready` reutiliza a detecção compartilhada e inspeciona diretamente os controles finais; mantém capturas e bloqueio de publicação. `ALLOW_PUBLISH=false` permanece no exemplo; nenhum script desta etapa publica, inclusive se a variável for habilitada.
+
+### Publicação real controlada (comando separado)
+
+Com o Story visualmente conferido e já em `STATE_EDITOR_WITH_LINK` no Windows local:
+
+```powershell
+$env:ALLOW_PUBLISH="true"
+$env:CONFIRM_REAL_PUBLISH="YES"
+npm run smoke:story-publish-real
+```
+
+São necessários os dois valores **exatos**. Sem ambos, registra `[SAFE] Publicação bloqueada` e encerra antes de conectar ao Appium. O exemplo de ambiente permanece desarmado (`ALLOW_PUBLISH=false`, `CONFIRM_REAL_PUBLISH=NO`). `DRY_RUN` não é alterado; neste comando dedicado as duas travas explícitas autorizam a publicação real. Os comandos de inspeção continuam sem publicar.
+
+O comando exige o editor final existente, holder aplicado e Your story, sem refazer imagem ou link. Revalida classe `android.widget.Button`, content-desc `Your story`, resource-id `com.instagram.android:id/your_story_share_shortcut_button`, displayed, enabled e clickable. Salva `pre-publish.xml/png/json`, revalida editor/botão e as duas travas, e envia uma única chamada de protocolo `elementClick` ao elementId confirmado. Usa o cliente existente com `connectionRetryCount=0`, evitando também a reconsulta/retry de clique do wrapper de elemento. Após o clique não toca em nenhum outro controle.
+
+Observa por até 15 segundos, salva `post-publish.xml/png/json` e `summary.json` em `artifacts/publish-real-<timestamp>/`. Retorno à Home ou mensagem observada de compartilhamento indica **provável sucesso**, não comprovação de disponibilidade no servidor. Saída do editor isolada, timeout ou erro sem confirmação indicam **inconclusivo**; mensagem de falha de envio indica **falha**. Não repete o clique, inclusive se o comando retorna erro de transporte. O resumo registra a tentativa, evidências e erros. Código de saída 2 sinaliza resultado inconclusivo/falha ou captura pós-clique indisponível; isso não autoriza execução automática novamente. Confira manualmente seu Story antes de decidir qualquer nova tentativa. Encerra apenas a sessão Appium, preservando aplicativo, login e mídia.
