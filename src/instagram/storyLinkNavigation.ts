@@ -26,8 +26,8 @@ export async function navigateToLinkEditor(session: Session, prepareStoryEditor?
   if (state === 'STATE_STICKERS') {
     console.log('[NAV] STICKERS -> LINK_EDITOR');
     await clickExactLinkSticker(session);
-    await waitForState(session, 'STATE_LINK_EDITOR');
-    state = await detectInstagramState(session);
+    // clickExactLinkSticker já validou diretamente os marcadores reais.
+    state = 'STATE_LINK_EDITOR';
   }
   if (state !== 'STATE_LINK_EDITOR') throw new Error(`${state}: configuração do link não foi alcançada.`);
 }

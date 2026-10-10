@@ -1,49 +1,86 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import type { InstagramElement } from './inspectElements.js';
-import { getStickerItems } from './stickerCollection.js';
-import { detectInstagramState, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './instagramStateMachine.js';
+import { resolve } from 'node:path';
+import { saveScreenArtifacts } from './diagnostics.js';
+import { LINK_EDITOR_MARKERS } from './linkEditorSelectors.js';
+import { detectInstagramState, STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION, resourceIdSelector } from './instagramStateMachine.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
-const WAIT = { timeout: 20_000, interval: 500 };
 export const LINK_ITEM_SELECTOR = `android=new UiSelector().resourceId(${JSON.stringify(STICKER_ITEM_ID)}).description(${JSON.stringify(LINK_STICKER_DESCRIPTION)})`;
 
-/** O ID é compartilhado: filtra pelo content-desc exato e recusa ambiguidade. */
-export async function clickExactLinkSticker(session: Session): Promise<string> {
+export const LINK_ACCESSIBILITY_SELECTOR = '~Link Sticker';
+
+/** Validação direta dos marcadores reais, independente da máquina genérica. */
+export async function findLinkEditorMarker(session: Session): Promise<string | undefined> {
+  for (const id of LINK_EDITOR_MARKERS) {
+    const selector = resourceIdSelector(id);
+    if ((await session.$$(selector)).length > 0) return selector;
+  }
+  return undefined;
+}
+
+async function awaitLinkEditorMarker(session: Session): Promise<string | undefined> {
+  let marker: string | undefined;
+  console.log('[WAIT] aguardando Link Editor');
+  try {
+    await session.waitUntil(async () => {
+      marker = await findLinkEditorMarker(session);
+      return marker !== undefined;
+    }, { timeout: 5_000, interval: 400, timeoutMsg: 'Link Editor não apareceu após o clique.' });
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || !/timeout|Link Editor não apareceu/i.test(error.message)) throw error;
+  }
+  return marker;
+}
+
+/** No máximo dois cliques no mesmo controle semântico, reconsultado pelo accessibility id. */
+export async function clickExactLinkSticker(session: Session, diagnosticDirectory = resolve('artifacts', `click-link-${Date.now()}`)): Promise<string> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Inspecionar LINK exige DRY_RUN=true.');
   if (await detectInstagramState(session) !== 'STATE_STICKERS') throw new Error('Painel de stickers não confirmado.');
-  const items = await getStickerItems(session);
-  console.log(`[1] Stickers encontrados: ${items.length}`);
-  if (items.length === 0) throw new Error('Nenhum item com resource-id confirmado; não clicar pelo accessibility id sozinho.');
-  console.log('[2] Procurando content-desc exato "Link Sticker"');
-  const links = [];
-  for (const item of items) {
-    const observed = {
-      'content-desc': await item.getAttribute('content-desc'),
-      text: await item.getText(),
-      'resource-id': await item.getAttribute('resource-id'),
-      displayed: await item.isDisplayed(),
-    };
-    console.log(`Item observado: ${JSON.stringify(observed)}`);
-    if (observed['content-desc'] === LINK_STICKER_DESCRIPTION) links.push(item);
+  let observed: Record<string, unknown> | undefined;
+  try {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      // Evita clique extra se a transição terminou entre a espera e a reconsulta.
+      const alreadyOpen = await findLinkEditorMarker(session);
+      if (alreadyOpen) {
+        console.log(`[STATE] STATE_LINK_EDITOR confirmado por ${alreadyOpen}`);
+        return LINK_ACCESSIBILITY_SELECTOR;
+      }
+      const matches = await session.$$(LINK_ACCESSIBILITY_SELECTOR);
+      if (matches.length !== 1) throw new Error(`Esperado exatamente um Link Sticker; encontrados ${matches.length}. Nenhum clique adicional realizado.`);
+      const [link] = matches;
+      if (!link) throw new Error('Nenhum item Link Sticker.');
+      observed = {
+        'resource-id': await link.getAttribute('resource-id'),
+        'content-desc': await link.getAttribute('content-desc'),
+        class: await link.getAttribute('class'),
+        displayed: await link.isDisplayed(), enabled: await link.isEnabled(),
+        clickable: await link.getAttribute('clickable'), bounds: await link.getAttribute('bounds'),
+        elementId: link.elementId,
+      };
+      console.log('[STICKERS] Link Sticker encontrado:', JSON.stringify(observed));
+      console.log(`[STICKERS] clickable=${String(observed.clickable)}`);
+      if (observed['content-desc'] !== LINK_STICKER_DESCRIPTION || observed['resource-id'] !== STICKER_ITEM_ID ||
+          observed.displayed !== true || observed.enabled !== true || !link.elementId) {
+        throw new Error('LINK não está visível/habilitado ou sua identidade não foi confirmada.');
+      }
+      if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
+      console.log(`[STICKERS] tentativa ${attempt}`);
+      await link.click();
+      const marker = await awaitLinkEditorMarker(session);
+      if (marker) {
+        console.log(`[STATE] STATE_LINK_EDITOR confirmado por ${marker}`);
+        return LINK_ACCESSIBILITY_SELECTOR;
+      }
+      if (attempt === 1) console.warn('[WARN] primeira tentativa não navegou');
+    }
+    throw new Error('STATE_STICKERS: duas tentativas em LINK não abriram o Link Editor.');
+  } catch (error: unknown) {
+    console.error('Atributos observados do LINK:', JSON.stringify(observed));
+    try { await saveScreenArtifacts({ getSession: () => session }, diagnosticDirectory, 'click-link-failed'); }
+    catch (captureError: unknown) { console.error('Falha ao salvar diagnóstico do clique:', captureError); }
+    throw error;
   }
-  console.log(`[3] LINK encontrado: ${links.length}`);
-  if (links.length !== 1) throw new Error(`Esperado exatamente um Link Sticker; encontrados ${links.length}. Nenhum clique realizado.`);
-  // Reconsulta a coleção inteira para evitar re-fetch estrito de um handle antigo.
-  const freshLinks = [];
-  for (const item of await getStickerItems(session)) {
-    if (await item.getAttribute('content-desc') === LINK_STICKER_DESCRIPTION) freshLinks.push(item);
-  }
-  if (freshLinks.length !== 1) throw new Error(`LINK mudou ou ficou ambíguo: ${freshLinks.length} correspondências. Nenhum clique realizado.`);
-  for (const link of freshLinks) {
-    // Não usar waitForExist/waitForDisplayed em item cujo selector é compartilhado.
-    if (!(await link.isDisplayed()) || !(await link.isEnabled())) throw new Error('LINK não está visível/habilitado; nenhum clique realizado.');
-    if (await link.getAttribute('resource-id') !== STICKER_ITEM_ID ||
-        await link.getAttribute('content-desc') !== LINK_STICKER_DESCRIPTION) throw new Error('Item LINK mudou antes do clique.');
-    if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
-    console.log('[4] Clicando em LINK');
-    await link.click();
-  }
-  return LINK_ITEM_SELECTOR;
 }
 
 export function inspectLinkEditorElements(elements: InstagramElement[]) {
@@ -58,19 +95,8 @@ export function inspectLinkEditorElements(elements: InstagramElement[]) {
   return { relevant, urlFields, confirmations };
 }
 
-export async function waitForLinkEditor(session: Session, beforeSource: string): Promise<void> {
-  await session.waitUntil(async () => {
-    if (await session.getCurrentPackage() !== 'com.instagram.android') return false;
-    const source = await session.getPageSource();
-    if (source === beforeSource) return false;
-    // Exige saída do painel, não apenas uma pequena alteração no XML.
-    const panelItems = await getStickerItems(session);
-    for (const item of panelItems) if (await item.isDisplayed()) return false;
-    const linkOptions = await session.$$(`~${LINK_STICKER_DESCRIPTION}`);
-    for (const linkOption of linkOptions) if (await linkOption.isDisplayed()) return false;
-    const { extractInstagramElements } = await import('./inspectElements.js');
-    const observed = inspectLinkEditorElements(extractInstagramElements(source));
-    return observed.urlFields.length > 0 || observed.confirmations.length > 0 || observed.relevant.some(element =>
-      [element.text, element['content-desc']].some(label => /customize sticker text|web address|sticker text|\burl\b/i.test(label)));
-  }, { ...WAIT, timeoutMsg: 'Tela de configuração do link não foi reconhecida após o único clique.' });
+export async function waitForLinkEditor(session: Session, _beforeSource?: string): Promise<void> {
+  const marker = await awaitLinkEditorMarker(session);
+  if (!marker) throw new Error('Link Editor não apareceu: nenhum seletor real confirmado.');
+  console.log(`[STATE] STATE_LINK_EDITOR confirmado por ${marker}`);
 }

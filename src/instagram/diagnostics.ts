@@ -12,7 +12,7 @@ export async function collectHierarchy(driver: InstagramDriver, stage: string): 
   return directory;
 }
 
-export async function saveScreenArtifacts(driver: InstagramDriver, directory: string, name: string) {
+export async function saveScreenArtifacts(driver: Pick<InstagramDriver, 'getSession'>, directory: string, name: string) {
   await mkdir(directory, { recursive: true });
   const session = driver.getSession();
   let source = '';

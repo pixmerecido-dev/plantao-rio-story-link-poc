@@ -27,7 +27,7 @@ try {
   }
   await ensureStickersPanel(session);
   const { source: beforeSource } = await saveScreenArtifacts(driver, directory, 'stickers-before-link');
-  const clickedSelector = await clickExactLinkSticker(session);
+  const clickedSelector = await clickExactLinkSticker(session, directory);
   let transitionError: unknown;
   try { await waitForLinkEditor(session, beforeSource); }
   catch (error: unknown) { transitionError = error; }

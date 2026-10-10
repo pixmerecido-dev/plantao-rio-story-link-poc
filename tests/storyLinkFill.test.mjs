@@ -20,6 +20,7 @@ function fixture({ stickers = false, mismatch = false } = {}) {
   };
   const done = { waitForExist: async () => {}, waitForDisplayed: async () => {}, click: () => { throw new Error('Done não pode ser clicado'); } };
   const items = Array.from({ length: 17 }, (_, index) => ({
+    elementId: `sticker-${index}`, isExisting: async () => true,
     getAttribute: async name => name === 'content-desc' ? index === 7 ? 'Link Sticker' : 'Other' : STICKER_ITEM_ID,
     getText: async () => '', isDisplayed: async () => panel, isEnabled: async () => true,
     click: async () => { assert.equal(index, 7); actions.push('LINK'); panel = false; },
@@ -28,7 +29,7 @@ function fixture({ stickers = false, mismatch = false } = {}) {
     $$: async selector => {
       if (LINK_EDITOR_MARKERS.some(id => resourceIdSelector(id) === selector)) return panel ? [] : [{}];
       if (selector === resourceIdSelector(STICKER_ITEM_ID)) return panel ? items : [];
-      if (selector === '~Link Sticker') return panel ? [{}] : [];
+      if (selector === '~Link Sticker') return panel ? [items[7]] : [];
       throw new Error(`Seletor inesperado ${selector}`);
     },
     $: async selector => {
@@ -114,6 +115,7 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
     getText: async () => value,
   });
   const items = Array.from({ length: 17 }, (_, index) => ({
+    elementId: `sticker-${index}`, isExisting: async () => true,
     getAttribute: async name => name === 'content-desc' ? index === 8 ? 'Link Sticker' : 'Other' : STICKER_ITEM_ID,
     getText: async () => '', isDisplayed: async () => state === 'STATE_STICKERS', isEnabled: async () => true,
     click: async () => { assert.equal(index, 8); actions.push('LINK'); state = 'STATE_LINK_EDITOR'; },
@@ -122,7 +124,7 @@ function endToEndFixture(initialState, { modern = false, destination = 'STATE_GA
     $: async selector => { assert.ok(!selector.includes(STICKER_ITEM_ID)); return element(id(selector)); },
     $$: async selector => {
       if (id(selector) === STICKER_ITEM_ID) return state === 'STATE_STICKERS' ? items : [];
-      if (selector === '~Link Sticker') return state === 'STATE_STICKERS' ? [{}] : [];
+      if (selector === '~Link Sticker') return state === 'STATE_STICKERS' ? [items[8]] : [];
       return visible(id(selector)) ? [element(id(selector))] : [];
     },
     pause: async () => {},
