@@ -1,5 +1,5 @@
 import type { InstagramDriver } from './InstagramDriver.js';
-import { resourceIdSelector } from './instagramStateMachine.js';
+import { resourceIdSelector, detectInstagramState } from './instagramStateMachine.js';
 import { navigateToLinkEditor } from './storyLinkNavigation.js';
 import { LINK_URL_ID, LINK_DONE_ID } from './linkEditorSelectors.js';
 
@@ -20,6 +20,12 @@ export function resolveStoryUrl(argument?: string, environmentUrl?: string): str
 export async function fillStoryLinkUrl(session: Session, url: string, prepareStoryEditor?: () => Promise<void>, options: { confirmationFollows?: boolean } = {}): Promise<string> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Preencher link exige DRY_RUN=true.');
   resolveStoryUrl(url);
+  if (await detectInstagramState(session) === 'STATE_EDITOR_WITH_LINK') {
+    console.log('[STATE] STATE_EDITOR_WITH_LINK');
+    console.log('[LINK] Link Sticker já aplicado; pulando reaplicação');
+    console.log('[NAV] seguindo diretamente para publish-ready');
+    throw new Error('Link já aplicado: use smoke:story-publish-ready; URL existente não alterada.');
+  }
   await navigateToLinkEditor(session, prepareStoryEditor);
   const field = await session.$(resourceIdSelector(LINK_URL_ID));
   await field.waitForExist(WAIT);

@@ -2,12 +2,22 @@ import type { InstagramDriver } from './InstagramDriver.js';
 import type { InstagramElement } from './inspectElements.js';
 import { fillStoryLinkUrl } from './storyLinkFill.js';
 import { LINK_DONE_ID } from './linkEditorSelectors.js';
-import { detectInstagramState, resourceIdSelector, waitForClickable, waitForState } from './instagramStateMachine.js';
+import { detectInstagramState, resourceIdSelector, waitForClickable, waitForState, isEditorState } from './instagramStateMachine.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 
 /** Confirma apenas o sticker. Nenhum controle de publicação é usado. */
 export async function applyStoryLink(session: Session, url: string, prepareStoryEditor?: () => Promise<void>): Promise<string> {
+  if (process.env.DRY_RUN !== 'true') throw new Error('Aplicar link exige DRY_RUN=true.');
+  const initialState = await detectInstagramState(session);
+  if (initialState === 'STATE_EDITOR_WITH_LINK') {
+    if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
+    console.log('[STATE] STATE_EDITOR_WITH_LINK');
+    console.log('[LINK] Link Sticker já aplicado; pulando reaplicação');
+    console.log('[LINK] sticker já aplicado');
+    console.log('[OK] nenhuma alteração necessária');
+    return url; // URL solicitada, não sobrescrita nem relida nesta retomada.
+  }
   const value = await fillStoryLinkUrl(session, url, prepareStoryEditor, { confirmationFollows: true });
   console.log('[1] URL preenchida');
   if (await detectInstagramState(session) !== 'STATE_LINK_EDITOR') throw new Error('Configuração do link não está mais aberta.');
@@ -19,7 +29,7 @@ export async function applyStoryLink(session: Session, url: string, prepareStory
   await done.click();
   // Timeout aborta sem repetir Done e sem clicar em qualquer botão do editor.
   await waitForState(session, 'STATE_EDITOR');
-  if (await detectInstagramState(session) !== 'STATE_EDITOR') throw new Error('Retorno ao editor não confirmado.');
+  if (!isEditorState(await detectInstagramState(session))) throw new Error('Retorno ao editor não confirmado.');
   console.log('[4] Retorno ao editor confirmado');
   return value;
 }

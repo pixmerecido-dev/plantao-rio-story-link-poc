@@ -1,6 +1,8 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertPublishAllowed, ensureEditorWithLink, inspectPublishControls, detectPublishReadyState, LINK_STICKER_HOLDER_ID } from '../dist/instagram/storyPublishInspection.js';
+import { fillStoryLinkUrl } from '../dist/instagram/storyLinkFill.js';
+import { applyStoryLink } from '../dist/instagram/storyLinkApply.js';
 import { resourceIdSelector, SHARE_SHORTCUT_ID } from '../dist/instagram/instagramStateMachine.js';
 const originalDry = process.env.DRY_RUN, originalAllow = process.env.ALLOW_PUBLISH;
 process.env.DRY_RUN = 'true';
@@ -91,4 +93,16 @@ for (const options of [{ holder: false }, { holder: true, holderDisplayed: false
 }
 test('holder e controles sem editor ativo não confirmam estado final', async () => {
   assert.equal(await detectPublishReadyState(fixture({ holder: true, editor: false }).session), 'STATE_UNKNOWN');
+});
+
+test('aplicar link no editor final tem sucesso idempotente sem navegar, preencher ou clicar', async () => {
+  const mock = fixture({ holder: true, domain: false });
+  assert.equal(await applyStoryLink(mock.session, 'https://example.org/new-url', () => { throw new Error('não preparar imagem'); }), 'https://example.org/new-url');
+  // Fakes não oferecem mutações de campo ou cliques de editor: qualquer reentrada falharia.
+  assert.equal(await detectPublishReadyState(mock.session), 'STATE_EDITOR_WITH_LINK');
+});
+
+test('fill não entra na navegação de link quando o sticker já está aplicado', async () => {
+  const mock = fixture({ holder: true, domain: false });
+  await assert.rejects(fillStoryLinkUrl(mock.session, 'https://plantaorio.com.br/', () => { throw new Error('não preparar'); }), /Link já aplicado/);
 });

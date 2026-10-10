@@ -1,27 +1,15 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
-import { detectInstagramState, resourceIdSelector, SHARE_SHORTCUT_ID, type InstagramState } from './instagramStateMachine.js';
+import { detectInstagramState, resourceIdSelector, SHARE_SHORTCUT_ID, isEditorState, type InstagramState } from './instagramStateMachine.js';
 import { applyStoryLink, inspectAppliedLink } from './storyLinkApply.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
-export const LINK_STICKER_HOLDER_ID = 'com.instagram.android:id/video_sticker_ltr_holder';
+export { LINK_STICKER_HOLDER_ID } from './instagramStateMachine.js';
 const YOUR_STORY_SELECTORS = [resourceIdSelector(SHARE_SHORTCUT_ID), '~Your story', 'android=new UiSelector().text("Your story")'];
 
-/** Estado composto para publicação: não muda a navegação dos módulos anteriores. */
-export async function detectPublishReadyState(session: Session): Promise<InstagramState | 'STATE_EDITOR_WITH_LINK'> {
-  const state = await detectInstagramState(session);
-  if (state !== 'STATE_EDITOR') return state;
-  let holderVisible = false;
-  for (const holder of await session.$$(resourceIdSelector(LINK_STICKER_HOLDER_ID))) {
-    if (await holder.isExisting() && await holder.isDisplayed()) { holderVisible = true; break; }
-  }
-  if (!holderVisible) return state;
-  for (const selector of YOUR_STORY_SELECTORS) {
-    for (const control of await session.$$(selector)) {
-      if (await control.isExisting() && await control.isDisplayed()) return 'STATE_EDITOR_WITH_LINK';
-    }
-  }
-  return state;
+/** Compatibilidade: a detecção composta agora pertence à máquina compartilhada. */
+export async function detectPublishReadyState(session: Session): Promise<InstagramState> {
+  return await detectInstagramState(session);
 }
 
 /** Trava obrigatória para qualquer futura implementação de clique de publicação. */
@@ -39,6 +27,8 @@ export async function ensureEditorWithLink(session: Session, url: string, prepar
   console.log(`[STATE] ${state}`);
   if (state === 'STATE_EDITOR_WITH_LINK') {
     if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
+    console.log('[LINK] Link Sticker já aplicado; pulando reaplicação');
+    console.log('[NAV] seguindo diretamente para publish-ready');
     console.log('[1] Editor final com holder de sticker e controles de publicação confirmado; nenhuma navegação');
     return { state, confirmedBy: 'editor-sticker-holder-and-publish-controls', url } as const;
   }
@@ -48,7 +38,7 @@ export async function ensureEditorWithLink(session: Session, url: string, prepar
     [element.text, element['content-desc']].some(label => label.includes(url) || label.toLowerCase().includes(host)));
   if (state === 'STATE_EDITOR' && visibleUrl) confirmedBy = 'editor-hierarchy-domain';
   else await applyStoryLink(session, url, prepareStoryEditor);
-  if (await detectInstagramState(session) !== 'STATE_EDITOR') throw new Error('Editor final não confirmado.');
+  if (!isEditorState(await detectInstagramState(session))) throw new Error('Editor final não confirmado.');
   console.log('[1] Story com LINK confirmado');
   // Estado composto local: não interfere na detecção rápida usada pelos outros fluxos.
   return { state: 'STATE_EDITOR_WITH_LINK', confirmedBy, url } as const;
@@ -57,7 +47,7 @@ export async function ensureEditorWithLink(session: Session, url: string, prepar
 export type PublishControl = InstagramElement & { selector: string; clickable: string | null; enabled: boolean; displayed: boolean };
 
 export async function inspectPublishControls(session: Session) {
-  if (await detectInstagramState(session) !== 'STATE_EDITOR') throw new Error('Inspeção de publicação exige editor visível.');
+  if (!isEditorState(await detectInstagramState(session))) throw new Error('Inspeção de publicação exige editor visível.');
   if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
   const read = async (selector: string): Promise<PublishControl[]> => {
     const found: PublishControl[] = [];

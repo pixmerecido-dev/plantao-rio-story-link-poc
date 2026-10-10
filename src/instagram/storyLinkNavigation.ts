@@ -17,6 +17,11 @@ export async function navigateToLinkEditor(session: Session, prepareStoryEditor?
     await prepareStoryEditor();
     state = await detectInstagramState(session);
   }
+  if (state === 'STATE_EDITOR_WITH_LINK') {
+    console.log('[LINK] Link Sticker já aplicado; pulando reaplicação');
+    console.log('[NAV] seguindo diretamente para publish-ready');
+    throw new Error('STATE_EDITOR_WITH_LINK: use smoke:story-publish-ready; nenhuma reaplicação permitida.');
+  }
   if (state === 'STATE_EDITOR') {
     console.log('[NAV] EDITOR -> STICKERS');
     await ensureStickersPanel(session);

@@ -5,7 +5,7 @@ export { STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './stickerCollection.j
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
-export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
+export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_EDITOR_WITH_LINK' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
 export const HOME_CREATE_ID = 'com.instagram.android:id/action_bar_left_button';
 export const HOME_STORY_ID = 'com.instagram.android:id/reel_empty_badge';
 export const HOME_STORY_DESCRIPTION = 'Add to story';
@@ -13,6 +13,10 @@ export const HOME_TAB_ID = 'com.instagram.android:id/feed_tab';
 export const STORY_ID = 'com.instagram.android:id/cam_dest_story';
 export const GALLERY_ID = 'com.instagram.android:id/gallery_grid_container';
 export const STICKERS_ID = 'asset_button';
+export const LINK_STICKER_HOLDER_ID = 'com.instagram.android:id/video_sticker_ltr_holder';
+export function isEditorState(state: InstagramState): boolean {
+  return state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK';
+}
 export const SHARE_SHORTCUT_ID = 'com.instagram.android:id/your_story_share_shortcut_button';
 const WAIT = { timeout: 20_000, interval: 500 };
 
@@ -36,7 +40,22 @@ export async function detectInstagramState(session: Session): Promise<InstagramS
     for (const selector of probe.selectors) {
       try {
         const element = await session.$(selector);
-        if (await element.isExisting() && await element.isDisplayed()) return probe.state;
+        if (await element.isExisting() && await element.isDisplayed()) {
+          if (probe.state === 'STATE_EDITOR') {
+            let holderVisible = false;
+            for (const holder of await session.$$(resourceIdSelector(LINK_STICKER_HOLDER_ID))) {
+              if (await holder.isExisting() && await holder.isDisplayed()) { holderVisible = true; break; }
+            }
+            if (holderVisible) {
+              for (const controlSelector of [resourceIdSelector(SHARE_SHORTCUT_ID), '~Your story', 'android=new UiSelector().text("Your story")']) {
+                for (const control of await session.$$(controlSelector)) {
+                  if (await control.isExisting() && await control.isDisplayed()) return 'STATE_EDITOR_WITH_LINK';
+                }
+              }
+            }
+          }
+          return probe.state;
+        }
       } catch (error: unknown) {
         // Não ocultar erros de conexão/servidor; só ausência ou stale em uma transição.
         if (!(error instanceof Error) || !/no such element|stale element reference/i.test(error.message)) throw error;
@@ -63,7 +82,7 @@ export async function clickNavigation(session: Session, id: typeof HOME_CREATE_I
 }
 
 export async function waitForState(session: Session, expected: InstagramState): Promise<void> {
-  await session.waitUntil(async () => await detectInstagramState(session) === expected,
+  await session.waitUntil(async () => (expected === 'STATE_EDITOR' ? isEditorState(await detectInstagramState(session)) : await detectInstagramState(session) === expected),
     { ...WAIT, timeoutMsg: `${expected} não apareceu após a navegação.` });
 }
 
@@ -104,7 +123,7 @@ export async function navigateFromHome(session: Session): Promise<InstagramState
   try {
     await session.waitUntil(async () => {
       observed.state = await detectInstagramState(session);
-      return observed.state === 'STATE_CREATE' || observed.state === 'STATE_GALLERY' || observed.state === 'STATE_EDITOR';
+      return observed.state === 'STATE_CREATE' || observed.state === 'STATE_GALLERY' || isEditorState(observed.state);
     }, { timeout: 6_000, interval: 400, timeoutMsg: 'Nenhuma tela de Story comprovada apareceu após Add to story.' });
   } catch (error: unknown) {
     if (observed.state === 'STATE_HOME') {
@@ -127,7 +146,7 @@ export async function navigateToStoryEditor(session: Session, selectImage: () =>
   console.log(`[STATE] Estado detectado: ${state}`);
   // HOME -> CREATE -> GALLERY -> EDITOR, sem repetição de cliques após timeout.
   for (let step = 0; step < 4; step++) {
-    if (state === 'STATE_EDITOR') {
+    if (isEditorState(state)) {
       if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
       console.log('[NAV] Editor já disponível; nenhuma seleção/navegação adicional');
       console.log('[OK] Editor do Story confirmado');

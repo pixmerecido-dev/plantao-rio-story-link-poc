@@ -6,6 +6,7 @@ import { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 import { resolveStoryUrl } from './storyLinkFill.js';
 
+import { detectInstagramState } from './instagramStateMachine.js';
 import { applyStoryLink, inspectAppliedLink } from './storyLinkApply.js';
 
 const driver = new InstagramDriver();
@@ -19,6 +20,7 @@ try {
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
+  const alreadyApplied = await detectInstagramState(driver.getSession()) === 'STATE_EDITOR_WITH_LINK';
   const confirmedValue = await applyStoryLink(driver.getSession(), url,
     () => publisher.loadImageIntoStory('assets/story-test.jpg', join(directory, 'image-flow')));
   const { elements } = await saveScreenArtifacts(driver, directory, 'story-with-link');
@@ -27,7 +29,7 @@ try {
   if (inspection.confirmedByHierarchy) console.log('[5] Link Sticker aplicado: evidência na hierarquia', JSON.stringify(inspection.evidence));
   else console.log('[5] Editor confirmado; Link Sticker não confirmado por seletor. Verifique story-with-link.png.');
   console.log('[6] DRY_RUN: publicação bloqueada');
-  await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ confirmedValue, doneClicked: true, editorConfirmed: true, ...inspection, published: false }, null, 2)}\n`, 'utf8');
+  await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ requestedUrl: url, confirmedValue: alreadyApplied ? undefined : confirmedValue, alreadyApplied, doneClicked: !alreadyApplied, editorConfirmed: true, ...inspection, published: false }, null, 2)}\n`, 'utf8');
   console.log('[7] Pronto para próxima etapa');
 } catch (error: unknown) {
   console.error('Falha ao aplicar do Link Sticker:', error);

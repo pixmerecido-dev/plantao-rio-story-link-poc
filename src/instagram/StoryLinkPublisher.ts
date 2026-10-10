@@ -67,7 +67,7 @@ export class StoryLinkPublisher {
     });
     await saveScreenArtifacts(this.driver, directory, 'editor');
     await writeFile(join(directory, 'summary.json'), `${JSON.stringify({ ...result, filename, storyId: STORY_ID, selected,
-      reusedExistingDraft: result.initialState === 'STATE_EDITOR',
+      reusedExistingDraft: result.initialState === 'STATE_EDITOR' || result.initialState === 'STATE_EDITOR_WITH_LINK',
       editorConfirmation: 'marcador real do editor visível e Instagram em primeiro plano', published: false }, null, 2)}\n`, 'utf8');
   }
 }
