@@ -1,9 +1,28 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import { extractInstagramElements, type InstagramElement } from './inspectElements.js';
-import { detectInstagramState, resourceIdSelector, SHARE_SHORTCUT_ID } from './instagramStateMachine.js';
+import { detectInstagramState, resourceIdSelector, SHARE_SHORTCUT_ID, type InstagramState } from './instagramStateMachine.js';
 import { applyStoryLink, inspectAppliedLink } from './storyLinkApply.js';
 
 type Session = ReturnType<InstagramDriver['getSession']>;
+export const LINK_STICKER_HOLDER_ID = 'com.instagram.android:id/video_sticker_ltr_holder';
+const YOUR_STORY_SELECTORS = [resourceIdSelector(SHARE_SHORTCUT_ID), '~Your story', 'android=new UiSelector().text("Your story")'];
+
+/** Estado composto para publicação: não muda a navegação dos módulos anteriores. */
+export async function detectPublishReadyState(session: Session): Promise<InstagramState | 'STATE_EDITOR_WITH_LINK'> {
+  const state = await detectInstagramState(session);
+  if (state !== 'STATE_EDITOR') return state;
+  let holderVisible = false;
+  for (const holder of await session.$$(resourceIdSelector(LINK_STICKER_HOLDER_ID))) {
+    if (await holder.isExisting() && await holder.isDisplayed()) { holderVisible = true; break; }
+  }
+  if (!holderVisible) return state;
+  for (const selector of YOUR_STORY_SELECTORS) {
+    for (const control of await session.$$(selector)) {
+      if (await control.isExisting() && await control.isDisplayed()) return 'STATE_EDITOR_WITH_LINK';
+    }
+  }
+  return state;
+}
 
 /** Trava obrigatória para qualquer futura implementação de clique de publicação. */
 export function assertPublishAllowed(value = process.env.ALLOW_PUBLISH): void {
@@ -16,7 +35,13 @@ export function assertPublishAllowed(value = process.env.ALLOW_PUBLISH): void {
 export async function ensureEditorWithLink(session: Session, url: string, prepareStoryEditor: () => Promise<void>) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Inspeção exige DRY_RUN=true.');
   let confirmedBy = 'validated-flow';
-  const state = await detectInstagramState(session);
+  const state = await detectPublishReadyState(session);
+  console.log(`[STATE] ${state}`);
+  if (state === 'STATE_EDITOR_WITH_LINK') {
+    if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
+    console.log('[1] Editor final com holder de sticker e controles de publicação confirmado; nenhuma navegação');
+    return { state, confirmedBy: 'editor-sticker-holder-and-publish-controls', url } as const;
+  }
   const elements = state === 'STATE_EDITOR' ? extractInstagramElements(await session.getPageSource()) : [];
   const host = new URL(url).hostname.toLowerCase();
   const visibleUrl = inspectAppliedLink(elements, url).evidence.some(element =>
@@ -29,7 +54,7 @@ export async function ensureEditorWithLink(session: Session, url: string, prepar
   return { state: 'STATE_EDITOR_WITH_LINK', confirmedBy, url } as const;
 }
 
-export type PublishControl = InstagramElement & { selector: string; clickable: string | null; enabled: boolean };
+export type PublishControl = InstagramElement & { selector: string; clickable: string | null; enabled: boolean; displayed: boolean };
 
 export async function inspectPublishControls(session: Session) {
   if (await detectInstagramState(session) !== 'STATE_EDITOR') throw new Error('Inspeção de publicação exige editor visível.');
@@ -41,11 +66,11 @@ export async function inspectPublishControls(session: Session) {
       found.push({ selector, 'resource-id': await element.getAttribute('resource-id') ?? '',
         'content-desc': await element.getAttribute('content-desc') ?? '', text: await element.getText(),
         class: await element.getAttribute('class') ?? '', clickable: await element.getAttribute('clickable'),
-        enabled: await element.isEnabled() });
+        displayed: await element.isDisplayed(), enabled: await element.isEnabled() });
     }
     return found;
   };
-  const yourStorySelectors = [resourceIdSelector(SHARE_SHORTCUT_ID), '~Your story', 'android=new UiSelector().text("Your story")'];
+  const yourStorySelectors = YOUR_STORY_SELECTORS;
   let yourStory: PublishControl | undefined;
   for (const selector of yourStorySelectors) {
     const found = await read(selector);
