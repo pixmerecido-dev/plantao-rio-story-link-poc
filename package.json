@@ -14,6 +14,7 @@
     "build": "tsc",
     "appium": "appium",
     "smoke:instagram": "tsx src/instagram/smokeTest.ts",
+    "smoke:instagram-reset-home": "tsx src/instagram/instagramResetHomeSmokeTest.ts",
     "smoke:story-image": "tsx src/instagram/storyImageSmokeTest.ts",
     "diagnose:instagram": "tsx src/instagram/diagnoseInstagram.ts",
     "inspect:instagram": "tsx src/instagram/inspectInstagram.ts",
