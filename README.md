@@ -518,7 +518,7 @@ A mensagem positiva de envio desta tentativa continua obrigatória para SUCCESS.
 Layout automático permanece desligado de `story-prepare` e do fluxo real. O
 experimento W3C anterior está preservado como código, mas não é chamado pelo smoke
 atual. O plano de pinch com dois pointers sincronizados também fica reservado;
-`smoke:sticker-resize` ainda não foi criado, aguardando movimento real comprovado.
+`smoke:sticker-resize` testa somente uma pinça isolada, após movimento comprovado localmente.
 Nenhum teste isolado restaura transação Link de outro processo ou autoriza publicação.
 
 ### Teste atual: movimento W3C com hold explícito e cinco passos
@@ -533,7 +533,7 @@ npm run smoke:sticker-move
 O comando não usa ADB swipe, dragAndDrop, resize, criação de Story ou publicação.
 Resolve o centro pelos bounds frescos do único objeto visual vivo no canvas atual,
 calcula destino até 250 px à esquerda, mantendo Y, e limita o endpoint à margem de
-2% do canvas. Se a área segura não permitir pelo menos 120 px, aborta antes do gesto.
+2% do canvas. Se a área segura não permitir pelo menos 20 px de percurso, aborta antes do gesto.
 
 Envia UMA sequência W3C com `pointerType=touch`: pointerMove(start), pointerDown,
 pause(900 ms), cinco pointerMove a 20/40/60/80/100% do percurso (200 ms cada),
@@ -541,10 +541,31 @@ pause(150 ms), pointerUp. Não solta entre os passos e não consulta hierarchy d
 o contato. Libera actions em finally também se houver erro técnico. Espera 1000 ms
 após o gesto e só então recaptura XML/PNG/JSON e relê os bounds do mesmo objeto.
 
-`moved=true` exige abs(deltaX)>=120 px; não exige layout final. Falha ou timeout
+`moved=true` aceita abs(deltaX)>=20 px OU chegada nova à borda esquerda compatível com a direção solicitada (`LEFT_BOUNDARY_CLAMP`). Estar parado na borda não conta. Não exige layout final. Falha ou timeout
 abortam sem repetição/alternativa. Logs `[MOVE-W3C]` incluem before, start, hold,
 cada passo, after e delta real. Capturas `move-test-before`, `move-test-after`,
 `move-test-error` e JSON `move-test.json` ficam na pasta artifacts da execução.
 O experimento ADB está preservado como código, mas não é chamado pelo smoke atual.
-Movimento físico real precisa ser confirmado localmente antes de testar resize ou
-reintegrar qualquer ajuste ao fluxo completo.
+O movimento W3C foi validado pelo usuário no emulador real (deltaX=-64, left=0). O resize ainda precisa de validação local; nenhum ajuste está reintegrado ao fluxo completo.
+
+### Teste isolado de resize
+
+Com o sticker já aberto no editor e DRY_RUN=true, execute:
+
+```bat
+npm run smoke:sticker-resize
+```
+
+Envia somente uma pinça W3C com dois pointers touch sincronizados: ambos descem
+antes de mover, convergem horizontalmente e simetricamente em torno do centro fresco
+do sticker, e sobem juntos no final. Todos os pontos iniciais e finais devem estar
+dentro dos bounds atuais. Não faz tap de seleção, drag, rotação, ADB, criação de
+Story, mudança de URL/CTA ou publicação. Após a pinça espera 1000ms e captura novos
+bounds do mesmo objeto único. Erro/timeout ou resize insuficiente não repetem gesto.
+
+O experimento pede escala de no máximo 0.7, mirando aproximadamente 490px de largura
+(no caso observado de 696px, cerca de 487px). `resized=true` exige apenas redução
+medida de pelo menos 15%, não tamanho final exato. Salva `resize-test-before`,
+`resize-test-after`, `resize-test-error` (XML/PNG/JSON) e `resize-test.json` com
+width_before, width_after, scale_ratio e actions. O processo isolado não restaura
+confirmação Link anterior nem autoriza publicação.

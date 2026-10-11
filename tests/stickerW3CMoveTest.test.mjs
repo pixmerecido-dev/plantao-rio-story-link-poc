@@ -6,7 +6,7 @@ import { buildSteppedStickerMoveActions } from '../dist/instagram/stickerTouchAc
 const previous = process.env.DRY_RUN; process.env.DRY_RUN = 'true';
 after(() => { if (previous === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = previous; });
 const desc = 'Sticker. Touch and hold to reposition. Use two fingers to rotate or resize.';
-function fixture({ stuck = false, fail = false } = {}) {
+function fixture({ stuck = false, fail = false, boundary = false } = {}) {
   let bounds = '[64,1079][760,1195]', gestures = 0, releases = 0, during = false;
   const session = {
     getCurrentPackage: async () => 'com.instagram.android',
@@ -17,7 +17,7 @@ function fixture({ stuck = false, fail = false } = {}) {
       gestures++; during = true;
       assert.deepEqual(actions, buildSteppedStickerMoveActions({ x: 412, y: 1137 }, { x: 162, y: 1137 }));
       if (fail) throw new Error('pointer transport timeout');
-      bounds = stuck ? '[64,1080][760,1196]' : '[0,1079][510,1195]'; during = false;
+      bounds = stuck ? '[64,1080][760,1196]' : boundary ? '[0,1079][696,1195]' : '[0,1079][510,1195]'; during = false;
     },
     releaseActions: async () => { releases++; during = false; },
     execute: async () => { throw new Error('Não usar ADB/mobile ou resize'); },
@@ -42,7 +42,16 @@ test('movimento grande confirmado após pointerUp e espera, com apenas um gesto'
 for (const fail of [false,true]) test(`falha/timeout salva captura e não repete nem usa alternativa, timeout=${fail}`, async () => {
   const mock = fixture({ stuck: true, fail });
   const directory = await mkdtemp('/tmp/w3c-sticker-fail-');
-  await assert.rejects(testW3CStickerMovement(mock.driver, directory), fail ? /transport timeout/ : /menor que 120/);
+  await assert.rejects(testW3CStickerMovement(mock.driver, directory), fail ? /transport timeout/ : /clamp não confirmado/);
   assert.deepEqual(mock.counts(), { gestures: 1, releases: 1 });
   assert.ok((await readFile(`${directory}/move-test-error.xml`, 'utf8')).includes('hierarchy'));
+});
+
+test('resultado real -64px e borda esquerda é sucesso, não falso negativo de 120px', async () => {
+  const mock = fixture({ boundary: true });
+  const result = await testW3CStickerMovement(mock.driver, await mkdtemp('/tmp/w3c-sticker-boundary-'));
+  assert.equal(result.actual_delta.x, -64);
+  assert.equal(result.boundary_clamp, 'LEFT');
+  assert.equal(result.moved, true);
+  assert.deepEqual(mock.counts(), { gestures: 1, releases: 1 });
 });

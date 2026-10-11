@@ -7,7 +7,7 @@ import { buildSteppedStickerMoveActions } from './stickerTouchActions.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 export const MOVE_TEST_DELTA_X = -250;
 export const MOVE_TEST_HOLD_MS = 900;
-export const MOVE_TEST_MIN_DELTA_X = 120;
+export const MOVE_TEST_MIN_DELTA_X = 20;
 
 /** Um único gesto W3C de contato contínuo; não busca layout, não faz pinch ou publicação. */
 export async function testW3CStickerMovement(driver: Pick<InstagramDriver, 'getSession'>, directory: string) {
@@ -38,7 +38,7 @@ export async function testW3CStickerMovement(driver: Pick<InstagramDriver, 'getS
     const actions = buildSteppedStickerMoveActions(start, end);
     let step = 0;
     for (const pointer of actions) for (const action of pointer.actions) if (action.type === 'pointerMove' && action.duration === 200) console.log(`[MOVE-W3C] step${++step}=${JSON.stringify(action)}`);
-    if (start.x-end.x < MOVE_TEST_MIN_DELTA_X) throw new Error('Área segura não permite deslocamento de teste de pelo menos 120 px.');
+    if (start.x-end.x < MOVE_TEST_MIN_DELTA_X) throw new Error('Área segura não permite deslocamento de teste de pelo menos 20 px.');
     if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram perdeu foco; gesto cancelado.');
     diagnostic.gesture_attempts = 1;
     diagnostic.actions = actions;
@@ -50,15 +50,21 @@ export async function testW3CStickerMovement(driver: Pick<InstagramDriver, 'getS
     const after = await read();
     if (before.candidate.contentDesc !== after.candidate.contentDesc || before.candidate.resourceId !== after.candidate.resourceId || before.candidate.text !== after.candidate.text || before.candidate.class !== after.candidate.class || JSON.stringify(before.canvas) !== JSON.stringify(after.canvas)) throw new Error('Objeto/canvas mudou; resultado não comprovado.');
     const delta = { x: after.center.x-before.center.x, y: after.center.y-before.center.y };
-    const moved = Math.abs(delta.x) >= MOVE_TEST_MIN_DELTA_X;
-    Object.assign(diagnostic, { after: after.candidate.bounds, center_after: after.center, actual_delta: delta, moved });
+    const beforeBox = stickerBox(before.candidate.bounds), afterBox = stickerBox(after.candidate.bounds);
+    const boundaryTolerance = Math.max(2, (before.canvas.right-before.canvas.left)*0.002);
+    const boundaryClamp = MOVE_TEST_DELTA_X < 0 && delta.x < 0 && beforeBox.left > afterBox.left &&
+      Math.abs(afterBox.left-before.canvas.left) <= boundaryTolerance ? 'LEFT' : null;
+    const moved = Math.abs(delta.x) >= MOVE_TEST_MIN_DELTA_X || boundaryClamp === 'LEFT';
+    Object.assign(diagnostic, { after: after.candidate.bounds, center_after: after.center, actual_delta: delta, boundary_clamp: boundaryClamp, moved });
     console.log(`[MOVE-W3C] after=${after.candidate.bounds}`);
     console.log(`[MOVE-W3C] center_after=${JSON.stringify(after.center)}`);
+    console.log('[MOVE-W3C] requested_delta=(-250,0)');
+    console.log(`[MOVE-W3C] boundary_clamp=${boundaryClamp ?? 'NONE'}`);
     console.log(`[MOVE-W3C] actual_delta=${JSON.stringify(delta)}`);
     console.log(`[MOVE-W3C] moved=${moved}`);
-    if (!moved) throw new Error('Deslocamento horizontal menor que 120 px; nenhuma outra estratégia será tentada.');
+    if (!moved) throw new Error('Movimento significativo/clamp não confirmado; nenhuma outra estratégia será tentada.');
     console.log('[OK] Deslocamento físico confirmado; sem resize ou publicação');
-    return { moved, actual_delta: delta, published: false };
+    return { moved, boundary_clamp: boundaryClamp, actual_delta: delta, published: false };
   } catch (error) {
     diagnostic.error = String(error);
     console.log('[MOVE-W3C] moved=false');

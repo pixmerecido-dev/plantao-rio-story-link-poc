@@ -11,7 +11,7 @@ const pointer = (id: string, from: TouchPoint, to: TouchPoint, holdMs: number, m
 export function buildStickerMoveActions(from: TouchPoint, to: TouchPoint) {
   return [pointer('sticker-move', from, to, 650, 900)];
 }
-/** Apenas plano do futuro smoke resize; não executado pelo smoke move nem preparação. */
+/** Pinch isolado de dois pointers; nunca executado pelo smoke move ou preparação. */
 export function buildStickerPinchActions(center: TouchPoint, width: number, factor: number) {
   if (!Number.isFinite(factor) || factor <= 0 || !Number.isFinite(width) || width <= 0) throw new Error('Escala de pinch inválida.');
   const offset = width * Math.min(0.3, 0.3 / factor);
