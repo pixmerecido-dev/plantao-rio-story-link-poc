@@ -60,10 +60,32 @@ export async function requireCurrentLinkTransaction(session: Session, expectedJo
   return transaction.jobId;
 }
 
+/** Autoriza somente continuidade geométrica do objeto Link já confirmado deste job. */
+export async function beginLinkLayoutTransform(session: Session, jobId: string) {
+  await requireCurrentLinkTransaction(session, jobId);
+  const transaction = transactions.get(session)!;
+  const before = (await inspectAppliedLinkSticker(session)).liveVisualCandidates;
+  if (before.length !== 1) throw new Error('Layout exige um único sticker Link vivo.');
+  const original = before.find(candidate => visualKey(candidate) === transaction.visual);
+  if (!original) throw new Error('Objeto inicial não corresponde ao job.');
+  let used = false;
+  return async () => {
+    if (used) throw new Error('Confirmação geométrica já consumida.');
+    used = true;
+    const report = await inspectAppliedLinkSticker(session);
+    if (transactions.get(session) !== transaction || transaction.jobId !== jobId || !report.editorActive || report.candidates.length !== 1 || report.liveVisualCandidates.length !== 1) throw new Error('Continuidade do Link perdida durante layout.');
+    for (const candidate of report.liveVisualCandidates) {
+      if (candidate.contentDesc !== original.contentDesc || candidate.text !== original.text || candidate.resourceId !== original.resourceId || candidate.class !== original.class) throw new Error('Objeto mudou além da geometria; layout cancelado.');
+      transaction.visual = visualKey(candidate);
+    }
+    await requireCurrentLinkTransaction(session, jobId);
+  };
+}
+
 /** Holder vazio não é sticker. Somente um objeto aplicado dentro do canvas real. */
 export function analyzeAppliedLinkCanvas(source: string) {
   extractInstagramElements(source);
-  const candidates: { resourceId: string; contentDesc: string; text: string; class: string; bounds: string; displayed: boolean; linkEvidence: boolean; selector?: string }[] = [];
+  const candidates: { resourceId: string; contentDesc: string; text: string; class: string; bounds: string; displayed: boolean; canvasBounds: NonNullable<ReturnType<typeof rectangle>>; linkEvidence: boolean; selector?: string }[] = [];
   let editorActive = false, panelActive = false, holders = 0;
   const visit = (value: unknown, canvasBounds?: ReturnType<typeof rectangle>) => {
     if (Array.isArray(value)) { for (const child of value) visit(child, canvasBounds); return; }
@@ -81,7 +103,7 @@ export function analyzeAppliedLinkCanvas(source: string) {
     const appliedObject = /^Sticker\. Touch and hold to reposition\./i.test(desc) || /^Link sticker(?:\b|\.)/i.test(desc);
     if (inside && appliedObject && !CANVAS_IDS.has(id) && id !== HOLDER_ID) {
       candidates.push({ resourceId: id, contentDesc: desc, text, class: attr(node, 'class'), bounds: attr(node, 'bounds'),
-        displayed: attr(node, 'displayed') === 'true', linkEvidence: linkLabel(desc) || linkLabel(text),
+        displayed: attr(node, 'displayed') === 'true', canvasBounds: canvas!, linkEvidence: linkLabel(desc) || linkLabel(text),
         selector: id ? `android=new UiSelector().resourceId(${JSON.stringify(id)})` : desc ? `~${desc}` : undefined });
     }
     for (const [key, child] of Object.entries(node)) if (!key.startsWith('@_')) visit(child, canvas);

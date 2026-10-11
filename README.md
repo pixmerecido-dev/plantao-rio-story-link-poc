@@ -512,3 +512,33 @@ Sem prompt/aceitação verificável, o campo fica null (estado não comprovado).
 `link_transaction_at_publish` registra a confirmação e vínculo do job no instante
 da publicação, somente para auditoria; nunca restaura autorização em outro processo.
 A mensagem positiva de envio desta tentativa continua obrigatória para SUCCESS.
+
+### Layout automático do Link Sticker
+
+Após confirmar Link/URL/CTA/Done no job atual, `story-prepare` (e o fluxo real que o
+reutiliza) ajusta somente esse sticker vivo. O modelo fornecido corresponde a centro
+X=0.303, Y=0.593 e caixa de encaixe WIDTH=0.45, HEIGHT=0.043, relativos ao canvas.
+Essas constantes estão em `src/config/stickerLayout.ts` e podem ser sobrescritas
+pelas variáveis de mesmo nome: `TARGET_STICKER_CENTER_X`,
+`TARGET_STICKER_CENTER_Y`, `TARGET_STICKER_WIDTH`, `TARGET_STICKER_HEIGHT`.
+Os valores são frações de 0 a 1. `STICKER_LAYOUT_TOLERANCE=0.005` define tolerância
+por eixo relativa ao canvas. Não há posicionamento por coordenadas de tela fixas.
+
+O Instagram preserva proporção no gesto de pinça: WIDTH/HEIGHT são a caixa máxima
+do modelo, e o tamanho calculado encaixa o sticker nela sem distorção. Textos com
+proporção diferente podem ocupar menos largura ou altura; o texto recebido nunca
+é alterado para caber. O alvo usa o offset e os bounds atuais do canvas observado.
+
+A etapa usa W3C touch com dois dedos para escala, depois arraste pelo centro do
+objeto; redimensionar primeiro evita mover um sticker grande parcialmente para
+fora do canvas. Reconsulta hierarchy e dados vivos após cada gesto. Se a escala
+não permitir movimento seguro, omite o arraste e valida novamente. No máximo dois
+ciclos de ajuste; timeout/erro técnico não repete um gesto de resultado incerto.
+Revalida centro e dimensões medidas contra o alvo calculado. O vínculo do job só
+é renovado para mudança geométrica do mesmo objeto único; falha invalida a
+confirmação e impede publicação. Nunca toca controles de compartilhar nesta etapa.
+
+Salva `link-layout-before`, `link-layout-after-1/2`, `link-layout-final` ou
+`link-layout-error` (XML/PNG/JSON), além de `link-layout.json` com alvo e bounds.
+Os gestos e a correspondência visual ao modelo precisam ser validados localmente
+com `npm run smoke:story-prepare`, que termina no editor sem publicar.

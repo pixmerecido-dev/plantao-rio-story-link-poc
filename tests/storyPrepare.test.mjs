@@ -1,4 +1,4 @@
-import { description, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
+import { description, bounds as initialBounds, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -12,7 +12,7 @@ after(() => { if (previous === undefined) delete process.env.DRY_RUN; else proce
 const job = { job_id: 'job-test', image: 'supplied.jpg', story_url: 'https://plantaorio.com.br/materia-x?utm=original', sticker_text: ' Leia a matéria completa ', publish_instagram: false, publish_facebook: false };
 const actualField = 'fixture:id/observed_custom_text';
 function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, urlChanged = false, genericSticker = false } = {}) {
-  let state = initial, expanded = false, imageCalls = 0;
+  let state = initial, expanded = false, imageCalls = 0, stickerBounds = initialBounds;
   const liveDescription = genericSticker ? description.replace(' https://plantaorio.com.br/', '') : description;
   const actions = [], values = { [LINK_URL_ID]: '', [actualField]: '' };
   const parse = selector => selector === '~Stickers' ? 'asset_button' : selector.match(/resourceId\("([^"]+)"\)/)?.[1];
@@ -34,12 +34,26 @@ function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, 
   });
   const session = {
     pause: async () => {},
+    releaseActions: async () => {},
+    performActions: async pointers => {
+      const box = stickerBounds.match(/\d+/g).map(Number);
+      const point = (pointer, index) => pointer.actions[index];
+      if (pointers.length === 1) {
+        const dx = point(pointers[0], 3).x - point(pointers[0], 0).x, dy = point(pointers[0], 3).y - point(pointers[0], 0).y;
+        box[0] += dx; box[2] += dx; box[1] += dy; box[3] += dy;
+      } else {
+        const factor = (point(pointers[1], 3).x - point(pointers[0], 3).x) / (point(pointers[1], 0).x - point(pointers[0], 0).x);
+        const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2, w = (box[2] - box[0]) * factor, h = (box[3] - box[1]) * factor;
+        box[0] = cx - w / 2; box[2] = cx + w / 2; box[1] = cy - h / 2; box[3] = cy + h / 2;
+      }
+      stickerBounds = `[${Math.round(box[0])},${Math.round(box[1])}][${Math.round(box[2])},${Math.round(box[3])}]`;
+    },
     back: async () => { throw new Error('normalização falhou sem saída segura simulada'); },
     $: async selector => element(parse(selector)),
-    $$: async selector => selector === `~${liveDescription}` ? state === 'STATE_EDITOR_WITH_LINK' ? [{ ...appliedElement(), getAttribute: async name => name === 'content-desc' ? liveDescription : (await appliedElement().getAttribute(name)) }] : [] : selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
+    $$: async selector => selector === `~${liveDescription}` ? state === 'STATE_EDITOR_WITH_LINK' ? [{ ...appliedElement(), getAttribute: async name => name === 'content-desc' ? liveDescription : name === 'bounds' ? stickerBounds : (await appliedElement().getAttribute(name)) }] : [] : selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
     getCurrentPackage: async () => 'com.instagram.android',
     execute: async (name, { elementId }) => { assert.equal(name, 'mobile: clickGesture'); assert.equal(elementId, `id-${STICKER_ITEM_ID}`); actions.push(['gesture', elementId]); state = 'STATE_LINK_EDITOR'; },
-    getPageSource: async () => `<hierarchy>${state === 'STATE_EDITOR_WITH_LINK' ? positiveCanvasXML.replace(description, liveDescription) : ''}${state === 'STATE_HOME' ? '<node text="For you"/><node resource-id="com.instagram.android:id/reel_empty_badge" content-desc="Add to story"/>' : state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK' ? '<node resource-id="asset_button" displayed="true"/>' : ''}${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
+    getPageSource: async () => `<hierarchy>${state === 'STATE_EDITOR_WITH_LINK' ? positiveCanvasXML.replace(description, liveDescription).replace(initialBounds, stickerBounds) : ''}${state === 'STATE_HOME' ? '<node text="For you"/><node resource-id="com.instagram.android:id/reel_empty_badge" content-desc="Add to story"/>' : state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK' ? '<node resource-id="asset_button" displayed="true"/>' : ''}${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
     saveScreenshot: async path => writeFile(path, 'fixture'),
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
   };
