@@ -513,41 +513,39 @@ Sem prompt/aceitação verificável, o campo fica null (estado não comprovado).
 da publicação, somente para auditoria; nunca restaura autorização em outro processo.
 A mensagem positiva de envio desta tentativa continua obrigatória para SUCCESS.
 
-### Validação isolada do movimento do sticker
+### Situação dos gestos de layout
 
-O ajuste automático foi retirado de `story-prepare` e do fluxo real até validar os
-gestos no emulador. Preparação, URL/CTA/Done, detecção, Facebook e publicação
-permanecem com seu fluxo funcional. Não executar novamente MOVE+RESIZE combinado.
+Layout automático permanece desligado de `story-prepare` e do fluxo real. O
+experimento W3C anterior está preservado como código, mas não é chamado pelo smoke
+atual. O plano de pinch com dois pointers sincronizados também fica reservado;
+`smoke:sticker-resize` ainda não foi criado, aguardando movimento real comprovado.
+Nenhum teste isolado restaura transação Link de outro processo ou autoriza publicação.
 
-Deixe o editor com somente o sticker que deseja testar e execute no Windows:
+### Próximo teste: deslocamento físico grande por ADB
+
+`smoke:sticker-move` agora executa SOMENTE um swipe ADB nativo longo, sem buscar
+modelo/layout final e sem W3C/resize. Calcula START pelo centro fresco do único
+sticker vivo e END_X=START_X-250, com END_Y=START_Y. Limita o endpoint à margem de
+2% do canvas. Não exige que toda a largura do sticker caiba na posição final deste
+teste; o endpoint do toque permanece seguro. Se não houver espaço para deslocar
+pelo menos 120 px, aborta antes do comando.
+
+Usa o UDID da sessão: `adb -s <device> shell input touchscreen swipe ... 1400`.
+A duração é 1400 ms; o comando Android interpolará o toque ao longo desse período
+(não é garantia de uma pausa inicial de long press). Precisamos medir o resultado
+real antes de concluir que o Instagram aceita essa estratégia.
+
+Após o único comando espera 1 segundo, recaptura hierarchy e o mesmo objeto, e
+considera `moved=true` somente se abs(deltaX) >= 120 px. Deslocamento vertical é
+registrado, sem meta de posição final. Timeout ou movimento insuficiente salvam
+`move-test-error.xml/png/json` e abortam sem outra estratégia. Capturas antes/depois
+são `move-test-before`/`move-test-after`, e os dados ficam em `move-test.json`.
+O teste W3C anterior permanece como código experimental, mas não é chamado por
+este comando. Preparação, Link, crosspost e publicação não foram alterados.
+
+Para executar no Windows, deixe o editor com um único sticker visível e use:
 
 ```bat
 set DRY_RUN=true
 npm run smoke:sticker-move
 ```
-
-O smoke não abre/cria Story, não altera URL/CTA, não redimensiona e não publica.
-Inspeciona o objeto único no canvas e seus dados vivos, usa centro dos bounds atuais,
-W3C touch com hold de 650 ms + movimento de 900 ms mantendo contato, solta, espera
-1000 ms e captura novamente. No máximo duas tentativas; bounds sem mudança
-significativa ou erro técnico abortam sem repetir. Um resultado parcialmente movido
-permite segunda tentativa com bounds frescos. Somente posição é validada nesta etapa.
-
-Alvo do modelo: `TARGET_STICKER_CENTER_X=0.303`,
-`TARGET_STICKER_CENTER_Y=0.593`. `STICKER_POSITION_TOLERANCE=0.04` permite ±4% por eixo
-do canvas. Se o sticker atual for largo demais para esse centro exato, utiliza o
-centro seguro mais próximo somente se ainda estiver dentro da tolerância; fora
-disso aborta sem tentar resize. Logs mostram alvo solicitado e alvo seguro.
-Configuração em `src/config/stickerLayout.ts`; bounds não são coordenadas antigas.
-
-Salva `sticker-move-before`, `sticker-move-after-1/2`, `sticker-move-final` ou
-`sticker-move-error` em XML/PNG/JSON, e `sticker-move.json` com os resultados.
-Como é um processo separado, o teste não restaura transação Link anterior nem
-confere autorização para publicação. Testa apenas o único objeto visual atual.
-
-O plano de pinch está separado em `stickerTouchActions.ts`: dois pointers touch
-sincronizados, vetores horizontais simétricos convergindo/divergindo e liberação dos
-dois dedos, sem rotação ou arraste conjunto. Apenas testes simulados exercitam esse
-plano por enquanto. **`smoke:sticker-resize` ainda não foi criado**: conforme a
-sequência solicitada, depende da validação local de `smoke:sticker-move`. A futura
-validação de tamanho usará tolerância de 8% do alvo, separada da tolerância de posição.
