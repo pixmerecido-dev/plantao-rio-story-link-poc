@@ -492,3 +492,23 @@ confirmação, timeout ou sinais contraditórios dão INCONCLUSIVE; erro explíc
 envio dá FAILURE. Não há nova tentativa automática. A confirmação de envio não
 alega identificação visual/servidor do conteúdo (`content_identity_verified=false`).
 Não execute novamente sem conferir localmente uma tentativa inconclusiva.
+
+Durante a publicação real já autorizada, o modal com título exato
+`Share your stories to Facebook too` e controles únicos `Always share stories` e
+`Not now` é reconhecido como `STATE_FACEBOOK_STORY_SHARING_PROMPT`, antes de sinais
+do editor atrás. O fluxo permite um único clique em Always share stories usando
+resource-id observado, accessibility id ou texto exato. Não há coordenadas nem
+resource-id presumido. Revalida modal, atributos vivos e as duas travas antes do
+clique; mantém o mesmo job, mídia e PUBLISH_PENDING_CONFIRMATION. Nunca repete
+Your story. Se o prompt não aparecer, a confirmação normal continua.
+
+Salva `facebook-sharing-prompt-before.xml/png/json`,
+`facebook-sharing-prompt-after.xml/png/json` e `facebook-sharing-continuation.json`.
+A transição deve ocorrer em até cinco segundos, dentro da janela de observação da
+publicação; falha técnica, ambiguidade, prompt persistente ou diálogo desconhecido
+mantêm INCONCLUSIVE sem novo clique. `facebook_crosspost_enabled=true` só indica
+que a UI aceitou a escolha permanente; não comprova publicação/entrega no Facebook.
+Sem prompt/aceitação verificável, o campo fica null (estado não comprovado).
+`link_transaction_at_publish` registra a confirmação e vínculo do job no instante
+da publicação, somente para auditoria; nunca restaura autorização em outro processo.
+A mensagem positiva de envio desta tentativa continua obrigatória para SUCCESS.

@@ -1,3 +1,4 @@
+import { inspectFacebookStorySharingPrompt } from './facebookStorySharingPrompt.js';
 import { isStoryCameraHierarchy } from './storyCameraState.js';
 import { hasAppliedLinkSticker } from './appliedLinkSticker.js';
 import { openAddStory } from './addStoryInteraction.js';
@@ -8,7 +9,7 @@ export { STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './stickerCollection.j
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
-export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_STORY_CAMERA' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_EDITOR_WITH_LINK' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
+export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_STORY_CAMERA' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_EDITOR_WITH_LINK' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_FACEBOOK_STORY_SHARING_PROMPT' | 'STATE_UNKNOWN';
 export const HOME_CREATE_ID = 'com.instagram.android:id/action_bar_left_button';
 export const HOME_STORY_ID = 'com.instagram.android:id/reel_empty_badge';
 export const HOME_STORY_DESCRIPTION = 'Add to story';
@@ -29,6 +30,7 @@ export function resourceIdSelector(id: string): string {
 
 /** Probes sem waitForExist: ausência normal não causa timeout ou exceção. */
 export async function detectInstagramState(session: Session): Promise<InstagramState> {
+  if (typeof session.getPageSource === 'function' && inspectFacebookStorySharingPrompt(await session.getPageSource())) return 'STATE_FACEBOOK_STORY_SHARING_PROMPT';
   for (const id of LINK_EDITOR_MARKERS) {
     if ((await session.$$(resourceIdSelector(id))).length > 0) return 'STATE_LINK_EDITOR';
   }
