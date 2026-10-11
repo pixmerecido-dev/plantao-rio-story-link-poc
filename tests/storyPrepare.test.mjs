@@ -11,8 +11,9 @@ process.env.DRY_RUN = 'true';
 after(() => { if (previous === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = previous; });
 const job = { job_id: 'job-test', image: 'supplied.jpg', story_url: 'https://plantaorio.com.br/materia-x?utm=original', sticker_text: ' Leia a matéria completa ', publish_instagram: false, publish_facebook: false };
 const actualField = 'fixture:id/observed_custom_text';
-function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, urlChanged = false } = {}) {
+function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, urlChanged = false, genericSticker = false } = {}) {
   let state = initial, expanded = false, imageCalls = 0;
+  const liveDescription = genericSticker ? description.replace(' https://plantaorio.com.br/', '') : description;
   const actions = [], values = { [LINK_URL_ID]: '', [actualField]: '' };
   const parse = selector => selector === '~Stickers' ? 'asset_button' : selector.match(/resourceId\("([^"]+)"\)/)?.[1];
   const exists = id => ({ STATE_HOME: ['com.instagram.android:id/feed_tab'], STATE_EDITOR: ['asset_button'], STATE_STICKERS: [STICKER_ITEM_ID], STATE_LINK_EDITOR: [LINK_URL_ID, LINK_DONE_ID, LINK_CUSTOM_CTA_ID, ...(expanded ? [actualField] : [])], STATE_EDITOR_WITH_LINK: ['asset_button', LINK_STICKER_HOLDER_ID, SHARE_SHORTCUT_ID] }[state] ?? []).includes(id);
@@ -35,10 +36,10 @@ function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, 
     pause: async () => {},
     back: async () => { throw new Error('normalização falhou sem saída segura simulada'); },
     $: async selector => element(parse(selector)),
-    $$: async selector => selector === `~${description}` ? state === 'STATE_EDITOR_WITH_LINK' ? [appliedElement()] : [] : selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
+    $$: async selector => selector === `~${liveDescription}` ? state === 'STATE_EDITOR_WITH_LINK' ? [{ ...appliedElement(), getAttribute: async name => name === 'content-desc' ? liveDescription : (await appliedElement().getAttribute(name)) }] : [] : selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
     getCurrentPackage: async () => 'com.instagram.android',
     execute: async (name, { elementId }) => { assert.equal(name, 'mobile: clickGesture'); assert.equal(elementId, `id-${STICKER_ITEM_ID}`); actions.push(['gesture', elementId]); state = 'STATE_LINK_EDITOR'; },
-    getPageSource: async () => `<hierarchy>${state === 'STATE_EDITOR_WITH_LINK' ? positiveCanvasXML : ''}${state === 'STATE_HOME' ? '<node text="For you"/><node resource-id="com.instagram.android:id/reel_empty_badge" content-desc="Add to story"/>' : state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK' ? '<node resource-id="asset_button"/>' : ''}${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
+    getPageSource: async () => `<hierarchy>${state === 'STATE_EDITOR_WITH_LINK' ? positiveCanvasXML.replace(description, liveDescription) : ''}${state === 'STATE_HOME' ? '<node text="For you"/><node resource-id="com.instagram.android:id/reel_empty_badge" content-desc="Add to story"/>' : state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK' ? '<node resource-id="asset_button" displayed="true"/>' : ''}${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
     saveScreenshot: async path => writeFile(path, 'fixture'),
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
   };
@@ -86,4 +87,12 @@ test('loader obrigatório de mídia nova recusa editor retomado sem selecionar g
   const publisher = new StoryLinkPublisher(mock.driver);
   await assert.rejects(publisher.loadImageIntoStory('não deve ler arquivo.jpg', '/tmp/unused-new-story', { requireNewImage: true }), /Nenhuma imagem nova foi selecionada/);
   assert.deepEqual(mock.actions, []);
+});
+
+test('story-prepare confirma CTA personalizado mesmo sem URL/tipo no objeto final', async () => {
+  const mock = fixture({ genericSticker: true });
+  const result = await prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-generic-link-'), mock.prepareImage);
+  assert.equal(result.published, false);
+  assert.equal(result.sticker_text_verified, true);
+  assert.equal(mock.actions.filter(action => action[0] === 'click' && action[1] === LINK_DONE_ID).length, 1);
 });

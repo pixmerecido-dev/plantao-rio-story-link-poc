@@ -21,6 +21,7 @@ try {
   const report = await inspectAppliedLinkSticker(driver.getSession());
   await writeFile(join(directory, 'link-detection.json'), `${JSON.stringify({ state, ...report }, null, 2)}\n`, 'utf8');
   console.log(`[STATE] ${state}`);
+  if (report.unconfirmedAppliedSticker && !report.applied) console.log('[LINK-DETECT] Sticker genérico sem transação deste processo; tipo Link não comprovado. Não restaurar confirmação de job anterior.');
 } catch (error) {
   console.error('Falha na inspeção do editor:', error); process.exitCode = 1;
   if (connected) {

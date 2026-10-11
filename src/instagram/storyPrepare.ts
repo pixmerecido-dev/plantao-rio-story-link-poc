@@ -1,3 +1,4 @@
+import { beginCurrentLinkTransaction, clearCurrentLinkTransaction, confirmCurrentLinkTransaction } from './appliedLinkSticker.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import type { StoryJob } from '../config/StoryJob.js';
 import { detectInstagramState, resourceIdSelector, waitForClickable, waitForState } from './instagramStateMachine.js';
@@ -24,11 +25,13 @@ export function discoverCustomTextField(elements: InstagramElement[]): string {
 export async function prepareNewStory(driver: Driver, job: StoryJob, directory: string, prepareNewImage: () => Promise<void>) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Preparação exige DRY_RUN=true.');
   const session = driver.getSession();
+  clearCurrentLinkTransaction(session);
   await normalizeInstagramToHome(driver, directory);
   if (await detectInstagramState(session) !== 'STATE_HOME') throw new Error('Novo job exige STATE_HOME estabilizado.');
   console.log('[JOB] iniciando novo Story');
   await prepareNewImage();
   if (await detectInstagramState(session) !== 'STATE_EDITOR') throw new Error('Imagem nova não confirmou editor sem link anterior; job cancelado.');
+  await beginCurrentLinkTransaction(session, job.job_id, job.story_url, job.sticker_text);
   await fillStoryLinkUrl(session, job.story_url, undefined, { confirmationFollows: true });
   console.log('[LINK] URL preenchida');
   await saveScreenArtifacts(driver, directory, 'link-before-custom-cta');
@@ -61,6 +64,9 @@ export async function prepareNewStory(driver: Driver, job: StoryJob, directory: 
   if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram não está em primeiro plano.');
   console.log('[LINK] Done');
   await done.click();
+  await waitForState(session, 'STATE_EDITOR');
+  await session.waitUntil(async () => await confirmCurrentLinkTransaction(session, { jobId: job.job_id, url: job.story_url, stickerText: job.sticker_text }),
+    { ...WAIT, timeoutMsg: 'Objeto visual novo do Link não confirmado para o job atual.' });
   await waitForState(session, 'STATE_EDITOR_WITH_LINK');
   if (await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw new Error('Story preparado não atingiu STATE_EDITOR_WITH_LINK.');
   const capture = await saveScreenArtifacts(driver, directory, 'story-prepared');

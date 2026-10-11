@@ -18,6 +18,34 @@ function linkLabel(value: string) {
   return /\blink sticker\b/i.test(value) || /https?:\/\/[^\s]+/i.test(value) || /\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?\b/i.test(value);
 }
 
+type LinkTransaction = { jobId: string; url: string; stickerText: string; baseline: Set<string>; confirmed: boolean; visual?: string };
+// Sem arquivo, variável de ambiente ou armazenamento entre jobs/processos.
+const transactions = new WeakMap<Session, LinkTransaction>();
+const visualKey = (candidate: { contentDesc: string; bounds: string; text: string }) => JSON.stringify([candidate.contentDesc, candidate.bounds, candidate.text]);
+export function clearCurrentLinkTransaction(session: Session): void { transactions.delete(session); }
+export async function beginCurrentLinkTransaction(session: Session, jobId: string, url: string, stickerText: string): Promise<void> {
+  transactions.delete(session);
+  if (!jobId || !url || !stickerText) throw new Error('Transação Link exige dados do job atual.');
+  const baseline = analyzeAppliedLinkCanvas(await session.getPageSource());
+  if (!baseline.editorActive || baseline.candidates.length) throw new Error('Transação Link exige editor limpo sem sticker anterior.');
+  transactions.set(session, { jobId, url, stickerText, baseline: new Set(baseline.candidates.map(visualKey)), confirmed: false });
+}
+/** Chamado apenas após valores lidos/confirmados, Done e retorno ao editor. */
+export async function confirmCurrentLinkTransaction(session: Session, verified: { jobId: string; url: string; stickerText: string }): Promise<boolean> {
+  const transaction = transactions.get(session);
+  if (!transaction || transaction.jobId !== verified.jobId || transaction.url !== verified.url || transaction.stickerText !== verified.stickerText) return false;
+  const report = await inspectAppliedLinkSticker(session);
+  const live = report.liveVisualCandidates;
+  if (!report.editorActive || report.candidates.length !== 1 || live.length !== 1) return false;
+  for (const candidate of live) {
+    const key = visualKey(candidate);
+    if (transaction.baseline.has(key)) return false;
+    transaction.visual = key;
+    transaction.confirmed = true;
+  }
+  return true;
+}
+
 /** Holder vazio não é sticker. Somente um objeto aplicado dentro do canvas real. */
 export function analyzeAppliedLinkCanvas(source: string) {
   extractInstagramElements(source);
@@ -53,6 +81,7 @@ export async function inspectAppliedLinkSticker(session: Session) {
   const analysis = analyzeAppliedLinkCanvas(await session.getPageSource());
   console.log(`[LINK-DETECT] candidatos encontrados: ${analysis.candidates.length}`);
   let applied = false, unconfirmedAppliedSticker = false;
+  const liveVisualCandidates: typeof analysis.candidates = [];
   for (const candidate of analysis.candidates) {
     let displayed = false, liveLinkEvidence = false;
     if (candidate.displayed && candidate.selector) {
@@ -75,14 +104,22 @@ export async function inspectAppliedLinkSticker(session: Session) {
     }
     console.log(`[LINK-DETECT] candidato: resource-id=${candidate.resourceId} content-desc=${candidate.contentDesc} displayed=${displayed} bounds=${candidate.bounds}`);
     if (analysis.editorActive && candidate.displayed) {
+      if (displayed) liveVisualCandidates.push(candidate);
       if (displayed && candidate.linkEvidence && liveLinkEvidence) applied = true;
       else unconfirmedAppliedSticker = true;
     }
   }
-  if (await session.getCurrentPackage() !== 'com.instagram.android') applied = false;
+  const transaction = transactions.get(session);
+  const currentJobMatch = Boolean(transaction?.confirmed && liveVisualCandidates.length === 1 && liveVisualCandidates.some(candidate => visualKey(candidate) === transaction.visual));
+  if (analysis.editorActive && currentJobMatch) { applied = true; unconfirmedAppliedSticker = false; }
+  if (transaction?.confirmed && (!analysis.editorActive || !liveVisualCandidates.length)) transactions.delete(session);
+  if (await session.getCurrentPackage() !== 'com.instagram.android') { applied = false; transactions.delete(session); }
+  console.log(`[LINK-DETECT] visual sticker found=${liveVisualCandidates.length > 0}`);
+  console.log(`[LINK-DETECT] transaction confirmed=${Boolean(transaction?.confirmed)}`);
+  console.log(`[LINK-DETECT] current job match=${currentJobMatch}`);
   console.log(`[LINK-DETECT] evidência de sticker aplicado: ${applied}`);
   console.log(`[LINK-DETECT] applied=${applied}`);
-  return { ...analysis, applied, unconfirmedAppliedSticker };
+  return { ...analysis, applied, unconfirmedAppliedSticker, liveVisualCandidates };
 }
 
 export async function hasAppliedLinkSticker(driver: Pick<InstagramDriver, 'getSession'>): Promise<boolean> {

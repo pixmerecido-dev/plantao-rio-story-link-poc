@@ -429,3 +429,17 @@ ou com ambiguidade, aborta com diagnóstico; não presume resource-ids de miniat
 O smoke só encerra com sucesso em STATE_GALLERY, incluindo a transição intermediária
 STATE_STORY_CAMERA quando necessária. O seletor real desta variante precisa ser
 confirmado na execução local; exemplos dos testes são simulados.
+
+Quando o Instagram expõe somente a descrição genérica de objeto reposicionável,
+`story-prepare` confirma o Link por continuidade da operação do job atual. O editor
+precisa estar limpo no início; URL e CTA são lidos e conferidos antes de Done. Após
+Done e retorno ao editor, exige exatamente um novo objeto do canvas, visível também
+nos dados vivos do Appium e com bounds válidos. A confirmação é vinculada à sessão,
+job_id, URL, CTA e objeto observado, somente em memória. Novo job, nova sessão ou
+perda do objeto invalidam a confirmação; nenhum arquivo ou variável a restaura.
+
+`smoke:inspect-editor-link-state` continua sem cliques ou navegação. Executado em
+outro processo, não herda a transação do smoke anterior: um sticker genérico sem
+URL/tipo exposto permanece não confirmado. Para essa variante, a prova automática
+é a inspeção feita no mesmo processo de `smoke:story-prepare`. Não é seguro marcar
+um sticker de execução anterior como Link apenas pela descrição genérica.
