@@ -66,3 +66,33 @@ test('fallback + só ocorre após esgotar Add e comprovar Home novamente', async
   assert.equal(await openStoryFromHome(mock.driver, await mkdtemp(join(tmpdir(), 'create-fallback-')), { runAdb: mock.runAdb }), 'STATE_GALLERY');
   assert.deepEqual(mock.clicks, ['add', 'gesture', 'native', 'plus', 'story']);
 });
+
+const camera = '<hierarchy><node resource-id="com.instagram.android:id/cam_dest_story" text="STORY" selected="true"/><node text="Allow Instagram to access your camera and microphone"/><node text="Open Settings" clickable="true"/><node content-desc="Gallery" class="android.widget.Button" clickable="true" enabled="true" bounds="[10,10][80,80]"/></hierarchy>';
+test('Story abre câmera e depois galeria sem tocar Open Settings', async () => {
+  const mock = fixture();
+  const session = mock.driver.getSession(), read = session.getPageSource, find = session.$$, probe = session.$;
+  let inCamera = false, inGallery = false;
+  session.getPageSource = async () => inGallery ? '<hierarchy><node resource-id="com.instagram.android:id/gallery_grid_container"/></hierarchy>' : inCamera ? camera : read();
+  session.$ = async selector => inCamera || inGallery ? { isExisting: async () => selector.includes(inGallery ? 'gallery_grid_container' : 'cam_dest_story'), isDisplayed: async () => true } : probe(selector);
+  session.$$ = async selector => {
+    if (selector === '~Gallery' && inCamera) return [{ isExisting: async () => true, isDisplayed: async () => true, isEnabled: async () => true,
+      getAttribute: async key => ({ class: 'android.widget.Button', 'content-desc': 'Gallery', bounds: '[10,10][80,80]', clickable: 'true' }[key] ?? ''), click: async () => { mock.clicks.push('gallery'); inCamera = false; inGallery = true; } }];
+    const elements = await find(selector);
+    if (selector.includes('cam_dest_story')) for (const item of elements) item.click = async () => { mock.clicks.push('story'); inCamera = true; };
+    return elements;
+  };
+  const directory = await mkdtemp(join(tmpdir(), 'story-camera-'));
+  assert.equal(await openStoryViaCreate(mock.driver, directory), 'STATE_GALLERY');
+  assert.deepEqual(mock.clicks, ['plus', 'story', 'gallery']);
+  const files = await readdir(directory);
+  for (const ext of ['xml', 'png', 'json']) assert.ok(files.includes(`create-route-story-camera.${ext}`));
+});
+test('galeria da câmera desconhecida ou ambígua aborta sem adivinhar coordenadas', async () => {
+  const { discoverCameraGallery } = await import('../dist/instagram/storyCreateRoute.js');
+  const { isStoryCameraHierarchy } = await import('../dist/instagram/storyCameraState.js');
+  assert.equal(isStoryCameraHierarchy(camera), true);
+  assert.equal(isStoryCameraHierarchy(camera.replace('selected="true"', 'selected="false"')), false);
+  assert.equal(isStoryCameraHierarchy('<hierarchy><node resource-id="com.instagram.android:id/bottom_sheet_camera_container"/></hierarchy>'), false);
+  assert.throws(() => discoverCameraGallery(camera.replace('content-desc="Gallery"', 'content-desc=""')), /não identificado/);
+  assert.throws(() => discoverCameraGallery(camera.replace('</hierarchy>', '<node content-desc="Gallery" clickable="true"/></hierarchy>')), /inequivocamente/);
+});

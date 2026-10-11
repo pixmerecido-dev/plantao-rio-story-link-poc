@@ -1,3 +1,4 @@
+import { isStoryCameraHierarchy } from './storyCameraState.js';
 import { hasAppliedLinkSticker } from './appliedLinkSticker.js';
 import { openAddStory } from './addStoryInteraction.js';
 import type { InstagramDriver } from './InstagramDriver.js';
@@ -7,7 +8,7 @@ export { STICKER_ITEM_ID, LINK_STICKER_DESCRIPTION } from './stickerCollection.j
 
 type Session = ReturnType<InstagramDriver['getSession']>;
 type Element = Awaited<ReturnType<Session['$']>>;
-export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_EDITOR_WITH_LINK' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
+export type InstagramState = 'STATE_HOME' | 'STATE_CREATE' | 'STATE_STORY_CAMERA' | 'STATE_GALLERY' | 'STATE_EDITOR' | 'STATE_EDITOR_WITH_LINK' | 'STATE_STICKERS' | 'STATE_LINK_EDITOR' | 'STATE_UNKNOWN';
 export const HOME_CREATE_ID = 'com.instagram.android:id/action_bar_left_button';
 export const HOME_STORY_ID = 'com.instagram.android:id/reel_empty_badge';
 export const HOME_STORY_DESCRIPTION = 'Add to story';
@@ -43,6 +44,7 @@ export async function detectInstagramState(session: Session): Promise<InstagramS
       try {
         const element = await session.$(selector);
         if (await element.isExisting() && await element.isDisplayed()) {
+          if (probe.state === 'STATE_CREATE' && typeof session.getPageSource === 'function' && isStoryCameraHierarchy(await session.getPageSource())) return 'STATE_STORY_CAMERA';
           if (probe.state === 'STATE_EDITOR') {
             if (await hasAppliedLinkSticker({ getSession: () => session })) return 'STATE_EDITOR_WITH_LINK';
           }

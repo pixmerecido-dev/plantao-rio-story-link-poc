@@ -418,3 +418,14 @@ As capturas `create-route-home`, `create-route-after-plus`, `create-route-galler
 e `create-route-error`, além de `create-route.json`, ficam na pasta de artifacts da
 execução. A tela real exibida após + e o resultado precisam ser validados no Windows;
 os testes cloud usam sessões simuladas.
+
+A rota Create também reconhece `STATE_STORY_CAMERA`: STORY selecionado e evidência
+visível de captura ou da mensagem de acesso à câmera/microfone com Open Settings.
+Ela não abre configurações nem concede permissões. Antes de tentar abrir a galeria,
+salva `create-route-story-camera.xml/png/json`. O controle de galeria é descoberto
+pelos atributos da hierarquia atual (label inequívoco de galeria), preferindo seu
+resource-id observado, depois accessibility id ou texto. Sem controle identificável
+ou com ambiguidade, aborta com diagnóstico; não presume resource-ids de miniaturas.
+O smoke só encerra com sucesso em STATE_GALLERY, incluindo a transição intermediária
+STATE_STORY_CAMERA quando necessária. O seletor real desta variante precisa ser
+confirmado na execução local; exemplos dos testes são simulados.

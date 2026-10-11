@@ -16,7 +16,7 @@ try {
   await driver.openAndConfirmInstagram();
   await normalizeInstagramToHome(driver, directory);
   await openStoryViaCreate(driver, directory);
-  console.log('[OK] Story creation opened via Create');
+  console.log('[OK] Create route reached Story gallery');
 } catch (error) {
   console.error('[FAIL] Rota Create não abriu galeria:', error); process.exitCode = 1;
   if (connected) {

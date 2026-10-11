@@ -1,3 +1,4 @@
+import { isStoryCameraHierarchy, visibleCameraNodes } from './storyCameraState.js';
 import { XMLParser } from 'fast-xml-parser';
 import { join } from 'node:path';
 import { writeFile, readFile } from 'node:fs/promises';
@@ -71,6 +72,20 @@ export function discoverStoryOption(source: string): Candidate {
   throw new Error('Story sem seletor nativo observável.');
 }
 
+/** Leitura dinâmica: nunca presume resource-id de galeria não observado. */
+export function discoverCameraGallery(source: string): Candidate {
+  if (!isStoryCameraHierarchy(source)) throw new Error('Tela STORY_CAMERA não comprovada.');
+  const nodes = visibleCameraNodes(source).filter(node => node.clickable === 'true' && node.enabled !== 'false' &&
+    [node.text ?? '', node['content-desc'] ?? ''].some(label => /^(?:Gallery|Open gallery|Open Gallery|Galeria|Abrir galeria)$/i.test(label)));
+  if (nodes.length !== 1) throw new Error(`Controle de galeria não identificado inequivocamente: ${nodes.length}; consulte create-route-story-camera.xml/png/json.`);
+  for (const node of nodes) {
+    const record = Object.fromEntries(Object.entries(node).map(([key, value]) => [`@_${key}`, value]));
+    const found = candidate(record);
+    if (found) return found;
+  }
+  throw new Error('Galeria sem seletor nativo observado.');
+}
+
 export async function openStoryViaCreate(driver: Driver, directory: string): Promise<'STATE_GALLERY'> {
   if (process.env.DRY_RUN !== 'true') throw new Error('Rota Create exige DRY_RUN=true.');
   const session = driver.getSession();
@@ -101,7 +116,8 @@ export async function openStoryViaCreate(driver: Driver, directory: string): Pro
     try {
       await session.waitUntil(async () => {
         try {
-          if (await detectInstagramState(session) === 'STATE_GALLERY') return true;
+          const state = await detectInstagramState(session);
+          if (state === 'STATE_GALLERY' || state === 'STATE_STORY_CAMERA') return true;
           try { discoverStoryOption(await session.getPageSource()); return true; } catch { return false; }
         } catch (error) { queryError = error; throw error; }
       }, { timeout: 5_000, interval: 400, timeoutMsg: 'Menu Story não apareceu após Create/+.' });
@@ -111,15 +127,30 @@ export async function openStoryViaCreate(driver: Driver, directory: string): Pro
     let state = await detectInstagramState(session);
     console.log(`[CREATE] estado/menu detectado: ${state}`);
     trace.push({ button, state });
-    if (state !== 'STATE_GALLERY') {
+    if (state !== 'STATE_GALLERY' && state !== 'STATE_STORY_CAMERA') {
       const story = discoverStoryOption(menuSource);
       console.log('[CREATE] opção Story encontrada:', JSON.stringify(story));
       console.log('[CREATE] clicando Story');
       await click(story);
-      await session.waitUntil(async () => await detectInstagramState(session) === 'STATE_GALLERY',
-        { timeout: 5_000, interval: 400, timeoutMsg: 'Galeria não apareceu após Story; não repetir clique.' });
+      await session.waitUntil(async () => {
+        const current = await detectInstagramState(session);
+        return current === 'STATE_GALLERY' || current === 'STATE_STORY_CAMERA';
+      }, { timeout: 5_000, interval: 400, timeoutMsg: 'Tela de Story não apareceu; não repetir clique.' });
       trace.push({ story });
       state = await detectInstagramState(session);
+    }
+    console.log('[CREATE] Story aberto');
+    console.log(`[CREATE] estado após Story: ${state}`);
+    if (state === 'STATE_STORY_CAMERA') {
+      const camera = await saveScreenArtifacts(driver, directory, 'create-route-story-camera');
+      const gallery = discoverCameraGallery(camera.source);
+      console.log('[CREATE] seletor de galeria encontrado:', JSON.stringify(gallery));
+      console.log('[CREATE] abrindo galeria');
+      await click(gallery);
+      await session.waitUntil(async () => await detectInstagramState(session) === 'STATE_GALLERY',
+        { timeout: 5_000, interval: 400, timeoutMsg: 'Galeria não abriu após controle identificado; não repetir clique.' });
+      state = await detectInstagramState(session);
+      trace.push({ camera: 'STATE_STORY_CAMERA', gallery, state });
     }
     await saveScreenArtifacts(driver, directory, 'create-route-gallery');
     if (state !== 'STATE_GALLERY') throw new Error('Rota Create não confirmou galeria.');
