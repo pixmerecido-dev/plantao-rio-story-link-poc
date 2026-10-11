@@ -110,3 +110,13 @@ test('story-prepare confirma CTA personalizado mesmo sem URL/tipo no objeto fina
   assert.equal(result.sticker_text_verified, true);
   assert.equal(mock.actions.filter(action => action[0] === 'click' && action[1] === LINK_DONE_ID).length, 1);
 });
+
+test('preparação funcional não executa MOVE/RESIZE enquanto gesto isolado aguarda validação local', async () => {
+  const mock = fixture({ genericSticker: true });
+  mock.driver.getSession().performActions = async () => { throw new Error('Layout não deve ser executado neste fluxo.'); };
+  const result = await prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-no-layout-'), mock.prepareImage);
+  assert.equal(result.published, false);
+  assert.equal(result.url_verified, true);
+  assert.equal(result.sticker_text_verified, true);
+  assert.equal('layout' in result, false);
+});
