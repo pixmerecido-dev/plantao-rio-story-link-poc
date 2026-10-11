@@ -1,3 +1,6 @@
+import { completeCurrentStoryJob } from '../dist/instagram/storyEndToEndReal.js';
+import { randomUUID } from 'node:crypto';
+import { beginCurrentLinkTransaction, confirmCurrentLinkTransaction } from '../dist/instagram/appliedLinkSticker.js';
 import { description, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,7 +40,14 @@ function fixture({ target = 'STATE_HOME', clickable = 'true', enabled = true, am
     saveScreenshot: async path => { await writeFile(path, 'fixture'); if (revoke && path.includes('pre-publish')) process.env.CONFIRM_REAL_PUBLISH = 'NO'; },
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
   };
-  return { driver: { getSession: () => session }, count: () => count };
+  const jobId = randomUUID();
+  return { driver: { getSession: () => session }, count: () => count, jobId, confirm: async () => {
+    const read = session.getPageSource;
+    session.getPageSource = async () => '<hierarchy><node resource-id="asset_button" displayed="true"/></hierarchy>';
+    await beginCurrentLinkTransaction(session, jobId, 'https://plantaorio.com.br/', 'Leia a matéria completa');
+    session.getPageSource = read;
+    return confirmCurrentLinkTransaction(session, { jobId, url: 'https://plantaorio.com.br/', stickerText: 'Leia a matéria completa' });
+  } };
 }
 for (const [allow, confirm] of [[undefined, undefined], ['true', undefined], [undefined, 'YES'], ['false', 'YES'], ['true', 'yes'], ['TRUE', 'YES'], ['true', ' YES ']]) {
   test(`dupla trava bloqueia ${allow}/${confirm} antes de acessar sessão`, async () => {
@@ -49,6 +59,7 @@ for (const [allow, confirm] of [[undefined, undefined], ['true', undefined], [un
 }
 test('publicação autorizada faz um clique e salva antes e depois', async () => {
   authorize(); const mock = fixture(); const dir = await mkdtemp('/tmp/publish-real-');
+  await mock.confirm();
   const result = await publishStoryOnce(mock.driver, dir, clock());
   assert.equal(mock.count(), 1); assert.equal(result.outcome, 'INCONCLUSIVE'); assert.equal(result.retryAllowed, false);
   assert.match(result.job_id, /^[0-9a-f-]{36}$/); assert.ok(result.media_id.startsWith(result.job_id));
@@ -62,25 +73,68 @@ test('publicação autorizada faz um clique e salva antes e depois', async () =>
 for (const options of [{ clickable: 'false' }, { enabled: false }, { ambiguous: true }, { holder: false }]) {
   test(`editor ou botão inválido cancela sem clique: ${JSON.stringify(options)}`, async () => {
     authorize(); const mock = fixture(options);
-    await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-invalid-'), clock()));
+    await mock.confirm();
+  await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-invalid-'), clock()));
     assert.equal(mock.count(), 0);
   });
 }
 for (const options of [{ target: 'STATE_EDITOR_WITH_LINK' }, { target: 'STATE_UNKNOWN' }, { clickThrows: true, target: 'STATE_EDITOR_WITH_LINK' }]) {
   test(`incerteza pós-clique nunca repete publicação: ${JSON.stringify(options)}`, async () => {
     authorize(); const mock = fixture(options); const dir = await mkdtemp('/tmp/publish-timeout-');
-    const result = await publishStoryOnce(mock.driver, dir, clock());
+    await mock.confirm();
+  const result = await publishStoryOnce(mock.driver, dir, clock());
     assert.equal(result.outcome, 'INCONCLUSIVE'); assert.equal(mock.count(), 1);
     assert.ok((await readdir(dir)).includes('post-publish-15s.xml'));
   });
 }
 test('revogação da trava durante captura impede clique', async () => {
   authorize(); const mock = fixture({ revoke: true });
+  await mock.confirm();
   await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-revoke-'), clock()), /exige/);
   assert.equal(mock.count(), 0);
 });
 test('falha de envio observada não provoca outro clique', async () => {
   authorize(); const mock = fixture({ failure: true });
+  await mock.confirm();
   const result = await publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-fail-'), clock());
   assert.equal(result.outcome, 'FAILURE'); assert.equal(mock.count(), 1);
+});
+
+test('editor estrutural positivo de processo anterior não autoriza publicar', async () => {
+  authorize(); const mock = fixture();
+  await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-no-current-job-'), clock()), /transaction confirmed/);
+  assert.equal(mock.count(), 0);
+});
+test('job incorreto é bloqueado e identificação original acompanha envio único', async () => {
+  authorize(); const mock = fixture(); await mock.confirm();
+  await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-wrong-job-'), clock(), { job_id: 'other-job', image_sha256: 'abc' }), /current job match/);
+  assert.equal(mock.count(), 0);
+  const result = await publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-current-job-'), clock(), { job_id: mock.jobId, image_sha256: 'original-image-hash' });
+  assert.equal(result.job_id, mock.jobId);
+  assert.equal(result.media_id, `${mock.jobId}:image-sha256:original-image-hash`);
+  assert.equal(result.media_identity_source, 'job-image-sha256');
+  assert.equal(result.outcome, 'INCONCLUSIVE');
+  assert.equal(mock.count(), 1);
+});
+
+test('preparação e envio usam mesma sessão, mesmo job e memória sem reconectar', async () => {
+  authorize(); const mock = fixture(); const session = mock.driver.getSession();
+  const job = { job_id: mock.jobId, image: 'source.jpg', image_sha256: 'source-hash', story_url: 'https://plantaorio.com.br/', sticker_text: 'Leia a matéria completa', publish_instagram: false, publish_facebook: false };
+  const result = await completeCurrentStoryJob(mock.driver, job, await mkdtemp('/tmp/e2e-same-process-'), async () => {
+    assert.equal(mock.driver.getSession(), session);
+    assert.equal(mock.count(), 0);
+    assert.equal(await mock.confirm(), true);
+    return { job_id: job.job_id, published: false };
+  }, clock());
+  assert.equal(result.job_id, job.job_id);
+  assert.equal(result.publication.job_id, job.job_id);
+  assert.equal(mock.count(), 1);
+  assert.equal(result.publication.outcome, 'INCONCLUSIVE');
+});
+test('preparação sem transação do job e falha na preparação impedem clique', async () => {
+  authorize(); const mock = fixture();
+  const job = { job_id: mock.jobId, image: 'source.jpg', image_sha256: 'source-hash', story_url: 'https://plantaorio.com.br/', sticker_text: 'Leia a matéria completa', publish_instagram: false, publish_facebook: false };
+  await assert.rejects(completeCurrentStoryJob(mock.driver, job, await mkdtemp('/tmp/e2e-no-transaction-'), async () => ({}), clock()), /transaction confirmed/);
+  await assert.rejects(completeCurrentStoryJob(mock.driver, job, await mkdtemp('/tmp/e2e-preparation-failed-'), async () => { throw new Error('preparação falhou'); }, clock()), /preparação falhou/);
+  assert.equal(mock.count(), 0);
 });

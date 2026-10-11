@@ -453,3 +453,42 @@ um único clique. Nunca escolhe Keep editing. Salva `discard-dialog-N.xml/png/js
 antecedendo o clique e `discard-photo-after-N.xml/png/json` após a transição. Se o
 diálogo persistir, aborta sem repetir. Diálogos desconhecidos continuam bloqueados;
 a Home mantém sua confirmação estrita e estabilização antes de iniciar o job.
+
+### Preparação e publicação real no mesmo processo
+
+Para o teste completo use somente `npm run smoke:story-end-to-end-real` no Windows,
+com Appium e o emulador disponíveis. Configure no mesmo terminal:
+
+```bat
+set DRY_RUN=true
+set STORY_IMAGE=C:\caminho\imagem.jpg
+set STORY_URL=https://plantaorio.com.br/materia-x
+set STICKER_TEXT=Leia a matéria completa
+set ALLOW_PUBLISH=true
+set CONFIRM_REAL_PUBLISH=YES
+npm run smoke:story-end-to-end-real
+```
+
+`JOB_ID` pode vir da plataforma; sem ele é gerado um UUID antes da preparação.
+O comando valida os três parâmetros antes de conectar, normaliza a Home, envia a
+imagem, cria um Story novo e confirma URL/CTA/Done e objeto visual do job. Reutiliza
+`prepareNewStory` e `publishStoryOnce`, sem subprocessos ou reconexão. Publicação só
+ocorre depois da confirmação em memória e das duas travas exatas. Sem travas, a
+preparação pode terminar, mas o clique de publicação é bloqueado.
+
+A publicação exige transação viva do job nesta sessão inclusive no comando antigo
+`smoke:story-publish-real`; um editor deixado por outro processo não autoriza envio,
+mesmo se houver URL/tipo exposto na hierarquia. O job_id original e SHA-256 da imagem
+são usados no resultado e em `pending-publication.json`. O fingerprint do editor
+permanece disponível nas observações e não substitui o hash da imagem.
+
+Após um único clique registra `PUBLISH_PENDING_CONFIRMATION`, coleta observações
+por até 15 segundos e salva `pre-publish`, `immediate-post-click`,
+`post-publish-5s`, `post-publish-10s`, `post-publish-15s` (XML/PNG/JSON), além do resumo.
+SUCCESS exige mensagem nova e específica de envio/publicação de Story durante
+esta tentativa, ausente antes do clique. Home, Story antigo, anel do perfil, novo
+resource-id ou indicador de upload isolados não confirmam envio. Ausência de
+confirmação, timeout ou sinais contraditórios dão INCONCLUSIVE; erro explícito de
+envio dá FAILURE. Não há nova tentativa automática. A confirmação de envio não
+alega identificação visual/servidor do conteúdo (`content_identity_verified=false`).
+Não execute novamente sem conferir localmente uma tentativa inconclusiva.

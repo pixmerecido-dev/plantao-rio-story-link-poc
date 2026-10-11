@@ -46,6 +46,20 @@ export async function confirmCurrentLinkTransaction(session: Session, verified: 
   return true;
 }
 
+/** Publicação exige a transação viva desta sessão; evidência estrutural sozinha não autoriza. */
+export async function requireCurrentLinkTransaction(session: Session, expectedJobId?: string): Promise<string> {
+  const transaction = transactions.get(session);
+  if (!transaction?.confirmed || (expectedJobId !== undefined && transaction.jobId !== expectedJobId)) {
+    throw new Error('Publicação exige transaction confirmed/current job match do job atual no mesmo processo.');
+  }
+  const report = await inspectAppliedLinkSticker(session);
+  if (transactions.get(session) !== transaction || !transaction.confirmed || !report.applied || report.liveVisualCandidates.length !== 1 ||
+      !report.liveVisualCandidates.some(candidate => visualKey(candidate) === transaction.visual)) {
+    throw new Error('Publicação exige Link aplicado e transação viva do job atual.');
+  }
+  return transaction.jobId;
+}
+
 /** Holder vazio não é sticker. Somente um objeto aplicado dentro do canvas real. */
 export function analyzeAppliedLinkCanvas(source: string) {
   extractInstagramElements(source);

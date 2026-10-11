@@ -1,6 +1,6 @@
 import type { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
-import { randomUUID } from 'node:crypto';
+import { requireCurrentLinkTransaction } from './appliedLinkSticker.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { verifyPublishedStory, draftFingerprint, type PublicationObservation } from './verifyPublishedStory.js';
@@ -24,10 +24,12 @@ export type PublicationResult = ReturnType<typeof verifyPublishedStory> & {
 type ObservationClock = { now: () => number; pause: (milliseconds: number) => Promise<void> };
 
 /** Publica somente o rascunho final existente. Não prepara ou altera o Story. */
-export async function publishStoryOnce(driver: Driver, directory: string, clock?: ObservationClock): Promise<PublicationResult> {
+export async function publishStoryOnce(driver: Driver, directory: string, clock?: ObservationClock, job?: { job_id: string; image_sha256: string }): Promise<PublicationResult> {
   assertRealPublishAllowed();
   const session = driver.getSession();
+  const currentJobId = await requireCurrentLinkTransaction(session, job?.job_id);
   const validate = async () => {
+    await requireCurrentLinkTransaction(session, currentJobId);
     if (await session.getCurrentPackage() !== 'com.instagram.android' ||
         await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw new Error('Publicação exige STATE_EDITOR_WITH_LINK ativo.');
     const matches = await session.$$(resourceIdSelector(SHARE_SHORTCUT_ID));
@@ -47,10 +49,11 @@ export async function publishStoryOnce(driver: Driver, directory: string, clock?
   // Revalidar após a captura, sem usar um handle antigo ou uma autorização revogada.
   const button = await validate();
   assertRealPublishAllowed();
-  const job_id = randomUUID();
-  const media_id = `${job_id}:draft-sha256:${draftFingerprint(beforeSource)}`;
+  const job_id = currentJobId;
+  const media_id = job ? `${job_id}:image-sha256:${job.image_sha256}` : `${job_id}:draft-sha256:${draftFingerprint(beforeSource)}`;
+  const media_identity_source = job ? 'job-image-sha256' : 'editor-hierarchy-snapshot';
   await mkdir(directory, { recursive: true });
-  const pending = { job_id, media_id, media_identity_source: 'editor-hierarchy-snapshot', status: 'PUBLISH_PENDING_CONFIRMATION', clickAttempted: true, retryAllowed: false };
+  const pending = { job_id, media_id, media_identity_source, status: 'PUBLISH_PENDING_CONFIRMATION', clickAttempted: true, retryAllowed: false };
   // Persistir antes do envio: mesmo uma interrupção conserva tarefa e proibição de retry.
   await writeFile(join(directory, 'pending-publication.json'), `${JSON.stringify(pending, null, 2)}\n`, 'utf8');
   assertRealPublishAllowed();
@@ -96,7 +99,7 @@ export async function publishStoryOnce(driver: Driver, directory: string, clock?
   const verification = verifyPublishedStory(beforeSource, observations);
   console.log(`[PUBLISH] estado após clique: ${state}`);
   console.log(`[PUBLISH] ${verification.outcome}`);
-  const result: PublicationResult = { ...verification, job_id, media_id, media_identity_source: 'editor-hierarchy-snapshot',
+  const result: PublicationResult = { ...verification, job_id, media_id, media_identity_source,
     clickAttempted: true, clickCount: 1, state, clickError, observationErrors, captureErrors,
     observations: observations.map(({ source, ...rest }) => ({ ...rest, source_hash: draftFingerprint(source) })) };
   await writeFile(join(directory, 'publication-observations.json'), `${JSON.stringify(observations, null, 2)}\n`, 'utf8');
