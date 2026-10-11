@@ -21,3 +21,20 @@ export function buildStickerPinchActions(center: TouchPoint, width: number, fact
     pointer('sticker-pinch-right', { x: center.x + offset, y: center.y }, { x: center.x + offset * factor, y: center.y }, 150, 900),
   ];
 }
+
+/** Hold explícito + cinco passos, sem pointerUp intermediário. */
+export function buildSteppedStickerMoveActions(from: TouchPoint, to: TouchPoint) {
+  const steps = Array.from({ length: 5 }, (_, index) => ({
+    type: 'pointerMove' as const, origin: 'viewport' as const, duration: 200,
+    x: Math.round(from.x+(to.x-from.x)*(index+1)/5),
+    y: Math.round(from.y+(to.y-from.y)*(index+1)/5),
+  }));
+  return [{ type: 'pointer' as const, id: 'sticker-move-stepped', parameters: { pointerType: 'touch' as const }, actions: [
+    { type: 'pointerMove' as const, origin: 'viewport' as const, duration: 0, x: Math.round(from.x), y: Math.round(from.y) },
+    { type: 'pointerDown' as const, button: 0 },
+    { type: 'pause' as const, duration: 900 },
+    ...steps,
+    { type: 'pause' as const, duration: 150 },
+    { type: 'pointerUp' as const, button: 0 },
+  ] }];
+}

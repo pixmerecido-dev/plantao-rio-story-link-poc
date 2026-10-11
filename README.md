@@ -521,31 +521,30 @@ atual. O plano de pinch com dois pointers sincronizados também fica reservado;
 `smoke:sticker-resize` ainda não foi criado, aguardando movimento real comprovado.
 Nenhum teste isolado restaura transação Link de outro processo ou autoriza publicação.
 
-### Próximo teste: deslocamento físico grande por ADB
+### Teste atual: movimento W3C com hold explícito e cinco passos
 
-`smoke:sticker-move` agora executa SOMENTE um swipe ADB nativo longo, sem buscar
-modelo/layout final e sem W3C/resize. Calcula START pelo centro fresco do único
-sticker vivo e END_X=START_X-250, com END_Y=START_Y. Limita o endpoint à margem de
-2% do canvas. Não exige que toda a largura do sticker caiba na posição final deste
-teste; o endpoint do toque permanece seguro. Se não houver espaço para deslocar
-pelo menos 120 px, aborta antes do comando.
-
-Usa o UDID da sessão: `adb -s <device> shell input touchscreen swipe ... 1400`.
-A duração é 1400 ms; o comando Android interpolará o toque ao longo desse período
-(não é garantia de uma pausa inicial de long press). Precisamos medir o resultado
-real antes de concluir que o Instagram aceita essa estratégia.
-
-Após o único comando espera 1 segundo, recaptura hierarchy e o mesmo objeto, e
-considera `moved=true` somente se abs(deltaX) >= 120 px. Deslocamento vertical é
-registrado, sem meta de posição final. Timeout ou movimento insuficiente salvam
-`move-test-error.xml/png/json` e abortam sem outra estratégia. Capturas antes/depois
-são `move-test-before`/`move-test-after`, e os dados ficam em `move-test.json`.
-O teste W3C anterior permanece como código experimental, mas não é chamado por
-este comando. Preparação, Link, crosspost e publicação não foram alterados.
-
-Para executar no Windows, deixe o editor com um único sticker visível e use:
+Deixe o editor com um único sticker visível e execute no Windows:
 
 ```bat
 set DRY_RUN=true
 npm run smoke:sticker-move
 ```
+
+O comando não usa ADB swipe, dragAndDrop, resize, criação de Story ou publicação.
+Resolve o centro pelos bounds frescos do único objeto visual vivo no canvas atual,
+calcula destino até 250 px à esquerda, mantendo Y, e limita o endpoint à margem de
+2% do canvas. Se a área segura não permitir pelo menos 120 px, aborta antes do gesto.
+
+Envia UMA sequência W3C com `pointerType=touch`: pointerMove(start), pointerDown,
+pause(900 ms), cinco pointerMove a 20/40/60/80/100% do percurso (200 ms cada),
+pause(150 ms), pointerUp. Não solta entre os passos e não consulta hierarchy durante
+o contato. Libera actions em finally também se houver erro técnico. Espera 1000 ms
+após o gesto e só então recaptura XML/PNG/JSON e relê os bounds do mesmo objeto.
+
+`moved=true` exige abs(deltaX)>=120 px; não exige layout final. Falha ou timeout
+abortam sem repetição/alternativa. Logs `[MOVE-W3C]` incluem before, start, hold,
+cada passo, after e delta real. Capturas `move-test-before`, `move-test-after`,
+`move-test-error` e JSON `move-test.json` ficam na pasta artifacts da execução.
+O experimento ADB está preservado como código, mas não é chamado pelo smoke atual.
+Movimento físico real precisa ser confirmado localmente antes de testar resize ou
+reintegrar qualquer ajuste ao fluxo completo.
