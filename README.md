@@ -443,3 +443,13 @@ outro processo, não herda a transação do smoke anterior: um sticker genérico
 URL/tipo exposto permanece não confirmado. Para essa variante, a prova automática
 é a inspeção feita no mesmo processo de `smoke:story-prepare`. Não é seguro marcar
 um sticker de execução anterior como Link apenas pela descrição genérica.
+
+Na normalização, `STATE_DISCARD_PHOTO_DIALOG` é reconhecido somente quando um
+mesmo diálogo visível contém exatamente um título `Discard photo?`, um controle
+`Discard` e um controle `Keep editing`, sem evidência de conteúdo publicado/exclusão.
+Usa o resource-id ou accessibility id observado do botão; sem eles, texto exato
+`Discard`. Valida unicidade, visibilidade, enabled/clickable e label vivo antes de
+um único clique. Nunca escolhe Keep editing. Salva `discard-dialog-N.xml/png/json`
+antecedendo o clique e `discard-photo-after-N.xml/png/json` após a transição. Se o
+diálogo persistir, aborta sem repetir. Diálogos desconhecidos continuam bloqueados;
+a Home mantém sua confirmação estrita e estabilização antes de iniciar o job.

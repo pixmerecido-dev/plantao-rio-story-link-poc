@@ -110,3 +110,33 @@ test('mudança após Home não estabilizada continua e confirma Home novamente a
 test('sinais de Home ocultos não contam como confirmação', () => {
   assert.notEqual(analyzeResetHierarchy(`<hierarchy><node displayed="false">${homeXML}</node></hierarchy>`).state, 'STATE_HOME');
 });
+
+const discardPhoto = '<hierarchy><node class="android.app.Dialog"><node text="Discard photo?"/><node text="If you go back now, you will lose your photo."/><node text="Discard" class="android.widget.Button"/><node text="Keep editing" class="android.widget.Button"/></node></hierarchy>';
+test('diálogo exato Discard photo é conhecido e utiliza texto observado sem id inventado', () => {
+  const screen = inspectResetScreen(discardPhoto);
+  assert.equal(screen.state, 'STATE_DISCARD_PHOTO_DIALOG');
+  assert.equal(screen.discardSelector, 'android=new UiSelector().text("Discard")');
+  for (const altered of [discardPhoto.replace('Discard photo?', 'Discard video?'), discardPhoto.replace('Keep editing', 'Cancel'), discardPhoto.replace('text="Discard"', 'text="Delete"'), discardPhoto.replace('</node></hierarchy>', '<node text="Discard"/></node></hierarchy>'), discardPhoto.replace('you will lose your photo.', 'delete already published story')]) assert.equal(inspectResetScreen(altered).state, 'STATE_UNSAFE_DIALOG');
+});
+test('título e Keep editing fora do diálogo não autorizam descarte', () => {
+  assert.equal(inspectResetScreen('<hierarchy><node text="Discard photo?"/><node text="Keep editing"/><node class="android.app.Dialog"><node text="Discard"/></node></hierarchy>').state, 'STATE_UNSAFE_DIALOG');
+});
+for (const stuck of [false, true]) test(`descarte de foto uma vez; diálogo preso=${stuck}`, async () => {
+  const mock = fixture(['STATE_HOME']), session = mock.driver.getSession();
+  const homeSource = session.getPageSource;
+  let dialog = true, clicks = 0;
+  session.getPageSource = async () => dialog ? discardPhoto : homeSource();
+  session.$$ = async selector => {
+    assert.equal(selector, 'android=new UiSelector().text("Discard")');
+    return [{ elementId: 'real-discard-button', isDisplayed: async () => true, isEnabled: async () => true, getAttribute: async name => name === 'clickable' ? 'true' : '', getText: async () => 'Discard' }];
+  };
+  session.elementClick = async id => { assert.equal(id, 'real-discard-button'); clicks++; if (!stuck) dialog = false; };
+  const directory = await mkdtemp('/tmp/reset-photo-');
+  if (stuck) await assert.rejects(normalizeInstagramToHome(mock.driver, directory), /não repetir clique/);
+  else await normalizeInstagramToHome(mock.driver, directory);
+  assert.equal(clicks, 1);
+  assert.equal(mock.counts().backs, 0);
+  assert.equal(mock.counts().homeWaits, stuck ? 0 : 1);
+  const files = await readdir(directory);
+  for (const name of ['discard-dialog-1', 'discard-photo-after-1', 'reset-final']) for (const ext of ['xml', 'png', 'json']) assert.ok(files.includes(`${name}.${ext}`));
+});

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 
 type Driver = Pick<InstagramDriver, 'getSession'>;
-type ResetState = InstagramState | 'STATE_SHARE' | 'STATE_DRAFT_DIALOG' | 'STATE_UNSAFE_DIALOG';
+type ResetState = InstagramState | 'STATE_SHARE' | 'STATE_DRAFT_DIALOG' | 'STATE_DISCARD_PHOTO_DIALOG' | 'STATE_UNSAFE_DIALOG';
 const intermediate = new Set<ResetState>(['STATE_EDITOR', 'STATE_EDITOR_WITH_LINK', 'STATE_STICKERS', 'STATE_LINK_EDITOR', 'STATE_GALLERY', 'STATE_CREATE', 'STATE_SHARE']);
 
 function visibleResetElements(source: string): InstagramElement[] {
@@ -61,6 +61,16 @@ export function inspectResetScreen(source: string) {
     const localDraft = labels.some(label => /save (?:as )?draft|salvar (?:como )?rascunho|discard (?:this )?(?:story|draft)|descartar (?:o )?(?:story|rascunho)/i.test(label));
     const publishedContent = labels.some(label => /delete|remove|excluir|apagar|already published|já publicado/i.test(label));
     const discard = scope.filter(element => [element.text, element['content-desc']].some(label => /^(?:discard|discard (?:story|draft)|descartar|descartar (?:story|rascunho))$/i.test(label.trim())));
+    const exactLabel = (element: InstagramElement, value: string) => element.text === value || element['content-desc'] === value;
+    const photoTitle = scope.filter(element => exactLabel(element, 'Discard photo?'));
+    const photoDiscard = scope.filter(element => exactLabel(element, 'Discard'));
+    const photoKeep = scope.filter(element => exactLabel(element, 'Keep editing'));
+    if (dialogScopes.length === 1 && !publishedContent && photoTitle.length === 1 && photoDiscard.length === 1 && photoKeep.length === 1 && discard.length === 1) {
+      for (const target of photoDiscard) {
+        const selector = target['resource-id'] ? resourceIdSelector(target['resource-id']) : target['content-desc'] ? `~${target['content-desc']}` : 'android=new UiSelector().text("Discard")';
+        return { state: 'STATE_DISCARD_PHOTO_DIALOG' as const, discardSelector: selector, evidence: scope };
+      }
+    }
     if (localDraft && !publishedContent && discard.length === 1) {
       const [target] = discard;
       if (target) {
@@ -124,7 +134,7 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
     const screen = inspectResetScreen(source);
     const snapshot = analyzeResetHierarchy(source);
     let state: ResetState = snapshot.state;
-    if (screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_UNSAFE_DIALOG') state = screen.state;
+    if (screen.state === 'STATE_DISCARD_PHOTO_DIALOG' || screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_UNSAFE_DIALOG') state = screen.state;
     else if (snapshot.state !== 'STATE_LINK_EDITOR' && snapshot.state !== 'STATE_STICKERS' && screen.state === 'STATE_SHARE') state = 'STATE_SHARE';
     else if (state === 'STATE_EDITOR') {
       // Preserva os critérios existentes do link; Home não usa probes genéricos.
@@ -157,24 +167,40 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
         await writeFile(join(directory, 'normalization.json'), `${JSON.stringify({ backs, discards, trace, finalState: screen.state, homeSignals: final.homeSignals, blockers: final.blockers }, null, 2)}\n`, 'utf8');
         return;
       }
-      if (screen.state === 'STATE_DRAFT_DIALOG') {
+      if (screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_DISCARD_PHOTO_DIALOG') {
+        const photoDialog = screen.state === 'STATE_DISCARD_PHOTO_DIALOG';
         if (++discards > 5 || !screen.discardSelector) throw new Error('Limite de descarte local atingido.');
-        console.log('[RESET] diálogo de descarte detectado');
+        console.log(photoDialog ? '[RESET] diálogo conhecido detectado: DISCARD_PHOTO' : '[RESET] diálogo de descarte detectado');
         await saveScreenArtifacts(driver, directory, `discard-dialog-${discards}`);
         // Releitura: o seletor só é usado se o mesmo diálogo seguro permanece.
         const fresh = await read();
-        if (fresh.state !== 'STATE_DRAFT_DIALOG' || fresh.discardSelector !== screen.discardSelector) throw new Error('Diálogo mudou; descarte cancelado.');
+        if (fresh.state !== screen.state || fresh.discardSelector !== screen.discardSelector) throw new Error('Diálogo mudou; descarte cancelado.');
         const controls = await session.$$(screen.discardSelector);
         if (controls.length !== 1) throw new Error('Descarte ausente ou ambíguo; job cancelado.');
+        if (photoDialog) console.log('[RESET] botão Discard encontrado');
         for (const control of controls) {
           if (!control.elementId || !await control.isDisplayed() || !await control.isEnabled() || await control.getAttribute('clickable') !== 'true') throw new Error('Descarte não está visível/habilitado/clicável.');
+          if (photoDialog) {
+            const text = await control.getText();
+            const description = await control.getAttribute('content-desc');
+            if (text !== 'Discard' && description !== 'Discard') throw new Error('Controle não confirma Discard exato; clique cancelado.');
+            console.log('[RESET] descartando rascunho anterior');
+          }
           await session.elementClick(control.elementId);
         }
         trace.push({ state: screen.state, action: 'discard-local-draft' });
         await session.pause(500);
         await saveScreenArtifacts(driver, directory, `reset-step-${++captures}`);
         screen = await read();
-        if (screen.state === 'STATE_DRAFT_DIALOG') throw new Error('Descarte não fechou o diálogo; não repetir clique.');
+        if (photoDialog) {
+          for (let probe = 0; probe < 4 && screen.state === 'STATE_DISCARD_PHOTO_DIALOG'; probe++) {
+            await session.pause(500);
+            screen = await read();
+          }
+          await saveScreenArtifacts(driver, directory, `discard-photo-after-${discards}`);
+          console.log(`[RESET] estado após descarte: ${screen.state}`);
+        }
+        if (screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_DISCARD_PHOTO_DIALOG') throw new Error('Descarte não fechou o diálogo; não repetir clique.');
         console.log('[RESET] draft descartado');
       } else {
         if (!intermediate.has(screen.state)) throw new Error(`${screen.state}: não navegar em tela/diálogo desconhecido ou ambíguo.`);
