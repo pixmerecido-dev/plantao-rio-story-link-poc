@@ -1,3 +1,4 @@
+import { requireApprovedStickerLayout } from './approvedStickerLayout.js';
 import { inspectFacebookStorySharingPrompt, findAlwaysShareControl, hasUnknownPublicationDialog } from './facebookStorySharingPrompt.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { saveScreenArtifacts } from './diagnostics.js';
@@ -33,6 +34,7 @@ export async function publishStoryOnce(driver: Driver, directory: string, clock?
   const currentJobId = await requireCurrentLinkTransaction(session, job?.job_id);
   const validate = async () => {
     await requireCurrentLinkTransaction(session, currentJobId);
+    await requireApprovedStickerLayout(session,currentJobId);
     if (await session.getCurrentPackage() !== 'com.instagram.android' ||
         await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw new Error('Publicação exige STATE_EDITOR_WITH_LINK ativo.');
     const matches = await session.$$(resourceIdSelector(SHARE_SHORTCUT_ID));
@@ -61,6 +63,7 @@ export async function publishStoryOnce(driver: Driver, directory: string, clock?
   // Persistir antes do envio: mesmo uma interrupção conserva tarefa e proibição de retry.
   await writeFile(join(directory, 'pending-publication.json'), `${JSON.stringify(pending, null, 2)}\n`, 'utf8');
   assertRealPublishAllowed();
+  await requireApprovedStickerLayout(session,currentJobId); // Última revalidação antes do clique único.
   let state: InstagramState = 'STATE_EDITOR_WITH_LINK';
   let clickError: string | undefined;
   const observationErrors: string[] = [], captureErrors: string[] = [];

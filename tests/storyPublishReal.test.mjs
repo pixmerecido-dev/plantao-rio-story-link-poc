@@ -1,7 +1,8 @@
+import { confirmApprovedStickerLayout, clearApprovedStickerLayout } from '../dist/instagram/approvedStickerLayout.js';
 import { completeCurrentStoryJob } from '../dist/instagram/storyEndToEndReal.js';
 import { randomUUID } from 'node:crypto';
 import { beginCurrentLinkTransaction, confirmCurrentLinkTransaction } from '../dist/instagram/appliedLinkSticker.js';
-import { description, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
+import { description, bounds as originalBounds, positiveCanvasXML, appliedElement } from './helpers/appliedLinkFixture.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -38,13 +39,13 @@ function fixture({ target = 'STATE_HOME', clickable = 'true', enabled = true, am
         return ambiguousFacebook ? [always, always] : [always];
       }
       if (clicked && target !== 'STATE_EDITOR_WITH_LINK') return [];
-      if (selector === `~${description}`) return holder ? [appliedElement()] : [];
+      if (selector === `~${description}`) return holder ? [{ ...appliedElement(),getAttribute:async key => key === 'bounds' ? '[83,1094][612,1182]' : appliedElement().getAttribute(key) }] : [];
       if (selector === resourceIdSelector(LINK_STICKER_HOLDER_ID)) return holder ? [visible] : [];
       if (selector === resourceIdSelector(SHARE_SHORTCUT_ID)) return ambiguous ? [button, button] : [button];
       return [];
     },
     getCurrentPackage: async () => 'com.instagram.android',
-    getPageSource: async () => facebook && clicked && !facebookClosed ? `<hierarchy><node class="android.app.Dialog"><node text="${facebook === 'unknown' ? 'Unknown sharing prompt' : 'Share your stories to Facebook too'}"/><node text="Let your followers see your stories, no matter which app they're on."/><node text="Always share stories" class="android.widget.Button"/><node text="Not now" class="android.widget.Button"/><node text="${facebook === 'unknown' && ack ? 'Your story was shared' : ''}"/></node></hierarchy>` : `<hierarchy>${holder && (!clicked || target === 'STATE_EDITOR_WITH_LINK') ? positiveCanvasXML : ''}<node text="${clicked ? failure ? 'Failed to upload' : ack && (!facebook || facebookClosed) ? 'Your story was shared' : 'after' : 'before'}"/></hierarchy>`,
+    getPageSource: async () => facebook && clicked && !facebookClosed ? `<hierarchy><node class="android.app.Dialog"><node text="${facebook === 'unknown' ? 'Unknown sharing prompt' : 'Share your stories to Facebook too'}"/><node text="Let your followers see your stories, no matter which app they're on."/><node text="Always share stories" class="android.widget.Button"/><node text="Not now" class="android.widget.Button"/><node text="${facebook === 'unknown' && ack ? 'Your story was shared' : ''}"/></node></hierarchy>` : `<hierarchy>${holder && (!clicked || target === 'STATE_EDITOR_WITH_LINK') ? positiveCanvasXML.replace(originalBounds,'[83,1094][612,1182]') : ''}<node text="${clicked ? failure ? 'Failed to upload' : ack && (!facebook || facebookClosed) ? 'Your story was shared' : 'after' : 'before'}"/></hierarchy>`,
     saveScreenshot: async path => { await writeFile(path, 'fixture'); if (revoke && path.includes('pre-publish')) process.env.CONFIRM_REAL_PUBLISH = 'NO'; },
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
   };
@@ -54,7 +55,9 @@ function fixture({ target = 'STATE_HOME', clickable = 'true', enabled = true, am
     session.getPageSource = async () => '<hierarchy><node resource-id="asset_button" displayed="true"/></hierarchy>';
     await beginCurrentLinkTransaction(session, jobId, 'https://plantaorio.com.br/', 'Leia a matéria completa');
     session.getPageSource = read;
-    return confirmCurrentLinkTransaction(session, { jobId, url: 'https://plantaorio.com.br/', stickerText: 'Leia a matéria completa' });
+    const confirmed = await confirmCurrentLinkTransaction(session, { jobId, url: 'https://plantaorio.com.br/', stickerText: 'Leia a matéria completa' });
+    if (confirmed) await confirmApprovedStickerLayout(session,jobId);
+    return confirmed;
   } };
 }
 for (const [allow, confirm] of [[undefined, undefined], ['true', undefined], [undefined, 'YES'], ['false', 'YES'], ['true', 'yes'], ['TRUE', 'YES'], ['true', ' YES ']]) {
@@ -184,4 +187,11 @@ test('diálogo diferente não recebe clique e mantém INCONCLUSIVE mesmo com men
   assert.equal(result.unknown_dialog_observed, true);
   assert.equal(mock.count(), 1);
   assert.equal(mock.facebookCount(), 0);
+});
+
+test('Link confirmado sem layout aprovado bloqueia publicação',async () => {
+  authorize(); const mock = fixture(); await mock.confirm();
+  clearApprovedStickerLayout(mock.driver.getSession());
+  await assert.rejects(publishStoryOnce(mock.driver,await mkdtemp('/tmp/publish-layout-blocked-'),clock()),/layout_confirmed=false/);
+  assert.equal(mock.count(),0);
 });

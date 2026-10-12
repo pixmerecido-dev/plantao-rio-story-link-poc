@@ -1,3 +1,4 @@
+import { requireApprovedStickerLayout } from './approvedStickerLayout.js';
 import { join } from 'node:path';
 import type { InstagramDriver } from './InstagramDriver.js';
 import type { StoryJob } from '../config/StoryJob.js';
@@ -26,6 +27,7 @@ export async function completeCurrentStoryJob<T>(driver: Pick<InstagramDriver, '
   prepare: () => Promise<T>, clock?: Parameters<typeof publishStoryOnce>[2]) {
   const prepared = await prepare();
   await requireCurrentLinkTransaction(driver.getSession(), job.job_id);
+  await requireApprovedStickerLayout(driver.getSession(),job.job_id);
   // Travas só liberam publicação após confirmar a preparação do job atual.
   assertRealPublishAllowed();
   const publication = await publishStoryOnce(driver, directory, clock, job);

@@ -1,3 +1,5 @@
+import { applyApprovedStoryLayout } from './storyStickerLayout.js';
+import { clearApprovedStickerLayout } from './approvedStickerLayout.js';
 import { beginCurrentLinkTransaction, clearCurrentLinkTransaction, confirmCurrentLinkTransaction } from './appliedLinkSticker.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import type { StoryJob } from '../config/StoryJob.js';
@@ -26,6 +28,7 @@ export async function prepareNewStory(driver: Driver, job: StoryJob, directory: 
   if (process.env.DRY_RUN !== 'true') throw new Error('Preparação exige DRY_RUN=true.');
   const session = driver.getSession();
   clearCurrentLinkTransaction(session);
+  clearApprovedStickerLayout(session);
   await normalizeInstagramToHome(driver, directory);
   if (await detectInstagramState(session) !== 'STATE_HOME') throw new Error('Novo job exige STATE_HOME estabilizado.');
   console.log('[JOB] iniciando novo Story');
@@ -69,9 +72,10 @@ export async function prepareNewStory(driver: Driver, job: StoryJob, directory: 
     { ...WAIT, timeoutMsg: 'Objeto visual novo do Link não confirmado para o job atual.' });
   await waitForState(session, 'STATE_EDITOR_WITH_LINK');
   if (await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw new Error('Story preparado não atingiu STATE_EDITOR_WITH_LINK.');
+  const layout = await applyApprovedStoryLayout(driver,job.job_id,`${directory}/layout`);
   const capture = await saveScreenArtifacts(driver, directory, 'story-prepared');
   console.log('[STATE] STATE_EDITOR_WITH_LINK');
   console.log('[SAFE] publicação não executada');
   console.log('[OK] Story preparado para publicação');
-  return { ...job, custom_text_selector: customSelector, url_verified: true, sticker_text_verified: true, published: false, elements: capture.elements };
+  return { ...job, custom_text_selector: customSelector, url_verified: true, sticker_text_verified: true, published: false, layout_confirmed:layout.layout_confirmed, layout, elements: capture.elements };
 }

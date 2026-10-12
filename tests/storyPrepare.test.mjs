@@ -36,23 +36,18 @@ function fixture({ initial = 'STATE_HOME', ambiguous = false, mismatch = false, 
     pause: async () => {},
     releaseActions: async () => {},
     performActions: async pointers => {
-      const box = stickerBounds.match(/\d+/g).map(Number);
-      const point = (pointer, index) => pointer.actions[index];
-      if (pointers.length === 1) {
-        const dx = point(pointers[0], 3).x - point(pointers[0], 0).x, dy = point(pointers[0], 3).y - point(pointers[0], 0).y;
-        box[0] += dx; box[2] += dx; box[1] += dy; box[3] += dy;
-      } else {
-        const factor = (point(pointers[1], 3).x - point(pointers[0], 3).x) / (point(pointers[1], 0).x - point(pointers[0], 0).x);
-        const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2, w = (box[2] - box[0]) * factor, h = (box[3] - box[1]) * factor;
-        box[0] = cx - w / 2; box[2] = cx + w / 2; box[1] = cy - h / 2; box[3] = cy + h / 2;
-      }
-      stickerBounds = `[${Math.round(box[0])},${Math.round(box[1])}][${Math.round(box[2])},${Math.round(box[3])}]`;
+      assert.equal(pointers.length,1,'resize deve ser nativo');
+      const box = stickerBounds.match(/\d+/g).map(Number), moves = pointers[0].actions.filter(action => action.type === 'pointerMove');
+      const first = moves[0], last = moves.at(-1);
+      const dx = last.x-first.x,dy = last.y-first.y;
+      stickerBounds = `[${Math.round(box[0]+dx)},${Math.round(box[1]+dy)}][${Math.round(box[2]+dx)},${Math.round(box[3]+dy)}]`;
+      actions.push(['move']);
     },
     back: async () => { throw new Error('normalização falhou sem saída segura simulada'); },
     $: async selector => element(parse(selector)),
     $$: async selector => selector === `~${liveDescription}` ? state === 'STATE_EDITOR_WITH_LINK' ? [{ ...appliedElement(), getAttribute: async name => name === 'content-desc' ? liveDescription : name === 'bounds' ? stickerBounds : (await appliedElement().getAttribute(name)) }] : [] : selector === '~Link Sticker' ? state === 'STATE_STICKERS' ? [element(STICKER_ITEM_ID)] : [] : exists(parse(selector)) ? [element(parse(selector))] : [],
     getCurrentPackage: async () => 'com.instagram.android',
-    execute: async (name, { elementId }) => { assert.equal(name, 'mobile: clickGesture'); assert.equal(elementId, `id-${STICKER_ITEM_ID}`); actions.push(['gesture', elementId]); state = 'STATE_LINK_EDITOR'; },
+    execute: async (name, args) => { if (name === 'mobile: pinchCloseGesture') { assert.equal(args.percent,0.50); actions.push(['resize-native']); stickerBounds = '[83,1094][612,1182]'; return; } const { elementId } = args; assert.equal(name, 'mobile: clickGesture'); assert.equal(elementId, `id-${STICKER_ITEM_ID}`); actions.push(['gesture', elementId]); state = 'STATE_LINK_EDITOR'; },
     getPageSource: async () => `<hierarchy>${state === 'STATE_EDITOR_WITH_LINK' ? positiveCanvasXML.replace(description, liveDescription).replace(initialBounds, stickerBounds) : ''}${state === 'STATE_HOME' ? '<node text="For you"/><node resource-id="com.instagram.android:id/reel_empty_badge" content-desc="Add to story"/>' : state === 'STATE_EDITOR' || state === 'STATE_EDITOR_WITH_LINK' ? '<node resource-id="asset_button" displayed="true"/>' : ''}${state === 'STATE_LINK_EDITOR' ? `<node class="android.widget.EditText" resource-id="${LINK_URL_ID}"/>${expanded ? `<node class="android.widget.EditText" resource-id="${actualField}"/>${ambiguous ? '<node class="android.widget.EditText" resource-id="fixture:id/other"/>' : ''}` : ''}` : ''}</hierarchy>`,
     saveScreenshot: async path => writeFile(path, 'fixture'),
     waitUntil: async callback => { for (let i = 0; i < 2; i++) if (await callback()) return; throw new Error('timeout'); },
@@ -111,12 +106,13 @@ test('story-prepare confirma CTA personalizado mesmo sem URL/tipo no objeto fina
   assert.equal(mock.actions.filter(action => action[0] === 'click' && action[1] === LINK_DONE_ID).length, 1);
 });
 
-test('preparação funcional não executa MOVE/RESIZE enquanto gesto isolado aguarda validação local', async () => {
+test('preparação aplica resize nativo e pula move quando posição já aprovada', async () => {
   const mock = fixture({ genericSticker: true });
-  mock.driver.getSession().performActions = async () => { throw new Error('Layout não deve ser executado neste fluxo.'); };
+  mock.driver.getSession().performActions = async () => { throw new Error('Move desnecessário não deve ser executado.'); };
   const result = await prepareNewStory(mock.driver, job, await mkdtemp('/tmp/prepare-no-layout-'), mock.prepareImage);
   assert.equal(result.published, false);
   assert.equal(result.url_verified, true);
   assert.equal(result.sticker_text_verified, true);
-  assert.equal('layout' in result, false);
+  assert.equal(result.layout_confirmed,true);
+  assert.equal(mock.actions.filter(action => action[0] === 'resize-native').length,1);
 });

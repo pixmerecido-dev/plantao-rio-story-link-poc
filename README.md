@@ -515,9 +515,9 @@ A mensagem positiva de envio desta tentativa continua obrigatória para SUCCESS.
 
 ### Situação dos gestos de layout
 
-Layout automático permanece desligado de `story-prepare` e do fluxo real. O
-experimento W3C anterior está preservado como código, mas não é chamado pelo smoke
-atual. O plano de pinch com dois pointers sincronizados também fica reservado;
+Layout está reintegrado após a validação real, usando resize nativo e posição W3C
+sequenciais. O experimento W3C anterior está preservado como código, mas não é
+chamado pelos fluxos atuais. O plano de pinch com dois pointers sincronizados permanece apenas como experimento histórico;
 `smoke:sticker-resize` testa somente uma pinça isolada, após movimento comprovado localmente.
 Nenhum teste isolado restaura transação Link de outro processo ou autoriza publicação.
 
@@ -572,7 +572,7 @@ Erro técnico/timeout nunca dispara retry; não há terceira tentativa/estratég
 Logs `[RESIZE-NATIVE]` registram bounds, área, percent, larguras e scale_ratio.
 Salva `resize-test-before`, `resize-test-after-1/2`, `resize-test-after`,
 `resize-test-error` (XML/PNG/JSON) e `resize-test.json` com todas as tentativas.
-O movimento W3C validado permanece intacto; resize não está integrado à preparação.
+O movimento W3C validado permanece intacto; o fluxo completo reutiliza este resize quando necessário.
 
 ### Posicionamento final isolado, mantendo o tamanho aprovado
 
@@ -596,10 +596,52 @@ Fora da tolerância, executa somente um drag usando exatamente o W3C validado:
 hold900ms + cinco passos200ms + pause150ms + pointerUp. Espera 1000ms e relê o mesmo
 objeto. Confirma posição e verifica que o tamanho ficou preservado (tolerância de
 arredondamento). Não executa pinch, seleção, preparação, URL/CTA, Facebook ou clique
-de publicação. Falha/timeout não geram outra estratégia. O fluxo completo permanece
-sem layout automático até a reintegração futura.
+de publicação. Falha/timeout não geram outra estratégia. O fluxo completo reutiliza este posicionamento somente quando necessário, após validar o tamanho.
 
 Logs `[FINAL-POSITION]` mostram before, center_before, target_center, after,
 center_after, delta e position_ok. Salva `final-position-before`,
 `final-position-after`, `final-position-error` (XML/PNG/JSON) e
 `final-position.json`. Nenhuma confirmação de job anterior é restaurada neste smoke.
+
+### Layout reintegrado ao mesmo job antes da publicação
+
+`smoke:story-prepare` e `smoke:story-end-to-end-real` agora seguem preparação nova
+-> Link/URL/CTA/Done -> confirmação de transação -> resize nativo (se necessário)
+-> validação de tamanho -> posição W3C (se necessário) -> validação final.
+Reutilizam exatamente `testCurrentStickerResize` e `positionCurrentSticker`, com
+percent0.50/0.75 e W3C900ms+5x200ms já validados. Não chamam o antigo ajuste combinado.
+
+O tamanho aprovado é 529x88 para canvas1080x1920, convertido em proporções do canvas
+atual, com tolerância de 8% por dimensão. Centro relativo0.303/0.593 e tolerância4%
+por eixo continuam os do smoke final. Tamanho já aprovado não recebe pinch; posição
+já aprovada não recebe drag. Uma escala excessiva ou ainda inválida após o pinch
+para a preparação, sem nova estratégia ou compensação. Referência de tamanho está
+em `approvedStickerLayout.ts`; TARGET_STICKER_WIDTH/HEIGHT antigos não são usados
+como autorização de tamanho neste fluxo.
+
+A confirmação geométrica é renovada somente para o mesmo objeto do job/sessão,
+após cada operação. `layout_confirmed=true` fica somente em memória, com fingerprint
+do sticker, canvas e alvo. Novo job limpa aprovação anterior. Publicação revalida
+transação, tamanho, posição e fingerprint antes do clique único: layout falso,
+ausente, de outro job ou alterado bloqueia o envio. Artefatos em `layout/` incluem
+resize, position (quando necessários), layout-approved/layout-error e layout.json.
+Logs `[LAYOUT]` mostram resize_required, size_ok, move_required, position_ok,
+confirmed, terminando em `[READY] Story preparado com layout aprovado`.
+
+Para a execução real completa no Windows, no mesmo terminal:
+
+```bat
+set DRY_RUN=true
+set STORY_IMAGE=C:\caminho\imagem.jpg
+set STORY_URL=https://plantaorio.com.br/materia-x
+set STICKER_TEXT=Leia a matéria completa
+set ALLOW_PUBLISH=true
+set CONFIRM_REAL_PUBLISH=YES
+npm run smoke:story-end-to-end-real
+```
+
+Mantenha a imagem/URL/texto exatos da tarefa. O fluxo prepara, confirma layout e
+publica no mesmo processo/job; Your story é clicado uma única vez e o prompt
+Facebook segue o tratamento já validado. Home/Story antigo continuam inconclusivos
+sem mensagem positiva nova de envio. Não executar novamente automaticamente se
+o resultado for INCONCLUSIVE. Para preparar sem publicar, use smoke:story-prepare.
