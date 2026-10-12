@@ -573,3 +573,33 @@ Logs `[RESIZE-NATIVE]` registram bounds, área, percent, larguras e scale_ratio.
 Salva `resize-test-before`, `resize-test-after-1/2`, `resize-test-after`,
 `resize-test-error` (XML/PNG/JSON) e `resize-test.json` com todas as tentativas.
 O movimento W3C validado permanece intacto; resize não está integrado à preparação.
+
+### Posicionamento final isolado, mantendo o tamanho aprovado
+
+O usuário validou `pinchCloseGesture` no emulador: width696 -> width529
+(scale_ratio≈0.7601). Não altera percent, alvo de escala ou implementação de resize.
+
+Com o sticker atual no editor e DRY_RUN=true, execute:
+
+```bat
+npm run smoke:sticker-final-position
+```
+
+Usa centro alvo relativo ao canvas: `TARGET_STICKER_CENTER_X=0.303` e
+`TARGET_STICKER_CENTER_Y=0.593` (ajustáveis por essas variáveis). Calcula destino
+seguro com a largura/altura ATUAL e margem de 0.2% do canvas. Se o destino seguro
+não puder atingir o alvo com tolerância de ±4% do canvas por eixo, aborta sem resize.
+Se o centro atual já satisfizer a tolerância, salva evidências e termina sem gesto.
+Isso é esperado para bounds [83,1094][612,1182] em canvas [0,0][1080,1920].
+
+Fora da tolerância, executa somente um drag usando exatamente o W3C validado:
+hold900ms + cinco passos200ms + pause150ms + pointerUp. Espera 1000ms e relê o mesmo
+objeto. Confirma posição e verifica que o tamanho ficou preservado (tolerância de
+arredondamento). Não executa pinch, seleção, preparação, URL/CTA, Facebook ou clique
+de publicação. Falha/timeout não geram outra estratégia. O fluxo completo permanece
+sem layout automático até a reintegração futura.
+
+Logs `[FINAL-POSITION]` mostram before, center_before, target_center, after,
+center_after, delta e position_ok. Salva `final-position-before`,
+`final-position-after`, `final-position-error` (XML/PNG/JSON) e
+`final-position.json`. Nenhuma confirmação de job anterior é restaurada neste smoke.

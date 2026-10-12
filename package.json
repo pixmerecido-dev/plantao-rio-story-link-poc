@@ -35,7 +35,8 @@
     "smoke:open-story-via-create": "tsx src/instagram/openStoryViaCreateSmokeTest.ts",
     "smoke:story-end-to-end-real": "tsx src/instagram/storyEndToEndRealSmokeTest.ts",
     "smoke:sticker-move": "tsx src/instagram/stickerMoveSmokeTest.ts",
-    "smoke:sticker-resize": "tsx src/instagram/stickerResizeSmokeTest.ts"
+    "smoke:sticker-resize": "tsx src/instagram/stickerResizeSmokeTest.ts",
+    "smoke:sticker-final-position": "tsx src/instagram/stickerFinalPositionSmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
