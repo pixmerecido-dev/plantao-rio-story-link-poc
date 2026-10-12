@@ -548,7 +548,7 @@ cada passo, after e delta real. Capturas `move-test-before`, `move-test-after`,
 O experimento ADB está preservado como código, mas não é chamado pelo smoke atual.
 O movimento W3C foi validado pelo usuário no emulador real (deltaX=-64, left=0). O resize ainda precisa de validação local; nenhum ajuste está reintegrado ao fluxo completo.
 
-### Teste isolado de resize
+### Teste isolado de resize nativo UiAutomator2
 
 Com o sticker já aberto no editor e DRY_RUN=true, execute:
 
@@ -556,16 +556,20 @@ Com o sticker já aberto no editor e DRY_RUN=true, execute:
 npm run smoke:sticker-resize
 ```
 
-Envia somente uma pinça W3C com dois pointers touch sincronizados: ambos descem
-antes de mover, convergem horizontalmente e simetricamente em torno do centro fresco
-do sticker, e sobem juntos no final. Todos os pontos iniciais e finais devem estar
-dentro dos bounds atuais. Não faz tap de seleção, drag, rotação, ADB, criação de
-Story, mudança de URL/CTA ou publicação. Após a pinça espera 1000ms e captura novos
-bounds do mesmo objeto único. Erro/timeout ou resize insuficiente não repetem gesto.
+Usa WebdriverIO `session.execute('mobile: pinchCloseGesture', { left, top, width,
+height, percent: 0.50 })`, com área derivada dos bounds vivos do único sticker no
+canvas. Não usa elementId presumido ou W3C multi-pointer. A sintaxe e parâmetros
+foram conferidos no execute-method-map e implementação da versão instalada de
+appium-uiautomator2-driver. Não move, não cria Story, não altera URL/CTA e não publica.
 
-O experimento pede escala de no máximo 0.7, mirando aproximadamente 490px de largura
-(no caso observado de 696px, cerca de 487px). `resized=true` exige apenas redução
-medida de pelo menos 15%, não tamanho final exato. Salva `resize-test-before`,
-`resize-test-after`, `resize-test-error` (XML/PNG/JSON) e `resize-test.json` com
-width_before, width_after, scale_ratio e actions. O processo isolado não restaura
-confirmação Link anterior nem autoriza publicação.
+Depois espera 1000ms, recaptura XML/PNG/JSON, localiza o mesmo objeto e calcula
+width_after/width_before. `resized=true` exige redução de pelo menos 10%. Se houver
+redução excessiva, para sem corrigir. Se houver qualquer alteração dos bounds mas
+redução insuficiente, também para sem corrigir. SOMENTE bounds totalmente iguais
+após a primeira tentativa permitem uma segunda, com percent=0.75 e área relida.
+Erro técnico/timeout nunca dispara retry; não há terceira tentativa/estratégia.
+
+Logs `[RESIZE-NATIVE]` registram bounds, área, percent, larguras e scale_ratio.
+Salva `resize-test-before`, `resize-test-after-1/2`, `resize-test-after`,
+`resize-test-error` (XML/PNG/JSON) e `resize-test.json` com todas as tentativas.
+O movimento W3C validado permanece intacto; resize não está integrado à preparação.

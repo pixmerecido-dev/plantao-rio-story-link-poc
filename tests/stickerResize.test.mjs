@@ -5,50 +5,46 @@ import { testCurrentStickerResize } from '../dist/instagram/stickerResize.js';
 const previous = process.env.DRY_RUN; process.env.DRY_RUN = 'true';
 after(() => { if (previous === undefined) delete process.env.DRY_RUN; else process.env.DRY_RUN = previous; });
 const desc = 'Sticker. Touch and hold to reposition. Use two fingers to rotate or resize.';
-function fixture({ stuck = false, fail = false, ambiguous = false } = {}) {
-  let box = [0,1080,696,1196], gestures = 0, releases = 0, busy = false;
+function fixture({ mode = 'success', ambiguous = false } = {}) {
+  let box = [0,1080,696,1196], queries = 0;
+  const calls = [];
   const bounds = () => `[${box[0]},${box[1]}][${box[2]},${box[3]}]`;
   const session = {
     getCurrentPackage: async () => 'com.instagram.android',
-    getPageSource: async () => { assert.equal(busy, false); return `<hierarchy><node resource-id="asset_button" displayed="true"/><node resource-id="com.instagram.android:id/capture_interactive_drawable_container" bounds="[0,0][1080,1920]" displayed="true"><node content-desc="${desc}" class="android.view.View" bounds="${bounds()}" displayed="true"/>${ambiguous ? `<node content-desc="${desc}" bounds="[10,20][30,40]" displayed="true"/>` : ''}</node></hierarchy>`; },
+    getPageSource: async () => { queries++; return `<hierarchy><node resource-id="asset_button" displayed="true"/><node resource-id="com.instagram.android:id/capture_interactive_drawable_container" bounds="[0,0][1080,1920]" displayed="true"><node content-desc="${desc}" class="android.view.View" bounds="${bounds()}" displayed="true"/>${ambiguous ? `<node content-desc="${desc}" bounds="[10,20][30,40]" displayed="true"/>` : ''}</node></hierarchy>`; },
     $$: async () => [{ isExisting: async () => true, isDisplayed: async () => true, getText: async () => '', getAttribute: async key => key === 'bounds' ? bounds() : key === 'content-desc' ? desc : '' }],
-    saveScreenshot: async path => writeFile(path, 'mock'), pause: async ms => { assert.equal(busy, false); assert.equal(ms, 1000); },
-    performActions: async pointers => {
-      busy = true; gestures++; assert.equal(pointers.length, 2);
-      assert.deepEqual(pointers[0].actions.map(a => [a.type,a.duration]), pointers[1].actions.map(a => [a.type,a.duration]));
-      assert.equal(pointers[0].parameters.pointerType, 'touch'); assert.equal(pointers[1].parameters.pointerType, 'touch');
-      for (const index of [0,3]) {
-        assert.equal(pointers[0].actions[index].x+pointers[1].actions[index].x, 696);
-        for (const pointer of pointers) { assert.ok(pointer.actions[index].x > 0 && pointer.actions[index].x < 696); assert.equal(pointer.actions[index].y, 1138); }
-      }
-      assert.ok(pointers[0].actions[3].x > pointers[0].actions[0].x);
-      assert.ok(pointers[1].actions[3].x < pointers[1].actions[0].x);
-      if (fail) throw new Error('pinch timeout');
-      if (!stuck) box = [104,1097,592,1179]; busy = false;
+    saveScreenshot: async path => writeFile(path, 'mock'), pause: async ms => assert.equal(ms,1000),
+    performActions: async () => { throw new Error('não usar implementação W3C anterior'); },
+    elementClick: async () => { throw new Error('não tocar/publicar'); },
+    execute: async (command, args) => {
+      assert.equal(command,'mobile: pinchCloseGesture');
+      assert.deepEqual(args, { left: 0, top: 1080, width: 696, height: 116, percent: calls.length === 0 ? 0.50 : 0.75 });
+      calls.push({ command, args, queries });
+      if (mode === 'timeout') throw new Error('native pinch timeout');
+      if (mode === 'stuck' || (mode === 'second' && calls.length === 1)) return;
+      box = mode === 'excessive' ? [248,1121,448,1155] : mode === 'small' ? [20,1084,676,1192] : mode === 'shift' ? [1,1080,697,1196] : [104,1097,592,1179];
     },
-    releaseActions: async () => { busy = false; releases++; },
-    elementClick: async () => { throw new Error('não tocar ou publicar'); },
-    execute: async () => { throw new Error('não ADB'); },
   };
-  return { driver: { getSession: () => session }, counts: () => ({ gestures,releases }) };
+  return { driver: { getSession: () => session }, calls };
 }
-test('pinch simétrico reduz width696 para faixa experimental sem mover deliberadamente', async () => {
-  const mock = fixture(), dir = await mkdtemp('/tmp/sticker-resize-');
-  const result = await testCurrentStickerResize(mock.driver, dir);
-  assert.equal(result.resized, true); assert.equal(result.published, false);
-  assert.ok(result.scale_ratio <= 0.85);
-  assert.deepEqual(mock.counts(), { gestures: 1, releases: 1 });
-  const report = JSON.parse(await readFile(`${dir}/resize-test.json`, 'utf8'));
-  assert.equal(report.width_before, 696); assert.ok(report.width_after >= 450 && report.width_after <= 520);
+for (const mode of ['success','second','excessive']) test(`pinch nativo por área; modo=${mode}`, async () => {
+  const mock = fixture({ mode }), dir = await mkdtemp('/tmp/sticker-resize-native-');
+  const result = await testCurrentStickerResize(mock.driver,dir);
+  assert.equal(result.resized,true); assert.ok(result.scale_ratio <= 0.9);
+  assert.equal(mock.calls.length,mode === 'second' ? 2 : 1);
+  if (mode === 'second') assert.ok(mock.calls[1].queries > mock.calls[0].queries, 'reler hierarchy antes do segundo gesto');
+  const report = JSON.parse(await readFile(`${dir}/resize-test.json`,'utf8'));
+  assert.equal(report.gesture_attempts,mock.calls.length);
+  assert.equal(report.attempts[0].percent,0.50);
 });
-for (const fail of [false,true]) test(`resize insuficiente/erro não repete; timeout=${fail}`, async () => {
-  const mock = fixture({ stuck: true, fail }), dir = await mkdtemp('/tmp/sticker-resize-fail-');
-  await assert.rejects(testCurrentStickerResize(mock.driver, dir), fail ? /pinch timeout/ : /menor que 15/);
-  assert.deepEqual(mock.counts(), { gestures: 1, releases: 1 });
-  assert.ok((await readFile(`${dir}/resize-test-error.xml`, 'utf8')).includes('hierarchy'));
+for (const mode of ['stuck','timeout','small','shift']) test(`resize aborta sem correção/alternativa: ${mode}`, async () => {
+  const mock = fixture({ mode }), dir = await mkdtemp('/tmp/sticker-resize-native-fail-');
+  await assert.rejects(testCurrentStickerResize(mock.driver,dir),mode === 'timeout' ? /native pinch timeout/ : mode === 'stuck' ? /inalterados após/ : /menor que 10/);
+  assert.equal(mock.calls.length,mode === 'stuck' ? 2 : 1);
+  assert.ok((await readFile(`${dir}/resize-test-error.xml`,'utf8')).includes('hierarchy'));
 });
-test('resize recusa objeto ambíguo sem enviar toque', async () => {
-  const mock = fixture({ ambiguous: true });
-  await assert.rejects(testCurrentStickerResize(mock.driver, await mkdtemp('/tmp/sticker-resize-ambiguous-')), /único objeto/);
-  assert.deepEqual(mock.counts(), { gestures: 0, releases: 0 });
+test('objeto ambíguo recusa gesture antes de qualquer comando',async () => {
+  const mock = fixture({ ambiguous:true });
+  await assert.rejects(testCurrentStickerResize(mock.driver,await mkdtemp('/tmp/sticker-resize-ambiguous-')),/único objeto/);
+  assert.equal(mock.calls.length,0);
 });

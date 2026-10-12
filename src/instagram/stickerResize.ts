@@ -3,17 +3,16 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { inspectAppliedLinkSticker } from './appliedLinkSticker.js';
 import { stickerBox } from './linkStickerLayout.js';
-import { buildStickerPinchActions } from './stickerTouchActions.js';
 import { saveScreenArtifacts } from './diagnostics.js';
-export const RESIZE_TEST_TARGET_WIDTH = 490;
-export const RESIZE_TEST_MAX_SCALE = 0.7;
-export const RESIZE_TEST_MIN_REDUCTION = 0.15;
+export const RESIZE_TEST_PERCENTS = [0.50, 0.75] as const;
+export const RESIZE_TEST_MIN_REDUCTION = 0.10;
 
-/** Somente um pinch in sobre o único objeto vivo atual. Sem seleção por tap, move ou publicação. */
+/** Pinch UiAutomator2 por área: segunda tentativa somente se todos os bounds ficarem iguais. */
 export async function testCurrentStickerResize(driver: Pick<InstagramDriver, 'getSession'>, directory: string) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Configure DRY_RUN=true.');
   const session = driver.getSession();
-  const diagnostic: Record<string, unknown> = { resized: false, gesture_attempts: 0, published: false };
+  const attempts: Record<string, unknown>[] = [];
+  const diagnostic: Record<string, unknown> = { resized: false, gesture_attempts: 0, published: false, attempts };
   await mkdir(directory, { recursive: true });
   const read = async () => {
     if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram fora do primeiro plano.');
@@ -24,45 +23,48 @@ export async function testCurrentStickerResize(driver: Pick<InstagramDriver, 'ge
   };
   try {
     await saveScreenArtifacts(driver, directory, 'resize-test-before');
-    const before = await read();
-    const widthBefore = before.box.right-before.box.left;
-    const center = { x: (before.box.left+before.box.right)/2, y: (before.box.top+before.box.bottom)/2 };
-    const factor = Math.min(RESIZE_TEST_MAX_SCALE, RESIZE_TEST_TARGET_WIDTH/widthBefore);
-    const actions = buildStickerPinchActions(center, widthBefore, factor);
-    let finger = 0;
-    console.log(`[RESIZE-W3C] before=${before.candidate.bounds}`);
-    console.log(`[RESIZE-W3C] width_before=${widthBefore}`);
-    console.log(`[RESIZE-W3C] center=${JSON.stringify(center)}`);
-    for (const pointer of actions) {
-      for (const move of pointer.actions) if (move.type === 'pointerMove') {
-        if (move.x <= before.box.left || move.x >= before.box.right || move.y <= before.box.top || move.y >= before.box.bottom) throw new Error('Pointer de resize fora do sticker atual; gesto cancelado.');
-        if (move.duration === 0) console.log(`[RESIZE-W3C] finger${++finger}_start=${JSON.stringify({ x: move.x, y: move.y })}`);
+    const original = await read();
+    const sameObject = (candidate: typeof original) => original.candidate.contentDesc === candidate.candidate.contentDesc && original.candidate.resourceId === candidate.candidate.resourceId && original.candidate.text === candidate.candidate.text && original.candidate.class === candidate.candidate.class && JSON.stringify(original.canvas) === JSON.stringify(candidate.canvas);
+    for (const percent of RESIZE_TEST_PERCENTS) {
+      const before = await read(); // Sempre bounds vivos, inclusive antes da tentativa 0.75.
+      if (!sameObject(before)) throw new Error('Objeto/canvas mudou; pinch cancelado.');
+      const widthBefore = before.box.right-before.box.left;
+      const area = { left: before.box.left, top: before.box.top, width: widthBefore, height: before.box.bottom-before.box.top };
+      console.log(`[RESIZE-NATIVE] before=${before.candidate.bounds}`);
+      console.log(`[RESIZE-NATIVE] width_before=${widthBefore}`);
+      console.log(`[RESIZE-NATIVE] area=${JSON.stringify(area)}`);
+      console.log(`[RESIZE-NATIVE] percent=${percent.toFixed(2)}`);
+      if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram perdeu foco; pinch cancelado.');
+      const attempt: Record<string, unknown> = { percent, area, before: before.candidate.bounds, width_before: widthBefore };
+      attempts.push(attempt);
+      diagnostic.gesture_attempts = attempts.length; // Marcar antes do envio; timeout não autoriza retry.
+      await writeFile(join(directory, 'resize-test.json'), `${JSON.stringify(diagnostic, null, 2)}\n`, 'utf8');
+      await session.execute('mobile: pinchCloseGesture', { ...area, percent });
+      await session.pause(1000);
+      await saveScreenArtifacts(driver, directory, `resize-test-after-${attempts.length}`);
+      await saveScreenArtifacts(driver, directory, 'resize-test-after');
+      const after = await read();
+      if (!sameObject(after)) throw new Error('Objeto/canvas mudou; resize não comprovado.');
+      const widthAfter = after.box.right-after.box.left, ratio = widthAfter/widthBefore;
+      const resized = ratio <= 1-RESIZE_TEST_MIN_REDUCTION;
+      const unchanged = before.candidate.bounds === after.candidate.bounds;
+      Object.assign(attempt, { after: after.candidate.bounds, width_after: widthAfter, scale_ratio: ratio, resized, unchanged });
+      Object.assign(diagnostic, { before: before.candidate.bounds, after: after.candidate.bounds, width_before: widthBefore, width_after: widthAfter, scale_ratio: ratio, resized });
+      console.log(`[RESIZE-NATIVE] after=${after.candidate.bounds}`);
+      console.log(`[RESIZE-NATIVE] width_after=${widthAfter}`);
+      console.log(`[RESIZE-NATIVE] scale_ratio=${ratio}`);
+      console.log(`[RESIZE-NATIVE] resized=${resized}`);
+      if (resized) {
+        console.log('[OK] Pinch nativo confirmado; não corrigir tamanho nesta execução');
+        return { resized, scale_ratio: ratio, published: false };
       }
+      if (!unchanged) throw new Error('Bounds alterados, mas redução menor que 10%; parar sem corrigir.');
+      if (percent === 0.50) console.log('[RESIZE-NATIVE] bounds inalterados; única tentativa adicional com percent=0.75');
     }
-    console.log('[RESIZE-W3C] pinch=in');
-    Object.assign(diagnostic, { before: before.candidate.bounds, width_before: widthBefore, center, requested_scale: factor, actions });
-    if (await session.getCurrentPackage() !== 'com.instagram.android') throw new Error('Instagram perdeu foco; pinch cancelado.');
-    diagnostic.gesture_attempts = 1;
-    await writeFile(join(directory, 'resize-test.json'), `${JSON.stringify(diagnostic, null, 2)}\n`, 'utf8');
-    try { await session.performActions(actions); }
-    finally { await session.releaseActions(); }
-    await session.pause(1000);
-    await saveScreenArtifacts(driver, directory, 'resize-test-after');
-    const after = await read();
-    if (before.candidate.contentDesc !== after.candidate.contentDesc || before.candidate.resourceId !== after.candidate.resourceId || before.candidate.text !== after.candidate.text || before.candidate.class !== after.candidate.class || JSON.stringify(before.canvas) !== JSON.stringify(after.canvas)) throw new Error('Objeto/canvas mudou; resize não comprovado.');
-    const widthAfter = after.box.right-after.box.left, ratio = widthAfter/widthBefore;
-    const resized = ratio <= 1-RESIZE_TEST_MIN_REDUCTION;
-    Object.assign(diagnostic, { after: after.candidate.bounds, width_after: widthAfter, scale_ratio: ratio, resized });
-    console.log(`[RESIZE-W3C] after=${after.candidate.bounds}`);
-    console.log(`[RESIZE-W3C] width_after=${widthAfter}`);
-    console.log(`[RESIZE-W3C] scale_ratio=${ratio}`);
-    console.log(`[RESIZE-W3C] resized=${resized}`);
-    if (!resized) throw new Error('Redução menor que 15%; nenhum outro gesto será tentado.');
-    console.log('[OK] Pinch in confirmado; sem posicionamento ou publicação');
-    return { resized, scale_ratio: ratio, published: false };
+    throw new Error('Bounds inalterados após percent=0.50 e 0.75; nenhum outro gesto será tentado.');
   } catch (error) {
     diagnostic.error = String(error);
-    console.log('[RESIZE-W3C] resized=false');
+    console.log('[RESIZE-NATIVE] resized=false');
     try { await saveScreenArtifacts(driver, directory, 'resize-test-error'); } catch (captureError) { diagnostic.capture_error = String(captureError); }
     throw error;
   } finally { await writeFile(join(directory, 'resize-test.json'), `${JSON.stringify(diagnostic, null, 2)}\n`, 'utf8'); }
