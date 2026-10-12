@@ -10,3 +10,6 @@ coverage/
 Thumbs.db
 artifacts/
 story-selectors.local.json
+
+# Persistência local do painel (histórico e preferências do usuário)
+data/admin/

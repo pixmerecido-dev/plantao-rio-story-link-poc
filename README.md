@@ -1,5 +1,97 @@
 # plantao-rio-story-link-poc
 
+## Painel administrativo local
+
+No terminal do Windows, dentro do repositório:
+
+```bat
+npm install
+npm run admin
+```
+
+Abra **http://127.0.0.1:4310** no navegador local. `ADMIN_PORT` altera a porta e
+`ADMIN_DATA_DIR` altera a pasta de dados (padrão `data/admin`). O servidor escuta
+apenas em 127.0.0.1. Não é um serviço público ou uma URL de preview do Codex Cloud.
+
+Telas: Dashboard, Publicações, Configuração do Story e Logs. A configuração tem
+texto/presets, sliders, ajustes de 10 px convertidos em frações do canvas, escala,
+limites, restauração e preview imediato 1080x1920. Prefere a imagem em STORY_MEDIA
+(ou STORY_IMAGE); sem configuração usa assets/story-test.jpg. Miniatura ausente não
+impede os demais controles. Testar layout no Instagram permanece desabilitado.
+**Salvar no painel não altera o motor atual nem autoriza publicação.**
+
+Defaults medidos: escala529/696≈76%, X347.5/1080≈32.2%, Y1138/1920≈59.3%. Limites
+iniciais de escala50–100%, ajustáveis dentro da faixa absoluta25–125%. Destinos
+Instagram/Facebook ativos como preferências; confirmação Link/layout e aborto em
+falha sempre ativos. Pixels aparecem apenas como diagnóstico do preview.
+
+### Arquitetura e persistência
+
+- Node.js HTTP + TypeScript no backend e cliente; HTML/CSS sem framework e sem
+  addon nativo adicional. Nenhuma dependência nova para o painel.
+- `src/admin/domain.ts`: contratos de settings, publication_jobs e publication_events,
+  defaults medidos e validações.
+- `src/admin/repositories.ts` / `jsonStorage.ts`: interfaces substituíveis e persistência
+  JSON versionada, escrita serializada e substituição atômica em admin.json.
+- `storySettingsService.ts`: getStickerText, getStickerScale, getStickerPosition,
+  getPublishingSettings; preparado para integração futura, sem ligação ao motor.
+- `publicationsService.ts`: histórico, filtros, paginação, detalhes, registro de eventos
+  e métricas com horário de Brasília.
+- `artifactImporter.ts`: importação somente de resumos existentes em artifacts.
+- `httpServer.ts` / `server.ts`: rotas locais e inicialização.
+- `client.ts` / `view.ts`: quatro telas responsivas e simulação do sticker.
+
+As preferências e registros sobrevivem ao fechamento/reabertura. data/admin fica
+ignorado no Git; não exclua essa pasta se quiser manter o histórico. Uma instância
+de servidor escreve o arquivo local; futuros adaptadores PostgreSQL/MySQL podem
+implementar as mesmas interfaces sem reescrever as telas. Arquivo corrompido é
+preservado e causa erro, não é silenciosamente substituído por dados vazios.
+
+### Dados reais, sem simular publicações
+
+Dashboard e atualização de histórico leem summary.json de diretórios
+story-end-to-end-real-* e story-prepare-* gerados pelo motor. Resumos anteriores
+com image e novos com media são aceitos quando contêm identidade, URL e texto.
+Importação é idempotente por diretório e não executa Appium nem modifica artefatos.
+Resumo ausente/incompleto/corrompido não vira uma publicação fictícia.
+
+Sem registros, contagens são zero e tabelas mostram estado vazio. SUCCESS/FAILED/
+INCONCLUSIVE vêm do resultado do motor; preparo sem publicação fica READY. Contagens
+por período usam confirmação registrada, com término do resumo como fallback quando
+não existe published_at. Horário médio usa SOMENTE published_at conhecidos, e fica
+sem valor quando não há dados suficientes. Não se presume sucesso por presença de
+Story antigo. Facebook ativado indica crosspost aceito/configurado, não entrega
+confirmada no Facebook. Miniatura usa a mídia original quando acessível.
+
+O início de resumos importados vem do timestamp do diretório, o término da gravação
+do resumo; a tela informa essa origem. Medidas faltantes ficam sem valor; a escala
+é lida do diagnóstico de resize quando existe, e o centro é calculado dos bounds
+registrados. O log ARTIFACT_IMPORTED tem timestamp da importação; não inventa horários
+de passos intermediários. O serviço permite registrar todos os eventos pedidos
+por job em integração futura. Jobs que falharam antes de gerar um resumo completo
+ainda não são automaticamente reconstruídos.
+
+A API local é apenas do painel: leitura de histórico/preview e gravação de settings.
+Não há endpoint de iniciar job/publicar, nem integração de notícias, portal,
+WhatsApp, e-mail, fila externa ou execução de vídeo. Preferências de publishing não
+substituem ALLOW_PUBLISH/CONFIRM_REAL_PUBLISH nem qualquer trava do motor. Nenhuma
+variável/credencial do ambiente é enviada ao navegador.
+
+### Verificação
+
+```bat
+npm run typecheck
+npm run build
+node --test tests/*.test.mjs
+```
+
+Testes admin cobrem defaults, validação, persistência após reinício, escritas
+concorrentes, arquivo corrompido, métricas/filtros, rotas HTTP reais, importação
+idempotente, preview e ausência de endpoint de publicação. A interface foi verificada
+em Chromium desktop e mobile, incluindo sliders, preview, ajuste de 10 px, salvar,
+restaurar, recarregar, detalhes e logs. Nenhuma publicação real foi executada.
+
+
 Base inicial em Node.js e TypeScript para uma futura prova de conceito de stories com links no Instagram. Esta etapa prepara a estrutura e o diagnóstico de configuração; há apenas um smoke test local que abre o Instagram, sem implementar Stories.
 
 ## Onde cada componente roda

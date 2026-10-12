@@ -1,0 +1,13 @@
+import 'dotenv/config';
+import { resolve } from 'node:path';
+import { JsonStorage } from './jsonStorage.js';
+import { createAdminServer } from './httpServer.js';
+const port=Number(process.env.ADMIN_PORT??4310);
+if(!Number.isInteger(port) || port<1024 || port>65535)throw new Error('ADMIN_PORT deve estar entre 1024 e 65535.');
+const root=process.cwd(),data=resolve(process.env.ADMIN_DATA_DIR??'data/admin');
+const repository=new JsonStorage(resolve(data,'admin.json'));
+await repository.getSettings();
+const server=createAdminServer({ repository,root,previewPath:process.env.STORY_MEDIA?.trim() ? process.env.STORY_MEDIA : process.env.STORY_IMAGE?.trim() ? process.env.STORY_IMAGE : undefined });
+server.on('error',error=>{console.error('[ADMIN] Não foi possível iniciar:',error.message);process.exitCode=1;});
+server.listen(port,'127.0.0.1',()=>{console.log(`Admin: http://127.0.0.1:${port}`);console.log('Painel local; publicação e teste no Instagram permanecem desabilitados.');console.log(`Persistência: ${data}`);});
+for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>server.close(()=>process.exit(0)));
