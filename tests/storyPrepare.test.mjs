@@ -82,8 +82,8 @@ test('validação externa não aplica defaults nem altera URL/CTA/imagem', async
   const dir = await mkdtemp('/tmp/prepare-job-'); const path = `${dir}/image with spaces.jpg`; await writeFile(path, Buffer.from([255,216,255,1]));
   const input = { JOB_ID: 'external-job', STORY_IMAGE: path, STORY_URL: job.story_url, STICKER_TEXT: job.sticker_text };
   const result = await validatePrepareJob(input);
-  assert.equal(result.image, path); assert.equal(result.story_url, input.STORY_URL); assert.equal(result.sticker_text, input.STICKER_TEXT); assert.equal(result.job_id, 'external-job');
-  for (const name of ['STORY_IMAGE', 'STORY_URL', 'STICKER_TEXT']) await assert.rejects(validatePrepareJob({ ...input, [name]: undefined }), new RegExp(name));
+  assert.equal(result.media.path, path); assert.equal(result.story_url, input.STORY_URL); assert.equal(result.sticker_text, input.STICKER_TEXT); assert.equal(result.job_id, 'external-job');
+  for (const name of ['STORY_IMAGE', 'STORY_URL', 'STICKER_TEXT']) await assert.rejects(validatePrepareJob({ ...input, [name]: undefined }), new RegExp(name === 'STORY_IMAGE' ? 'STORY_MEDIA' : name));
   await assert.rejects(validatePrepareJob({ ...input, STORY_URL: 'javascript:alert(1)' }));
 });
 test('campo desconhecido não ganha resource-id inventado', () => {

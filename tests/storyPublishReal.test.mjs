@@ -118,19 +118,19 @@ test('editor estrutural positivo de processo anterior não autoriza publicar', a
 });
 test('job incorreto é bloqueado e identificação original acompanha envio único', async () => {
   authorize(); const mock = fixture(); await mock.confirm();
-  await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-wrong-job-'), clock(), { job_id: 'other-job', image_sha256: 'abc' }), /current job match/);
+  await assert.rejects(publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-wrong-job-'), clock(), { job_id: 'other-job', media_sha256: 'abc' }), /current job match/);
   assert.equal(mock.count(), 0);
-  const result = await publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-current-job-'), clock(), { job_id: mock.jobId, image_sha256: 'original-image-hash' });
+  const result = await publishStoryOnce(mock.driver, await mkdtemp('/tmp/publish-current-job-'), clock(), { job_id: mock.jobId, media_sha256: 'original-image-hash' });
   assert.equal(result.job_id, mock.jobId);
-  assert.equal(result.media_id, `${mock.jobId}:image-sha256:original-image-hash`);
-  assert.equal(result.media_identity_source, 'job-image-sha256');
+  assert.equal(result.media_id, `${mock.jobId}:media-sha256:original-image-hash`);
+  assert.equal(result.media_identity_source, 'job-media-sha256');
   assert.equal(result.outcome, 'INCONCLUSIVE');
   assert.equal(mock.count(), 1);
 });
 
 test('preparação e envio usam mesma sessão, mesmo job e memória sem reconectar', async () => {
   authorize(); const mock = fixture(); const session = mock.driver.getSession();
-  const job = { job_id: mock.jobId, image: 'source.jpg', image_sha256: 'source-hash', story_url: 'https://plantaorio.com.br/', sticker_text: 'Leia a matéria completa', publish_instagram: false, publish_facebook: false };
+  const job = { job_id: mock.jobId, image: 'source.jpg', media_sha256: 'source-hash', story_url: 'https://plantaorio.com.br/', sticker_text: 'Leia a matéria completa', publish_instagram: false, publish_facebook: false };
   const result = await completeCurrentStoryJob(mock.driver, job, await mkdtemp('/tmp/e2e-same-process-'), async () => {
     assert.equal(mock.driver.getSession(), session);
     assert.equal(mock.count(), 0);
@@ -144,7 +144,7 @@ test('preparação e envio usam mesma sessão, mesmo job e memória sem reconect
 });
 test('preparação sem transação do job e falha na preparação impedem clique', async () => {
   authorize(); const mock = fixture();
-  const job = { job_id: mock.jobId, image: 'source.jpg', image_sha256: 'source-hash', story_url: 'https://plantaorio.com.br/', sticker_text: 'Leia a matéria completa', publish_instagram: false, publish_facebook: false };
+  const job = { job_id: mock.jobId, image: 'source.jpg', media_sha256: 'source-hash', story_url: 'https://plantaorio.com.br/', sticker_text: 'Leia a matéria completa', publish_instagram: false, publish_facebook: false };
   await assert.rejects(completeCurrentStoryJob(mock.driver, job, await mkdtemp('/tmp/e2e-no-transaction-'), async () => ({}), clock()), /transaction confirmed/);
   await assert.rejects(completeCurrentStoryJob(mock.driver, job, await mkdtemp('/tmp/e2e-preparation-failed-'), async () => { throw new Error('preparação falhou'); }, clock()), /preparação falhou/);
   assert.equal(mock.count(), 0);

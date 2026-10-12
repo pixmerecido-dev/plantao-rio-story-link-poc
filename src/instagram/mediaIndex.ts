@@ -1,6 +1,9 @@
+import type { StoryMedia } from '../media/StoryMedia.js';
+import { resolveStoryMediaReference } from '../media/resolveStoryMedia.js';
+import { assertExecutableStoryMedia } from '../media/StoryMedia.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { waitForIndexedMedia, type MediaRow } from './mediaScan.js';
 
@@ -11,14 +14,15 @@ const URI = 'content://media/external/images/media';
 const RELATIVE_PATH = 'Pictures/PlantaoRio/';
 
 /** Entrada única ADB: valida, copia uma vez, solicita scan e confirma a mídia deste job. */
-export async function prepareAndIndexImage(image: string, options: {
+export async function prepareAndIndexMedia(input: string | StoryMedia, options: {
   directory?: string; runAdb?: AdbRunner; now?: () => number; pause?: (milliseconds: number) => Promise<void>;
 } = {}) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Esta etapa exige DRY_RUN=true; a variável não será alterada.');
-  const localPath = resolve(image), bytes = await readFile(localPath);
-  if (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) throw new Error('STORY_IMAGE deve ser JPEG válido.');
+  const media = await resolveStoryMediaReference(input);
+  assertExecutableStoryMedia(media);
+  const localPath = media.path;
   const now = options.now ?? Date.now, started = now();
-  const filename = `plantao-story-${started}.jpg`;
+  const filename = `plantao-story-${started}${media.extension}`;
   const destination = `/sdcard/${RELATIVE_PATH}${filename}`;
   const directory = options.directory ?? resolve('artifacts', `media-index-${started}`);
   const pause = options.pause ?? (milliseconds => new Promise<void>(resolveWait => setTimeout(resolveWait, milliseconds)));
@@ -48,13 +52,13 @@ export async function prepareAndIndexImage(image: string, options: {
   try {
     await adb(['shell', 'mkdir', '-p', `/sdcard/${RELATIVE_PATH}`]);
     await adb(['push', localPath, destination]);
-    console.log(`[MEDIA] arquivo copiado: ${destination} (${bytes.length} bytes)`);
+    console.log(`[MEDIA] arquivo copiado: ${destination} (${media.size} bytes)`);
     console.log(`[MEDIA] imagem enviada: ${destination}`);
     await scan(destination);
     try {
       const result = await adb(['shell', 'readlink', '-f', destination], 3_000);
       const path = result.stdout.trim();
-      if (/^\/(?:storage\/emulated\/\d+|sdcard)\/Pictures\/PlantaoRio\/plantao-story-\d+\.jpg$/.test(path) && path.endsWith(`/${filename}`)) {
+      if (/^\/(?:storage\/emulated\/\d+|sdcard)\/Pictures\/PlantaoRio\/plantao-story-\d+\.(?:jpg|png|webp)$/.test(path) && path.endsWith(`/${filename}`)) {
         canonicalPath = path;
         if (path !== destination) console.log(`[MEDIA] caminho canonicalizado: ${path}`);
       }
@@ -88,7 +92,7 @@ export async function prepareAndIndexImage(image: string, options: {
     };
     for (let cycle = 1; cycle <= 2; cycle++) {
       console.log('[MEDIA] aguardando indexação no MediaStore');
-      indexed = await waitForIndexedMedia({ displayName: filename, relativePath: RELATIVE_PATH, size: bytes.length }, query, pause, {
+      indexed = await waitForIndexedMedia({ displayName: filename, relativePath: RELATIVE_PATH, size: media.size }, query, pause, {
         now, timeoutMs: 15_000, intervalMs: 500,
         onAttempt: (attempt, _output, match) => attempts.push({ cycle, attempt, elapsed_ms: now() - started, found: Boolean(match) }),
       });
@@ -106,15 +110,18 @@ export async function prepareAndIndexImage(image: string, options: {
     if (indexed._data && indexed._data !== destination) console.log(`[MEDIA] caminho MediaStore diferente/canonicalizado: ${indexed._data}`);
     console.log('[MEDIA] scan concluído');
     console.log('[MEDIA] mídia pronta');
-    return { filename, destination, size: bytes.length, indexed, directory };
+    return { media, filename, destination, size: media.size, indexed, directory };
   } catch (error) {
     failure = String(error);
     throw error;
   } finally {
     await writeFile(join(directory, 'media-index.json'), `${JSON.stringify({ filename, android_path: destination, canonical_path: canonicalPath,
-      local_path: localPath, size: bytes.length, display_name_confirmed: Boolean(indexed), relative_path_confirmed: Boolean(indexed),
-      size_confirmed: indexed?._size !== undefined && Number(indexed._size) === bytes.length, uri: URI, projection, status: indexed ? 'INDEXED' : 'FAILED', indexed, error: failure,
+      local_path: localPath, media, size: media.size, display_name_confirmed: Boolean(indexed), relative_path_confirmed: Boolean(indexed),
+      size_confirmed: indexed?._size !== undefined && Number(indexed._size) === media.size, uri: URI, projection, status: indexed ? 'INDEXED' : 'FAILED', indexed, error: failure,
       scan_requests: scans, timeout_per_cycle_ms: 15_000, polling_interval_ms: 500, elapsed_ms: now() - started, attempts, commands }, null, 2)}\n`, 'utf8');
     console.log(`Diagnóstico mídia: ${join(directory, 'media-index.json')}`);
   }
 }
+
+/** Alias retrocompatível; não duplica indexação. */
+export const prepareAndIndexImage = prepareAndIndexMedia;

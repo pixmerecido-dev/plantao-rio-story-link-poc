@@ -120,3 +120,28 @@ test('consulta individual com timeout não confirma mídia e permite aguardar at
   assert.equal(report.scan_requests, 1);
   assert.ok(report.commands.some(command => /timed out/.test(command.error ?? '')));
 });
+
+test('PNG sem extensão física é copiado sem mudar bytes, com extensão detectada e indexação exata',async () => {
+  const { prepareAndIndexMedia } = await import('../dist/instagram/mediaIndex.js');
+  const dir = await mkdtemp('/tmp/png-media-index-'), path = join(dir,'WhatsApp Image at 01.02.02');
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aYv8AAAAASUVORK5CYII=','base64');
+  await writeFile(path,bytes); const calls = [];
+  const result = await prepareAndIndexMedia(path,{ directory:dir,now:() => 42,runAdb:async args => {
+    calls.push(args);
+    if (args[0] === 'push') assert.deepEqual(args,['push',path,'/sdcard/Pictures/PlantaoRio/plantao-story-42.png']);
+    if (args.includes('readlink')) return { stdout:'/storage/emulated/0/Pictures/PlantaoRio/plantao-story-42.png',stderr:'' };
+    if (args[1]?.startsWith('content query')) { assert.ok(args[1].includes("_display_name='plantao-story-42.png'")); return { stdout:`Row: 0 _id=5, _display_name=plantao-story-42.png, relative_path=Pictures/PlantaoRio/, _size=${bytes.length}`,stderr:'' }; }
+    return { stdout:'Broadcast completed: result=0',stderr:'' };
+  } });
+  assert.equal(result.filename,'plantao-story-42.png');
+  assert.equal(calls.filter(args => args[0] === 'push').length,1);
+  assert.deepEqual(await readFile(path),bytes);
+});
+test('VIDEO é reconhecido, mas não é enviado ao provider de imagens nem executa ADB',async () => {
+  const { prepareAndIndexMedia } = await import('../dist/instagram/mediaIndex.js');
+  const dir = await mkdtemp('/tmp/video-media-index-'), path = join(dir,'no-extension');
+  await writeFile(path,Buffer.from('000000186674797069736f6d0000020069736f6d6d703432','hex'));
+  let calls = 0;
+  await assert.rejects(prepareAndIndexMedia(path,{ runAdb:async () => { calls++; throw new Error('não deve executar'); } }),/VIDEO_EXECUTION_NOT_IMPLEMENTED/);
+  assert.equal(calls,0);
+});

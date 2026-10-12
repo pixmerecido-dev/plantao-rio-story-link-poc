@@ -1,21 +1,23 @@
-import { readFile } from 'node:fs/promises';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { resolveStoryUrl } from '../instagram/storyLinkFill.js';
-import type { StoryJob } from './StoryJob.js';
-
-/** Sem defaults de conteúdo: preserva todos os valores fornecidos pela origem. */
-export async function validatePrepareJob(environment: NodeJS.ProcessEnv = process.env): Promise<StoryJob & { image_sha256: string }> {
-  for (const name of ['STORY_IMAGE', 'STORY_URL', 'STICKER_TEXT'] as const) {
-    if (!environment[name] || !environment[name]?.trim()) throw new Error(`${name} obrigatório; nenhuma tarefa preparada.`);
-  }
-  const image = environment.STORY_IMAGE!, story_url = environment.STORY_URL!, sticker_text = environment.STICKER_TEXT!;
-  resolveStoryUrl(story_url);
-  const bytes = await readFile(image);
-  if (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) throw new Error('STORY_IMAGE deve ser JPEG válido nesta POC.');
-  const job = { job_id: environment.JOB_ID || randomUUID(), image, story_url, sticker_text,
-    publish_instagram: false, publish_facebook: false, image_sha256: createHash('sha256').update(bytes).digest('hex') };
-  console.log('[JOB] imagem validada');
-  console.log(`[JOB] URL: ${story_url}`);
-  console.log(`[JOB] sticker_text: ${sticker_text}`);
+import { resolveStoryMedia,storyMediaInput } from '../media/resolveStoryMedia.js';
+import type { StoryMediaHint } from '../media/StoryMedia.js';
+import type { StoryJob,StoryJobInput } from './StoryJob.js';
+/** A origem fornece conteúdo sem defaults ou alteração de URL/CTA. */
+export async function validateStoryJobInput(input: StoryJobInput): Promise<StoryJob> {
+  for (const name of ['story_url','sticker_text'] as const) if (!input[name]?.trim()) throw new Error(`${name} obrigatório.`);
+  resolveStoryUrl(input.story_url);
+  const media = await resolveStoryMedia(input.media?.trim() ? input.media : input.media_path ?? '',input.media_type ?? 'auto');
+  if (media.type === 'UNSUPPORTED') throw new Error(`UNSUPPORTED_MEDIA: ${media.mimeType}`);
+  return { job_id:input.job_id || randomUUID(),media,media_sha256:media.sha256,story_url:input.story_url,sticker_text:input.sticker_text,
+    publish_instagram:input.publish_instagram ?? false,publish_facebook:input.publish_facebook ?? false };
+}
+export async function validatePrepareJob(environment: NodeJS.ProcessEnv = process.env): Promise<StoryJob> {
+  for (const name of ['STORY_URL','STICKER_TEXT'] as const) if (!environment[name]?.trim()) throw new Error(`${name} obrigatório; nenhuma tarefa preparada.`);
+  const job = await validateStoryJobInput({ job_id:environment.JOB_ID,media:storyMediaInput(environment),media_type:(environment.MEDIA_TYPE ?? 'auto') as StoryMediaHint,
+    story_url:environment.STORY_URL!,sticker_text:environment.STICKER_TEXT! });
+  console.log('[JOB] mídia validada');
+  console.log(`[JOB] URL: ${job.story_url}`);
+  console.log(`[JOB] sticker_text: ${job.sticker_text}`);
   return job;
 }

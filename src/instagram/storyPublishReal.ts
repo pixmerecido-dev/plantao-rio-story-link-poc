@@ -28,7 +28,7 @@ export type PublicationResult = ReturnType<typeof verifyPublishedStory> & {
 type ObservationClock = { now: () => number; pause: (milliseconds: number) => Promise<void> };
 
 /** Publica somente o rascunho final existente. Não prepara ou altera o Story. */
-export async function publishStoryOnce(driver: Driver, directory: string, clock?: ObservationClock, job?: { job_id: string; image_sha256: string }): Promise<PublicationResult> {
+export async function publishStoryOnce(driver: Driver, directory: string, clock?: ObservationClock, job?: { job_id: string; media_sha256: string }): Promise<PublicationResult> {
   assertRealPublishAllowed();
   const session = driver.getSession();
   const currentJobId = await requireCurrentLinkTransaction(session, job?.job_id);
@@ -55,8 +55,8 @@ export async function publishStoryOnce(driver: Driver, directory: string, clock?
   const button = await validate();
   assertRealPublishAllowed();
   const job_id = currentJobId;
-  const media_id = job ? `${job_id}:image-sha256:${job.image_sha256}` : `${job_id}:draft-sha256:${draftFingerprint(beforeSource)}`;
-  const media_identity_source = job ? 'job-image-sha256' : 'editor-hierarchy-snapshot';
+  const media_id = job ? `${job_id}:media-sha256:${job.media_sha256}` : `${job_id}:draft-sha256:${draftFingerprint(beforeSource)}`;
+  const media_identity_source = job ? 'job-media-sha256' : 'editor-hierarchy-snapshot';
   await mkdir(directory, { recursive: true });
   const link_transaction_at_publish = { job_id, transaction_confirmed: true as const, current_job_match: true as const };
   const pending = { link_transaction_at_publish, job_id, media_id, media_identity_source, status: 'PUBLISH_PENDING_CONFIRMATION', clickAttempted: true, retryAllowed: false };

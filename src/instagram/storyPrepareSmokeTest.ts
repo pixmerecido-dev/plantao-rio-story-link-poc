@@ -1,3 +1,4 @@
+import { assertExecutableStoryMedia } from '../media/StoryMedia.js';
 import 'dotenv/config';
 import { writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -14,6 +15,7 @@ const directory = resolve('artifacts', `story-prepare-${Date.now()}`);
 let connected = false;
 try {
   const job = await validatePrepareJob(); // Obrigatoriamente antes de Appium/Instagram/ADB.
+  assertExecutableStoryMedia(job.media);
   if (process.env.DRY_RUN !== 'true') throw new Error('Configure DRY_RUN=true.');
   await driver.checkAppium();
   await driver.connect();
@@ -21,8 +23,8 @@ try {
   await driver.openAndConfirmInstagram();
   const result = await prepareNewStory(driver, job, directory, async () => {
     // Cada execução envia uma cópia nova, tornando esta mídia a mais recente em Recents.
-    const { filename } = await injectMediaAndOpenStory(driver, publisher, job.image, join(directory, 'image-flow'));
-    await publisher.loadImageIntoStory(job.image, join(directory, 'image-flow'), { requireNewImage: true, expectedFilename: filename });
+    const { filename } = await injectMediaAndOpenStory(driver, publisher, job.media, join(directory, 'image-flow'));
+    await publisher.loadMediaIntoStory(job.media, join(directory, 'image-flow'), { requireNewImage: true, expectedFilename: filename });
     console.log(`[STORY] imagem carregada: ${filename}`);
   });
   await writeFile(join(directory, 'summary.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');

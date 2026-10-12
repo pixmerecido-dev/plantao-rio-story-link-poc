@@ -1,3 +1,4 @@
+import { assertExecutableStoryMedia } from '../media/StoryMedia.js';
 import 'dotenv/config';
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -11,6 +12,7 @@ const directory = resolve('artifacts', `story-end-to-end-real-${Date.now()}`);
 let connected = false;
 try {
   const job = await validatePrepareJob(); // Antes de qualquer interação com Android.
+  assertExecutableStoryMedia(job.media);
   if (process.env.DRY_RUN !== 'true') throw new Error('Configure DRY_RUN=true; publicação exige as duas travas explícitas.');
   await driver.checkAppium();
   await driver.connect();

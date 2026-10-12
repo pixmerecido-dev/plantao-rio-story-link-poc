@@ -28,7 +28,7 @@ function fixture({ failHomeAfterMedia = false } = {}) {
     },
     waitUntil: async (condition, options) => { if (!await condition()) throw new Error(options.timeoutMsg); },
   };
-  return { driver: { getSession: () => session }, events, publisher: { prepareImage: async image => { assert.equal(image, 'received.jpg'); events.push('push'); events.push('indexed'); scanned = true; return 'new-job.jpg'; } } };
+  return { driver: { getSession: () => session }, events, publisher: { prepareMedia: async image => { assert.equal(image, 'received.jpg'); events.push('push'); events.push('indexed'); scanned = true; return 'new-job.jpg'; } } };
 }
 test('abertura com e sem mídia usa a mesma navegação e só termina em galeria', async () => {
   const normal = fixture(), media = fixture();
@@ -50,7 +50,7 @@ test('Home perdida durante estabilização cancela clique após mídia', async (
 });
 test('falha do scan impede estabilização/abertura', async () => {
   const mock = fixture();
-  mock.publisher.prepareImage = async () => { throw new Error('scan não concluído'); };
+  mock.publisher.prepareMedia = async () => { throw new Error('scan não concluído'); };
   await assert.rejects(injectMediaAndOpenStory(mock.driver, mock.publisher, 'received.jpg', await mkdtemp(join(tmpdir(), 'open-media-'))), /scan não concluído/);
   assert.ok(!mock.events.includes('click'));
   assert.ok(!mock.events.includes('stabilized'));

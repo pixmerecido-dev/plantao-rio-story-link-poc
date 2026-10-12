@@ -1,3 +1,4 @@
+import { assertExecutableStoryMedia } from '../media/StoryMedia.js';
 import { requireApprovedStickerLayout } from './approvedStickerLayout.js';
 import { join } from 'node:path';
 import type { InstagramDriver } from './InstagramDriver.js';
@@ -9,15 +10,16 @@ import { injectMediaAndOpenStory } from './openStoryFromHome.js';
 import { StoryLinkPublisher } from './StoryLinkPublisher.js';
 
 type Driver = InstagramDriver;
-type Job = StoryJob & { image_sha256: string };
+type Job = StoryJob & { media_sha256: string };
 
 /** Nenhum subprocesso ou reconexão entre preparação, confirmação e clique único. */
 export async function prepareAndPublishStory(driver: Driver, job: Job, directory: string) {
+  assertExecutableStoryMedia(job.media);
   const publisher = new StoryLinkPublisher(driver);
   return completeCurrentStoryJob(driver, job, directory, () => prepareNewStory(driver, job, directory, async () => {
     const imageDirectory = join(directory, 'image-flow');
-    const { filename } = await injectMediaAndOpenStory(driver, publisher, job.image, imageDirectory);
-    await publisher.loadImageIntoStory(job.image, imageDirectory, { requireNewImage: true, expectedFilename: filename });
+    const { filename } = await injectMediaAndOpenStory(driver, publisher, job.media, imageDirectory);
+    await publisher.loadMediaIntoStory(job.media, imageDirectory, { requireNewImage: true, expectedFilename: filename });
     console.log(`[STORY] imagem carregada: ${filename}`);
   }));
 }
@@ -31,5 +33,5 @@ export async function completeCurrentStoryJob<T>(driver: Pick<InstagramDriver, '
   // Travas só liberam publicação após confirmar a preparação do job atual.
   assertRealPublishAllowed();
   const publication = await publishStoryOnce(driver, directory, clock, job);
-  return { job_id: job.job_id, image_sha256: job.image_sha256, prepared, publication };
+  return { job_id: job.job_id, media_sha256: job.media_sha256, prepared, publication };
 }

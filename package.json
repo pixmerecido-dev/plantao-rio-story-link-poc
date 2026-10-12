@@ -36,11 +36,13 @@
     "smoke:story-end-to-end-real": "tsx src/instagram/storyEndToEndRealSmokeTest.ts",
     "smoke:sticker-move": "tsx src/instagram/stickerMoveSmokeTest.ts",
     "smoke:sticker-resize": "tsx src/instagram/stickerResizeSmokeTest.ts",
-    "smoke:sticker-final-position": "tsx src/instagram/stickerFinalPositionSmokeTest.ts"
+    "smoke:sticker-final-position": "tsx src/instagram/stickerFinalPositionSmokeTest.ts",
+    "smoke:media-resolve": "tsx src/media/mediaResolveSmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
     "fast-xml-parser": "^5.11.2",
+    "file-type": "^21.3.4",
     "webdriverio": "^10.0.2"
   },
   "devDependencies": {

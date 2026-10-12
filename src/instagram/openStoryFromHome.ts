@@ -1,3 +1,4 @@
+import type { StoryMedia } from '../media/StoryMedia.js';
 import { openAddStory, AddStoryRouteExhaustedError } from './addStoryInteraction.js';
 import { openStoryViaCreate } from './storyCreateRoute.js';
 import type { AndroidRunner } from './addStoryAndroidDiagnostics.js';
@@ -39,12 +40,12 @@ export async function openStoryFromHome(driver: Driver, directory: string, optio
 }
 
 /** Mesma sequência de injeção/abertura em story-prepare e no smoke isolado. */
-export async function injectMediaAndOpenStory(driver: Driver, publisher: { prepareImage(image: string): Promise<string> }, image: string, directory: string) {
+export async function injectMediaAndOpenStory(driver: Driver, publisher: { prepareMedia(media: string | StoryMedia): Promise<string> }, media: string | StoryMedia, directory: string) {
   // Falha antes de enviar mídia se o teste não começar na Home comprovada.
   const session = driver.getSession();
   if (process.env.DRY_RUN !== 'true' || await session.getCurrentPackage() !== 'com.instagram.android' ||
     analyzeResetHierarchy(await session.getPageSource()).state !== 'STATE_HOME') throw new Error('Injeção de mídia exige DRY_RUN=true e STATE_HOME.');
-  const filename = await publisher.prepareImage(image);
+  const filename = await publisher.prepareMedia(media);
   const state = await openStoryFromHome(driver, directory, { afterMediaScan: true });
   return { filename, state };
 }

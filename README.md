@@ -275,7 +275,7 @@ Após o único clique, registra `PUBLISH_PENDING_CONFIRMATION` e observa por at�
 
 `verifyPublishedStory()` avalia somente evidências novas desta janela em relação ao estado anterior. Retorna `SUCCESS` para uma mensagem específica nova de confirmação de envio do Story; `FAILURE` para erro explícito de envio sem confirmação contraditória; `INCONCLUSIVE` para Home isolada, Story anterior, indicador de upload, novo ID genérico, timeout, ausência de confirmação ou sinais contraditórios. A confirmação de envio pela interface não comprova igualdade visual do conteúdo no servidor: `content_identity_verified=false` permanece explícito. A função não abre Stories nem clica e conserva candidatos não verificados apenas para diagnóstico. Sem mensagem inequívoca, é necessária conferência manual do conteúdo recém-enviado.
 
-O resumo inclui `job_id` UUID e `media_id` único da tarefa/rascunho, formado pelo job e SHA-256 da hierarquia antes do clique, com `media_identity_source=editor-hierarchy-snapshot`. Esse fingerprint não é apresentado como hash da imagem original e não associa automaticamente Stories antigos ao job. `pending-publication.json` conserva a tarefa e a proibição de retry; `publication-observations.json` conserva a sequência completa das hierarquias e tempos. Todos ficam na pasta ignorada `artifacts/publish-real-<timestamp>/`.
+O resumo inclui `job_id` UUID e `media_id` único da tarefa/rascunho, formado pelo job e SHA-256 da hierarquia antes do clique, com `media_identity_source=editor-hierarchy-snapshot`. Esse fingerprint não é apresentado como hash da mídia original e não associa automaticamente Stories antigos ao job. `pending-publication.json` conserva a tarefa e a proibição de retry; `publication-observations.json` conserva a sequência completa das hierarquias e tempos. Todos ficam na pasta ignorada `artifacts/publish-real-<timestamp>/`.
 
 Nenhum resultado provoca novo clique, inclusive timeout ou erro de transporte. Código de saída 2 indica `INCONCLUSIVE`/`FAILURE` ou falha de captura, sem autorizar nova execução automática. Confira manualmente seu Story antes de decidir outra tentativa. As duas travas, o clique único e o fluxo de Link Sticker permanecem preservados.
 
@@ -297,20 +297,20 @@ Com Instagram, Appium e emulador locais disponíveis, execute no CMD:
 set DRY_RUN=true
 set ALLOW_PUBLISH=false
 set CONFIRM_REAL_PUBLISH=NO
-set STORY_IMAGE=C:\caminho\imagem-do-job.jpg
+set STORY_MEDIA=C:\caminho\imagem-do-job.jpg
 set STORY_URL=https://plantaorio.com.br/materia-x
 set STICKER_TEXT=Leia a matéria completa
 set JOB_ID=job-origem-001
 npm run smoke:story-prepare
 ```
 
-`STORY_IMAGE`, `STORY_URL` e `STICKER_TEXT` são obrigatórios, sem conteúdo padrão. Valida arquivo JPEG local, URL HTTP(S) e texto não vazio antes de conectar ao Appium ou abrir Instagram. Preserva exatamente caminho informado, URL e texto, incluindo espaços no texto. Não gera conteúdo, não normaliza URL e não altera imagem. `JOB_ID` é opcional; gera UUID somente para identidade quando ausente. O contrato `StoryJob` inclui job_id, image, story_url, sticker_text, publish_instagram e publish_facebook; este smoke registra os dois destinos como false e não chama publicação, mesmo com travas habilitadas.
+`STORY_MEDIA` (ou alias legado `STORY_IMAGE`), `STORY_URL` e `STICKER_TEXT` são obrigatórios, sem conteúdo padrão. Resolve o arquivo físico e identifica tipo por assinatura antes de conectar ao Appium; preserva URL/texto e bytes da mídia. `JOB_ID` é opcional; gera UUID somente para identidade quando ausente. O contrato `StoryJob` inclui job_id, media (objeto normalizado), media_sha256, story_url, sticker_text, publish_instagram e publish_facebook; este smoke registra os dois destinos como false e não chama publicação, mesmo com travas habilitadas.
 
 Antes de preparar a tarefa, normaliza o Instagram até Home, voltando de estados residuais conhecidos e descartando somente draft local comprovado. Envia uma nova cópia da imagem, valida que é a mídia mais recente correspondente ao arquivo fornecido e exige uma seleção nova na galeria Recents antes de aplicar o link. Se a Home retomar diretamente um editor anterior, aborta sem reutilizar esse Story.
 
 Após conferir a URL, abre o controle **já observado** `com.instagram.android:id/link_sticker_custom_cta_row`. Salva `link-before-custom-cta.xml/png/json` e `custom-cta.xml/png/json`. O campo personalizado ainda não tem resource-id confirmado no cloud: deriva o seletor apenas da hierarquia local após expandir custom CTA, exigindo exatamente um EditText fora do campo URL e um resource-id ou content-desc observável. Ausência/ambiguidade aborta com diagnóstico, sem inventar seletor. O seletor real escolhido aparece no terminal e em `summary.json`.
 
-Preenche STICKER_TEXT e lê o valor para igualdade exata; revalida que a URL não mudou e só então clica Done uma vez. Exige `STATE_EDITOR_WITH_LINK` e salva `story-prepared.xml/png/json` em `artifacts/story-prepare-<timestamp>/`, além do resumo com dados externos, hash da imagem e selector observado. Campos não verificáveis ou erro salvam `error.xml/png/json` e abortam. Não abre qualquer controle de publicação, preserva login/mídia e mantém o editor final aberto ao encerrar somente a sessão Appium. Cada nova execução normaliza novamente até Home; não reaproveita o Story desta execução.
+Preenche STICKER_TEXT e lê o valor para igualdade exata; revalida que a URL não mudou e só então clica Done uma vez. Exige `STATE_EDITOR_WITH_LINK` e salva `story-prepared.xml/png/json` em `artifacts/story-prepare-<timestamp>/`, além do resumo com dados externos, hash da mídia e selector observado. Campos não verificáveis ou erro salvam `error.xml/png/json` e abortam. Não abre qualquer controle de publicação, preserva login/mídia e mantém o editor final aberto ao encerrar somente a sessão Appium. Cada nova execução normaliza novamente até Home; não reaproveita o Story desta execução.
 
 
 ### Normalização obrigatória no início de cada job novo
@@ -344,7 +344,7 @@ Nesta variante, tenta um clique normal, depois um descendente visual/clicável i
 
 Após `push` e `MEDIA_SCANNER_SCAN_FILE`, a POC consulta o MediaStore por até 15 segundos, com intervalo de 500 ms. Exige `_display_name` exato desta tarefa, `relative_path` correspondente a `Pictures/PlantaoRio/` e `_size` igual ao arquivo local quando disponível. Não compara `_data` com `/sdcard`, pois o Android pode canonicalizar o caminho. O término do broadcast, sozinho, não confirma scan. No timeout, solicita um único novo scan (usando o caminho canonicalizado quando disponível) e faz um segundo ciclo de até 15 segundos, sem recopiar. Falta de confirmação ou erro de provider aborta. Depois aguarda dois segundos, salva `media-home-stabilized.xml/png/json`, reconfirma Home real e adquire novamente `Add to story`. Cada fallback lê nova hierarquia e adquire novo botão; bounds/elementId de tentativas anteriores não são reutilizados.
 
-Para reproduzir somente essa diferença no Windows, configure `DRY_RUN=true`, forneça `STORY_IMAGE` (JPEG local) e execute `npm run smoke:open-story-with-media`. Exige Home antes do envio; use o reset isolado primeiro se necessário. Não requer URL/texto de sticker, não seleciona imagem e não publica. Envia para `/sdcard/Pictures/PlantaoRio/`, confirma scan, estabiliza Home e abre criação. Na Home antiga, abre a opção STORY para chegar à galeria. Exige `STATE_GALLERY`, salva `story-gallery.xml/png/json` em `artifacts/open-story-with-media-<timestamp>/` e registra `[OK] Story creation opened after media injection`. Erros salvam `error.xml/png/json`. A rotina de normalização, Link e publicação permanece inalterada.
+Para reproduzir somente essa diferença no Windows, configure `DRY_RUN=true`, forneça `STORY_MEDIA` (imagem local reconhecida; `STORY_IMAGE` é alias) e execute `npm run smoke:open-story-with-media`. Exige Home antes do envio; use o reset isolado primeiro se necessário. Não requer URL/texto de sticker, não seleciona imagem e não publica. Envia para `/sdcard/Pictures/PlantaoRio/`, confirma scan, estabiliza Home e abre criação. Na Home antiga, abre a opção STORY para chegar à galeria. Exige `STATE_GALLERY`, salva `story-gallery.xml/png/json` em `artifacts/open-story-with-media-<timestamp>/` e registra `[OK] Story creation opened after media injection`. Erros salvam `error.xml/png/json`. A rotina de normalização, Link e publicação permanece inalterada.
 
 
 ### Indexar somente a mídia
@@ -353,11 +353,11 @@ Com o emulador local `emulator-5554` e ADB disponíveis, sem precisar iniciar Ap
 
 ```bat
 set DRY_RUN=true
-set STORY_IMAGE=C:\caminho\imagem.jpg
+set STORY_MEDIA=C:\caminho\imagem.jpg
 npm run smoke:media-index
 ```
 
-O comando valida JPEG, copia uma única vez para `/sdcard/Pictures/PlantaoRio/`, solicita `MEDIA_SCANNER_SCAN_FILE` e usa a mesma função `prepareAndIndexImage()` chamada por `StoryLinkPublisher.prepareImage()` no `smoke:open-story-with-media` e na preparação do Story. Não abre Instagram nem cria ou publica Story.
+O comando resolve/detecta a imagem por assinatura, copia uma única vez para `/sdcard/Pictures/PlantaoRio/`, solicita `MEDIA_SCANNER_SCAN_FILE` e usa a mesma função `prepareAndIndexMedia()` chamada por `StoryLinkPublisher.prepareMedia()` (nomes antigos permanecem como aliases) no `smoke:open-story-with-media` e na preparação do Story. Não abre Instagram nem cria ou publica Story.
 
 Consulta real executada no Android por ADB (nome gerado internamente, não valor interpolado da origem):
 
@@ -461,7 +461,7 @@ com Appium e o emulador disponíveis. Configure no mesmo terminal:
 
 ```bat
 set DRY_RUN=true
-set STORY_IMAGE=C:\caminho\imagem.jpg
+set STORY_MEDIA=C:\caminho\imagem.jpg
 set STORY_URL=https://plantaorio.com.br/materia-x
 set STICKER_TEXT=Leia a matéria completa
 set ALLOW_PUBLISH=true
@@ -478,9 +478,9 @@ preparação pode terminar, mas o clique de publicação é bloqueado.
 
 A publicação exige transação viva do job nesta sessão inclusive no comando antigo
 `smoke:story-publish-real`; um editor deixado por outro processo não autoriza envio,
-mesmo se houver URL/tipo exposto na hierarquia. O job_id original e SHA-256 da imagem
+mesmo se houver URL/tipo exposto na hierarquia. O job_id original e SHA-256 da mídia
 são usados no resultado e em `pending-publication.json`. O fingerprint do editor
-permanece disponível nas observações e não substitui o hash da imagem.
+permanece disponível nas observações e não substitui o hash da mídia.
 
 Após um único clique registra `PUBLISH_PENDING_CONFIRMATION`, coleta observações
 por até 15 segundos e salva `pre-publish`, `immediate-post-click`,
@@ -632,7 +632,7 @@ Para a execução real completa no Windows, no mesmo terminal:
 
 ```bat
 set DRY_RUN=true
-set STORY_IMAGE=C:\caminho\imagem.jpg
+set STORY_MEDIA=C:\caminho\imagem.jpg
 set STORY_URL=https://plantaorio.com.br/materia-x
 set STICKER_TEXT=Leia a matéria completa
 set ALLOW_PUBLISH=true
@@ -645,3 +645,47 @@ publica no mesmo processo/job; Your story é clicado uma única vez e o prompt
 Facebook segue o tratamento já validado. Home/Story antigo continuam inconclusivos
 sem mensagem positiva nova de envio. Não executar novamente automaticamente se
 o resultado for INCONCLUSIVE. Para preparar sem publicar, use smoke:story-prepare.
+
+### Resolução automática de mídia sem extensão
+
+Antes de Appium/Android, o job usa `STORY_MEDIA`; `STORY_IMAGE` continua alias quando
+STORY_MEDIA estiver ausente/vazio. `MEDIA_TYPE=auto` é o padrão (opcional image/video).
+Não precisa acrescentar extensão nem renomear o arquivo original. Novo contrato
+interno `StoryMedia`: path absoluto resolvido, type IMAGE/VIDEO/UNSUPPORTED, mimeType,
+extension detectada, filename original, size em bytes e sha256 por streaming.
+
+`resolveStoryMedia(inputPath)` usa arquivo exato primeiro. Se ele não existir e o
+sufixo não for reconhecido, procura no mesmo diretório a base completa + .jpg/.jpeg/
+.png/.webp/.mp4/.mov/.m4v/.webm. Pontos no horário, como 01.02.02, não são extensão
+reconhecida. Um candidato é selecionado; mais de um retorna AMBIGUOUS_MEDIA com lista;
+nenhum retorna MEDIA_NOT_FOUND. Não procura em outros diretórios nem escolhe por índice.
+
+O conteúdo é identificado por `file-type`, independente do sufixo físico. Extension
+é a extensão CANÔNICA detectada por assinatura (JPEG -> .jpg mesmo se o arquivo for
+.jpeg ou não tiver extensão), não um palpite nem uma alteração do arquivo local.
+Suporta reconhecimento IMAGE JPEG/PNG/WebP e VIDEO MP4/QuickTime/M4V/WebM. Conteúdo
+não reconhecido/suportado fica UNSUPPORTED e não é enviado. Um hint image/video que
+contradiz o tipo detectado gera MEDIA_TYPE_MISMATCH; auto exige somente detecção.
+
+Teste SOMENTE leitura/resolução, sem Instagram, ADB, Appium ou publicação:
+
+```bat
+set "STORY_MEDIA=C:\Users\redrose\Pictures\PlantaoRio\WhatsApp Image 2026-10-10 at 01.02.02"
+npm run smoke:media-resolve
+```
+
+Imprime requested/resolved/extension/mime/type/size e ready=true para mídia reconhecida.
+ready significa resolução concluída, não autorização de publicação. O smoke também
+reconhece vídeos, mas execução Android/Story/publicação VIDEO ainda não está implementada:
+os fluxos reais param com VIDEO_EXECUTION_NOT_IMPLEMENTED ANTES de conectar ao Appium.
+O modelo comum e `validateStoryJobInput` aceitam vídeo; futura estratégia de vídeo
+poderá reutilizar o contrato sem impor JPEG nem extensão à plataforma.
+
+Entrada futura: `{ media: "...", media_type: "auto", story_url: "...", sticker_text: "..." }`.
+`media_path` também é aceito como nome alternativo de entrada. URL/CTA não são criados
+ou alterados. Images continuam no fluxo validado: MIME detectado define o nome Android
+.jpg/.png/.webp; os bytes são copiados sem conversão, e MediaStore confirma nome/pasta/
+tamanho exatos. Metadados são revalidados antes do envio: arquivo alterado gera MEDIA_CHANGED.
+O resultado usa media_sha256/job-media-sha256 mantendo o mesmo job_id e clique único.
+Link, texto, resize, posição, travas, Facebook e verificação pós-publicação permanecem
+nas implementações existentes. Nenhuma publicação real é executada pelo resolvedor.
