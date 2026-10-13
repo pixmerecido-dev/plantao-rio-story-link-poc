@@ -81,11 +81,7 @@ const server = createAdminServer({
     : process.env.STORY_IMAGE?.trim()
       ? process.env.STORY_IMAGE
       : undefined,
-  previewPath: process.env.STORY_MEDIA?.trim()
-    ? process.env.STORY_MEDIA
-    : process.env.STORY_IMAGE?.trim()
-      ? process.env.STORY_IMAGE
-      : undefined,
+  previewPath: process.env.ADMIN_PREVIEW_IMAGE?.trim() || undefined,
 });
 server.on("error", (error) => {
   console.error("[ADMIN] Não foi possível iniciar:", error.message);

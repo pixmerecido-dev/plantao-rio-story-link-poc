@@ -49,3 +49,21 @@ test('resumo real no formato do motor é importado uma vez sem inventar eventos 
     assert.equal((await fetch(`${app.url}/api/publications/${jobs[0].id}/media`)).headers.get('content-type'),'image/jpeg');
   }finally{await app.close();}
 });
+
+test('preview padrão serve foto local de demonstração sem confundir com mídia de smoke', async () => {
+  const root = resolve('.');
+  const repository = new JsonStorage(join(await mkdtemp('/tmp/preview-demo-'), 'admin.json'));
+  const server = createAdminServer({ repository, root });
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/preview`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/jpeg');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.deepEqual(bytes, await readFile(resolve('assets/story-preview-demo.jpg')));
+    assert.notDeepEqual(bytes, await readFile(resolve('assets/story-test.jpg')));
+  } finally {
+    server.closeAllConnections();
+    await new Promise(done => server.close(done));
+  }
+});

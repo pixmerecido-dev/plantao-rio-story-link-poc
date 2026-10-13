@@ -28,7 +28,7 @@ export const UI_STATUS_LABELS: Record<string, string> = {
   OK: "Confirmada",
   MISMATCH: "Conta diferente",
   LOGGED_OUT: "Entre no Instagram",
-  UNAVAILABLE: "Não disponível",
+  UNAVAILABLE: "Erro na verificação",
   DEGRADED: "Precisa de atenção",
 };
 export const UI_ROUTES = {

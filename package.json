@@ -44,7 +44,8 @@
     "smoke:article-resolve": "tsx src/ingestion/ingestionSmokeTest.ts article",
     "smoke:ingestion": "tsx src/ingestion/ingestionPanelSmokeTest.ts",
     "smoke:ingestion-isolated": "tsx src/ingestion/ingestionSmokeTest.ts ingestion",
-    "inspect:instagram-account": "tsx src/instagram/inspectInstagramAccount.ts"
+    "inspect:instagram-account": "tsx src/instagram/inspectInstagramAccount.ts",
+    "smoke:instagram-account": "tsx src/instagram/instagramAccountSmokeTest.ts"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

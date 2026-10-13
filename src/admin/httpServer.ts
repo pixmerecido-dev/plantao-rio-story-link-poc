@@ -385,7 +385,8 @@ export function createAdminServer(options: {
       if (method === "GET" && url.pathname === "/api/preview") {
         await image(
           res,
-          options.previewPath ?? join(options.root, "assets/story-test.jpg"),
+          options.previewPath ??
+            join(options.root, "assets/story-preview-demo.jpg"),
         );
         return;
       }

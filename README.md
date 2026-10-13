@@ -19,8 +19,8 @@ Contas, Publicados, Configuração do Story e Alertas**. Escolha Administrador e
 organiza a interface; não substitui autenticação ou controle de acesso do servidor.
 
 O preview altera texto, estilo, tamanho e posição imediatamente. Todo o sticker
-(texto, ícone, espaçamento e fundo) recebe a mesma escala. A imagem usa STORY_MEDIA
-ou STORY_IMAGE; sem configuração usa assets/story-test.jpg. O preview é uma
+(texto, ícone, espaçamento e fundo) recebe a mesma escala. A imagem de demonstração local usa `assets/story-preview-demo.jpg`, separada da
+mídia de execução. `ADMIN_PREVIEW_IMAGE` permite escolher outra imagem local. O preview é uma
 aproximação visual: os bounds reais do Instagram continuam sendo a referência do motor.
 **Salvar no painel não autoriza publicação.**
 
@@ -1022,3 +1022,22 @@ em Entradas RSS: toda matéria nova válida gera READY na Fila.
 O smoke isolado anterior continua em `npm run smoke:ingestion-isolated`, usando
 `data/ingestion-smoke/`; essa persistência separada não aparece no painel operacional.
 Nenhuma opção desta integração acessa o Instagram ou executa publicação.
+
+### Teste seguro da confirmação de conta
+
+1. Atualize o repositório, execute `npm install` e `npm run admin`.
+2. Abra http://127.0.0.1:4310, selecione Administrador e cadastre a conta esperada em Contas.
+3. Com Appium e Instagram disponíveis no Windows, deixe a Home ou o próprio perfil aberto.
+4. Clique **Verificar conta**. Esperada, detectada, status e última tentativa são salvos no painel.
+5. **Atualizar status** apenas relê o resultado salvo, sem iniciar nova sessão no dispositivo.
+6. Se houver edição de Story aberta, o diagnóstico a preserva; volte manualmente à Home e tente novamente.
+
+Alternativa no terminal: `npm run smoke:instagram-account`. Usa a mesma verificação,
+compara a conta cadastrada, salva o resultado e o evento ACCOUNT_CHECKED no mesmo
+ADMIN_DATA_DIR do painel. Não cria Story nem publica. Atualize o status no painel
+para ver o resultado. Divergência/ausência de confirmação bloqueiam publicação;
+o comando real end-to-end exige uma leitura nova na mesma sessão.
+
+A foto demonstrativa foi obtida de https://plantaorio.com.br/story/mrdd68z.jpg e
+incluída localmente. O painel não precisa de internet para carregá-la. Essa imagem
+não é enviada ao Instagram pelo preview e não substitui STORY_MEDIA dos jobs.
