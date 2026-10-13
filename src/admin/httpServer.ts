@@ -1,3 +1,5 @@
+import { FeedPollingService } from "../ingestion/feedPollingService.js";
+import { createFeedApi } from "./feedHttp.js";
 import {
   createServer,
   type IncomingMessage,
@@ -24,6 +26,7 @@ import { createOperationsApi } from "./operationsHttp.js";
 import { CombinedPublicationsRepository } from "./combinedPublicationsRepository.js";
 import { DEFAULT_ACCOUNT_ID } from "./operationsDomain.js";
 import {
+  feedCss,
   shellHtml,
   adminCss,
   operationalCss,
@@ -65,6 +68,7 @@ export function createAdminServer(options: {
   clientPath?: string;
   operationsStore?: OperationsRepository;
   testMedia?: string;
+  feedService?: FeedPollingService;
 }) {
   const publications = new PublicationsService(
     options.operationsStore
@@ -90,6 +94,15 @@ export function createAdminServer(options: {
         },
       )
     : null;
+  const feed =
+    options.feedService ??
+    (options.operationsStore
+      ? new FeedPollingService(
+          options.operationsStore,
+          join(options.root, "data/media"),
+        )
+      : null);
+  const feedApi = feed ? createFeedApi(feed) : null;
   const settings = new StorySettingsService(
     operations && options.operationsStore
       ? {
@@ -161,12 +174,35 @@ export function createAdminServer(options: {
       if (method === "GET" && url.pathname === "/assets/admin.css") {
         res.writeHead(200, { "Content-Type": "text/css; charset=utf-8" });
         res.end(
-          adminCss + operationalCss + stickerStyleCss + dashboardPreviewCss,
+          adminCss +
+            operationalCss +
+            stickerStyleCss +
+            dashboardPreviewCss +
+            feedCss,
         );
         return;
       }
+      if (feedApi && (await feedApi(req, res, url, body, send))) return;
       if (operations && (await operations.handle(req, res, url, body, send)))
         return;
+      if (method === "GET" && url.pathname === "/assets/feedClient.js") {
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+        });
+        res.end(
+          await readFile(
+            join(
+              dirname(
+                options.clientPath ??
+                  join(options.root, "dist/admin/client.js"),
+              ),
+              "feedClient.js",
+            ),
+            "utf8",
+          ),
+        );
+        return;
+      }
       if (method === "GET" && url.pathname === "/assets/operationsClient.js") {
         res.writeHead(200, {
           "Content-Type": "application/javascript; charset=utf-8",

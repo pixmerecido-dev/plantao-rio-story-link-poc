@@ -39,9 +39,13 @@
     "smoke:sticker-final-position": "tsx src/instagram/stickerFinalPositionSmokeTest.ts",
     "smoke:media-resolve": "tsx src/media/mediaResolveSmokeTest.ts",
     "admin": "npm run build && tsx src/admin/server.ts",
-    "smoke:media-download": "tsx src/media/mediaDownloadSmokeTest.ts"
+    "smoke:media-download": "tsx src/media/mediaDownloadSmokeTest.ts",
+    "smoke:feed": "tsx src/ingestion/ingestionSmokeTest.ts feed",
+    "smoke:article-resolve": "tsx src/ingestion/ingestionSmokeTest.ts article",
+    "smoke:ingestion": "tsx src/ingestion/ingestionSmokeTest.ts ingestion"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "dotenv": "^17.2.0",
     "fast-xml-parser": "^5.11.2",
     "file-type": "^21.3.4",

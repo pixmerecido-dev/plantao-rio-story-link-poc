@@ -1,3 +1,4 @@
+import { FeedPollingService } from "../ingestion/feedPollingService.js";
 import "dotenv/config";
 import { resolve } from "node:path";
 import { JsonStorage } from "./jsonStorage.js";
@@ -63,7 +64,13 @@ const schedulerTimer = setInterval(
   10000,
 );
 schedulerTimer.unref();
+const feedService = new FeedPollingService(
+  operationsStore,
+  resolve(root, "data/media"),
+);
+await feedService.recover();
 const server = createAdminServer({
+  feedService,
   repository,
   root,
   operationsStore,
@@ -88,11 +95,15 @@ server.listen(port, "127.0.0.1", () => {
     "Painel local; publicação e teste no Instagram permanecem desabilitados.",
   );
   console.log(`Persistência: ${data}`);
+  feedService.start();
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () =>
     server.close(() => {
       clearInterval(schedulerTimer);
-      void unlink(lockPath).finally(() => process.exit(0));
+      void feedService
+        .stop()
+        .then(() => unlink(lockPath))
+        .finally(() => process.exit(0));
     }),
   );

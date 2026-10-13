@@ -1,3 +1,9 @@
+import type { DownloadedMedia } from "../media/downloadStoryMedia.js";
+import {
+  initialFeedState,
+  validateFeedState,
+  type FeedState,
+} from "../ingestion/feedDomain.js";
 import {
   defaultSettings,
   validateSettings,
@@ -57,12 +63,16 @@ export interface FrozenSettings {
   require_layout_confirmation: true;
   abort_on_layout_failure: true;
 }
-export interface QueueJob {
+export interface QueueJob extends Partial<DownloadedMedia> {
   id: string;
   job_id: string;
   account_id: string;
   instagram_username: string | null;
   downloaded_media?: import("../media/downloadStoryMedia.js").DownloadedMedia;
+  feed_entry_id?: string;
+  article_url?: string;
+  detected_at?: string;
+  last_error?: string | null;
   media_path: string;
   media_type: "IMAGE" | "VIDEO" | "UNSUPPORTED";
   media_filename: string;
@@ -118,6 +128,7 @@ export interface Health {
 }
 export interface OperationsState {
   version: 1;
+  feed: FeedState;
   instagram_accounts: Account[];
   account_settings: Record<string, StorySettings>;
   publishing: AutomationSettings;
@@ -132,6 +143,7 @@ export const DEFAULT_ACCOUNT_ID = "instagram-default";
 export function initialOperationsState(): OperationsState {
   return {
     version: 1,
+    feed: initialFeedState(),
     instagram_accounts: [
       {
         id: DEFAULT_ACCOUNT_ID,
@@ -226,6 +238,8 @@ export function validateOperationsState(s: OperationsState): OperationsState {
     typeof s.safety?.pause_on_system_failure !== "boolean"
   )
     reject();
+  s.feed ??= initialFeedState(); // Migration of existing local stores; preserve jobs/settings.
+  validateFeedState(s.feed);
   validateAutomation(s.publishing);
   if (!["ONLINE", "PAUSED", "ERROR"].includes(s.system.status)) reject();
   const ids = new Set<string>();
@@ -289,6 +303,7 @@ export function validateOperationsState(s: OperationsState): OperationsState {
         (a.publish_clicked !== null && typeof a.publish_clicked !== "boolean")
       )
         reject();
+    if (j.feed_entry_id) j.last_error = j.error_message; // Derived compatibility field for ingestion jobs.
     jobs.add(j.id);
     jobIds.add(j.job_id);
   }

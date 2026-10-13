@@ -1,3 +1,4 @@
+import { renderFeed } from "./feedClient.js";
 import {
   estimateStickerPreview,
   PREVIEW_STYLE_LABELS,
@@ -187,6 +188,7 @@ async function load() {
     automation: "Automação de publicação",
     accounts: "Contas Instagram",
     system: "Sistema / Health Check",
+    feed: "Entradas RSS",
   };
   if (!titles[current]) {
     location.hash = "dashboard";
@@ -199,6 +201,7 @@ async function load() {
       node.classList.toggle("active", node.dataset.route === current),
     );
   try {
+    if (current === "feed") { await renderFeed(); return; }
     if (["queue", "automation", "accounts", "system"].includes(current)) {
       await renderOperations(current);
       return;

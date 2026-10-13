@@ -35,7 +35,7 @@ function displayQueue(jobs: QueueJob[]) {
   );
 }
 export function publicJob(j: QueueJob) {
-  const { media_path, ...safe } = j;
+  const { media_path, local_media_path, ...safe } = j;
   return safe;
 }
 export function createOperationsApi(
@@ -282,7 +282,7 @@ export function createOperationsApi(
               ),
             )
             .map((j) => {
-              const { media_path, ...safe } = j;
+              const { media_path, local_media_path, ...safe } = j as QueueJob;
               return safe;
             }),
         );

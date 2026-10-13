@@ -20,6 +20,7 @@ export class PublicationQueueService {
   async enqueueJob(input: {
     account_id: string;
     downloaded_media?: import("../media/downloadStoryMedia.js").DownloadedMedia;
+    feed_entry_id?: string;
     media_path: string;
     story_url: string;
     sticker_text: string;
@@ -58,10 +59,16 @@ export class PublicationQueueService {
     if (mode === "SCHEDULED" && !input.scheduled_at)
       throw new ValidationError("Horário obrigatório.");
     const media = await resolveStoryMedia(input.media_path);
-    if (media.type === "UNSUPPORTED" || media.size === 0) throw new ValidationError("Mídia local inválida.");
-    if (input.downloaded_media && (input.downloaded_media.local_media_path !== media.path ||
-      input.downloaded_media.sha256 !== media.sha256 || input.downloaded_media.file_size !== media.size ||
-      input.downloaded_media.mime_type !== media.mimeType)) throw new ValidationError("Mídia baixada mudou antes da criação do job.");
+    if (media.type === "UNSUPPORTED" || media.size === 0)
+      throw new ValidationError("Mídia local inválida.");
+    if (
+      input.downloaded_media &&
+      (input.downloaded_media.local_media_path !== media.path ||
+        input.downloaded_media.sha256 !== media.sha256 ||
+        input.downloaded_media.file_size !== media.size ||
+        input.downloaded_media.mime_type !== media.mimeType)
+    )
+      throw new ValidationError("Mídia baixada mudou antes da criação do job.");
     const timestamp = nowISO(),
       id = randomUUID(),
       key = DeduplicationService.key(
@@ -77,13 +84,59 @@ export class PublicationQueueService {
         s.account_settings[input.account_id]?.story.sticker.max_text_length ??
           null,
       );
+      const entry = input.feed_entry_id
+        ? s.feed.entries.find((e) => e.id === input.feed_entry_id)
+        : undefined;
+      if (
+        input.feed_entry_id &&
+        (!entry || entry.account_id !== input.account_id)
+      )
+        throw new ValidationError("Matéria RSS/conta inexistente.");
+      if (entry?.job_id) {
+        const existing = s.queue.find((j) => j.job_id === entry.job_id);
+        if (!existing)
+          throw new ValidationError("Job RSS ausente; revisão necessária.");
+        return existing;
+      }
+      if (entry && ["IGNORED", "DUPLICATE"].includes(entry.status))
+        throw new ValidationError(
+          "Matéria ignorada/duplicada não pode entrar na fila.",
+        );
+      if (
+        entry &&
+        (!entry.downloaded_media ||
+          entry.downloaded_media.sha256 !== media.sha256 ||
+          entry.article_url !== input.story_url)
+      )
+        throw new ValidationError(
+          "Mídia/URL não corresponde à matéria validada.",
+        );
       const duplicate = DeduplicationService.exists(s, key);
       const job: QueueJob = {
         id,
         job_id: id,
         account_id: input.account_id,
         instagram_username: null,
-        ...(input.downloaded_media ? { downloaded_media: structuredClone(input.downloaded_media) } : {}),
+        ...(input.downloaded_media
+          ? {
+              downloaded_media: structuredClone(input.downloaded_media),
+              source_media_url: input.downloaded_media.source_media_url,
+              local_media_path: media.path,
+              mime_type: media.mimeType,
+              extension: input.downloaded_media.extension,
+              file_size: media.size,
+              sha256: media.sha256,
+              downloaded_at: input.downloaded_media.downloaded_at,
+            }
+          : {}),
+        ...(entry
+          ? {
+              feed_entry_id: entry.id,
+              article_url: entry.article_url!,
+              detected_at: entry.detected_at,
+              last_error: null,
+            }
+          : {}),
         media_path: media.path,
         media_type: media.type,
         media_filename: media.filename,
@@ -115,6 +168,24 @@ export class PublicationQueueService {
         attempt_history: [],
       };
       s.queue.push(job);
+      if (entry) {
+        entry.job_id = job.job_id;
+        entry.status = duplicate ? "DUPLICATE" : "QUEUED";
+        entry.updated_at = timestamp;
+        entry.last_error = null;
+        logEvent(
+          s,
+          job.job_id,
+          duplicate ? "QUEUE_JOB_SKIPPED" : "QUEUE_JOB_CREATED",
+          "Ingestão RSS vinculada à fila.",
+          {
+            article_url: entry.article_url,
+            media_url: entry.media_url,
+            entry_id: entry.id,
+            job_id: job.job_id,
+          },
+        );
+      }
       logEvent(
         s,
         id,

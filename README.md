@@ -28,7 +28,7 @@ falha sempre ativos. Pixels aparecem apenas como diagnóstico do preview.
 ### Arquitetura e persistência
 
 - Node.js HTTP + TypeScript no backend e cliente; HTML/CSS sem framework e sem
-  addon nativo adicional. Nenhuma dependência nova para o painel.
+  addon nativo adicional. A ingestão usa Cheerio para analisar HTML diretamente.
 - `src/admin/domain.ts`: contratos de settings, publication_jobs e publication_events,
   defaults medidos e validações.
 - `src/admin/repositories.ts` / `jsonStorage.ts`: interfaces substituíveis e persistência
@@ -39,7 +39,7 @@ falha sempre ativos. Pixels aparecem apenas como diagnóstico do preview.
   e métricas com horário de Brasília.
 - `artifactImporter.ts`: importação somente de resumos existentes em artifacts.
 - `httpServer.ts` / `server.ts`: rotas locais e inicialização.
-- `client.ts` / `operationsClient.ts` / `view.ts`: oito telas responsivas e simulação do sticker.
+- `client.ts` / `operationsClient.ts` / `view.ts`: nove telas responsivas e simulação do sticker.
 
 As preferências e registros sobrevivem ao fechamento/reabertura. data/admin fica
 ignorado no Git; não exclua essa pasta se quiser manter o histórico. Uma instância
@@ -784,7 +784,7 @@ nas implementações existentes. Nenhuma publicação real é executada pelo res
 
 ## Centro operacional local
 
-Execute `npm run admin` e abra **http://127.0.0.1:4310** no Windows. O backend precisa permanecer aberto para o scheduler avaliar a fila. Fechar apenas o navegador não remove jobs. Nenhuma ação desta versão abre Appium, cria Story ou publica; o motor existente não foi modificado. Não há ingestão de portal, WhatsApp, e-mail ou API externa.
+Execute `npm run admin` e abra **http://127.0.0.1:4310** no Windows. O backend precisa permanecer aberto para o scheduler avaliar a fila. Fechar apenas o navegador não remove jobs. Nenhuma ação desta versão abre Appium, cria Story ou publica; o motor existente não foi modificado. A ingestão RSS do Plantão Rio alimenta a fila; WhatsApp, e-mail e outros conectores ainda não estão implementados.
 
 O menu agora possui Dashboard, Fila (todos/agendados/com erro), Automação + timeline, Publicações, Story, Contas, Sistema e Logs. A fila usa a mídia de teste configurada em `STORY_MEDIA` (ou `STORY_IMAGE`) no backend; sem configuração, usa `assets/story-test.jpg`. URL e texto recebidos no formulário são preservados. Vídeos podem ser reconhecidos como dados, mas a política bloqueia sua execução.
 
@@ -829,11 +829,11 @@ Preview no Dashboard e na tela Story calcula largura aproximadamente como ícone
 
 ### Ingestão de mídia local antes da fila
 
-`MediaIngestionService.ingest()` é a fronteira para o futuro conector RSS:
+`MediaIngestionService.ingest()` mantém a entrada direta de URL de mídia resolvida:
 RSS → `article_url` → resolução de `data-story`/`data-link` pelo conector →
 `source_media_url` → download → validação local → criação do job.
-O conector RSS/resolvedor de HTML ainda não está conectado; esta etapa recebe a URL
-já resolvida e preserva `story_url` e `sticker_text` exatamente como recebidos.
+Essa entrada direta recebe a URL já resolvida. O conector automático descrito abaixo
+usa o mesmo downloader e serviço de fila, com vínculo atômico na persistência operacional. Ambos preservam `story_url` e `sticker_text` exatamente como recebidos.
 
 Arquivos ficam em `data/media/`, com nome seguro composto pela base da URL,
 digest da URL e digest do conteúdo. A extensão vem do Content-Type, confirmado
@@ -862,3 +862,98 @@ npm run smoke:media-download
 
 O comando imprime os metadados e o caminho local para `STORY_MEDIA`.
 Nenhum download cria/publica Story automaticamente.
+
+### Site Plantão Rio → entradas RSS → fila
+
+O backend de `npm run admin` inicia `FeedPollingService`, mesmo sem navegador aberto.
+Fluxo: `feed.xml` → URL/guid → `StoryMediaResolver` → atributos HTML `data-story` +
+`data-link` correspondentes à matéria → download local validado → `READY` → fila.
+Nenhum título/conteúdo/editoria é usado para montar imagem: a arte pronta é baixada.
+Não usa browser/clica em compartilhar, não inicia Appium e não publica.
+O scheduler existente continua sem adapter de publicação.
+
+Configure em **Entradas RSS** no painel:
+
+- `feed.enabled`: inicia/pausa novas consultas automáticas; padrão `true`.
+- `feed.url`: padrão `https://plantaorio.com.br/feed.xml`.
+- `feed.poll_interval_seconds`: padrão `60` (10–86400).
+- `feed.auto_enqueue`: padrão `false`. Válida fica `READY`; “Enviar para fila”
+  cria job `QUEUED`. Ao ativar, novos itens válidos e itens `READY` aguardando
+  entram na fila na próxima consulta bem-sucedida. Isso não autoriza publicação.
+- `feed.account_id`: conta de destino persistida (`instagram-default` inicialmente).
+  API de configuração valida que a conta existe. Texto do sticker é copiado exatamente
+  da configuração da conta no momento da detecção, sem gerar texto editorial.
+
+No primeiro polling, todos os itens disponíveis no feed são detectados, não só os
+publicados depois da instalação; ficam em revisão operacional `READY` por padrão.
+“Consultar agora” faz uma consulta manual inclusive com polling desabilitado.
+Desabilitar polling impede novas consultas; a consulta em andamento pode concluir.
+O intervalo é medido a partir da última tentativa, sem sobreposição de operações.
+Timeout HTTP 30 s, até 5 redirects; RSS até 2 MiB/1000 itens; HTML até 5 MiB.
+Erro temporário do feed não encerra o serviço; próxima consulta permanece programada.
+Erro de uma matéria não impede processar as outras. Matérias com erro aguardam
+“Tentar novamente”; não há retentativa automática de publicação.
+
+Persistência: `data/admin/operations.json`, em `feed.config` e `feed.entries`,
+alterável por `ADMIN_DATA_DIR`. Migração de arquivos antigos preserva fila/settings.
+Registros incluem URL canônica/aliases/guid, conta, detecção/criação/atualização,
+status, tentativas de ingestão, erro, tipo, `downloaded_media`, job e retenção futura.
+Eventos operacionais incluem artigo/mídia/entry/job, timestamp e erro quando aplicável.
+A fila recebe `article_url`, `detected_at`, `feed_entry_id` e todos os metadados
+`source_media_url/local_media_path/mime_type/extension/file_size/sha256/downloaded_at`
+na raiz do job e em `downloaded_media`; `media_path` é o mesmo `local_media_path`,
+`media_hash` o SHA-256. `last_error` do job espelha `error_message` (a entrada também
+tem seu `last_error` da ingestão). Continua com
+prioridade NORMAL, attempts de publicação 0 e scheduled_at nulo ao enfileirar.
+
+Deduplicação principal: URL canônica da matéria, mantendo aliases antes/depois do
+resolvedor. Na comparação de identidade, fragmento/barra final e parâmetros `utm_*`
+de campanha não criam uma matéria diferente; outros parâmetros continuam significativos.
+GUID serve como fallback quando falta URL; GUID sem link HTTP(S) válido é registrado
+como `ARTICLE_RESOLVE_FAILED`, nunca como job publicável. Canonical da página precisa
+pertencer ao mesmo host final, e data-link precisa corresponder à matéria; múltiplas
+mídias diferentes ou link divergente abortam (`MEDIA_NOT_FOUND`).
+O HTML real de Valença possui `data-story="/story/mrdd68z.jpg"` e data-link com
+`utm_source=story&utm_medium=share`, validado contra o canonical sem esses tags.
+A URL da mídia é resolvida com `new URL(..., URL final da matéria)`, sem concatenação.
+
+Criação do job e vínculo do registro RSS ocorrem **na mesma transação**. Enviar à
+fila duas vezes/reiniciar retorna o job existente. Aliases que convergem para outro
+canonical viram `DUPLICATE` antes de baixar novamente. Na retomada, arquivo local
+válido é reusado e hash/tamanho/MIME são revalidados; arquivo alterado bloqueia fila
+(`MEDIA_INVALID`) e só é baixado novamente em reprocessamento explícito.
+A deduplicação já existente por conta/URL/hash também permanece.
+
+A tela **Entradas RSS** mostra preview **local**, URL/abrir matéria, horário Brasília,
+estado do download/ingestão e estado atual do job. Permite enviar à fila, ignorar,
+reprocessar e configurar polling. Job já vinculado não pode ser reenviado/reprocessado
+pela ingestão; use as ações existentes da fila. “Publicar agora” fica desabilitado.
+Nenhuma mídia é apagada automaticamente; `retention_days=null` é apenas campo futuro.
+MP4 segue no modelo VIDEO, mas sua publicação permanece não implementada.
+
+Smokes separados (CMD no Windows, nenhum deles acessa Instagram):
+
+```bat
+npm run smoke:feed
+npm run smoke:article-resolve
+npm run smoke:ingestion
+```
+
+`smoke:feed` somente consulta/analisa RSS e lista URL/guid. `smoke:article-resolve`
+somente analisa HTML. `smoke:ingestion` usa por padrão a matéria de Valença:
+`https://plantaorio.com.br/valenca-amplia-atendimento-pelo-sus-com-aditivo-de-35-milhoes-mrdd68z`.
+Resolve, baixa, valida e cria job em armazenamento **isolado**
+`data/ingestion-smoke/operations.json`, mídia em `data/ingestion-smoke/media/`.
+Não entra na fila do backend em operação e não chama o motor.
+Repetir reutiliza o mesmo registro/job; erro de ingestão anterior pode ser reprocessado
+uma vez pelo comando, nunca um clique de publicação.
+Overrides opcionais: `ARTICLE_URL`, `FEED_URL`, `INGESTION_SMOKE_DATA_DIR`.
+
+Validação cloud desta entrega: feed real com 30 itens; Valença resolveu
+`https://plantaorio.com.br/story/mrdd68z.jpg`, JPEG de 197562 bytes,
+SHA-256 `2c2fc5fdde1182b87d13c86ccef1b3ac2431f36ec53de96c21620913c096d3f4`;
+job criado somente após validação, repetição reutilizou o mesmo job sem novo download.
+No cloud com proxy, os comandos foram executados com Node 24 e
+`NODE_USE_ENV_PROXY=1` (não necessário no Windows sem proxy). Domínios de rede
+`plantaorio.com.br` e `www.plantaorio.com.br` foram adicionados ao draft do ambiente.
+Nenhuma publicação real foi executada.

@@ -17,3 +17,4 @@ data/admin/
 # Mídias baixadas e auditoria de ingestão local
 data/media/
 data/ingestion/
+data/ingestion-smoke/
