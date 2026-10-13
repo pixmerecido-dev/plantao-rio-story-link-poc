@@ -13,7 +13,7 @@ Abra **http://127.0.0.1:4310** no navegador local. `ADMIN_PORT` altera a porta e
 `ADMIN_DATA_DIR` altera a pasta de dados (padrão `data/admin`). O servidor escuta
 apenas em 127.0.0.1. Não é um serviço público ou uma URL de preview do Codex Cloud.
 
-Telas: Dashboard, Publicações, Configuração do Story e Logs. A configuração tem
+Telas: Dashboard, Fila, Automação/calendário, Publicações, Configuração do Story, Contas, Sistema e Logs. A configuração tem
 texto/presets, sliders, ajustes de 10 px convertidos em frações do canvas, escala,
 limites, restauração e preview imediato 1080x1920. Prefere a imagem em STORY_MEDIA
 (ou STORY_IMAGE); sem configuração usa assets/story-test.jpg. Miniatura ausente não
@@ -39,7 +39,7 @@ falha sempre ativos. Pixels aparecem apenas como diagnóstico do preview.
   e métricas com horário de Brasília.
 - `artifactImporter.ts`: importação somente de resumos existentes em artifacts.
 - `httpServer.ts` / `server.ts`: rotas locais e inicialização.
-- `client.ts` / `view.ts`: quatro telas responsivas e simulação do sticker.
+- `client.ts` / `operationsClient.ts` / `view.ts`: oito telas responsivas e simulação do sticker.
 
 As preferências e registros sobrevivem ao fechamento/reabertura. data/admin fica
 ignorado no Git; não exclua essa pasta se quiser manter o histórico. Uma instância
@@ -781,3 +781,48 @@ tamanho exatos. Metadados são revalidados antes do envio: arquivo alterado gera
 O resultado usa media_sha256/job-media-sha256 mantendo o mesmo job_id e clique único.
 Link, texto, resize, posição, travas, Facebook e verificação pós-publicação permanecem
 nas implementações existentes. Nenhuma publicação real é executada pelo resolvedor.
+
+## Centro operacional local
+
+Execute `npm run admin` e abra **http://127.0.0.1:4310** no Windows. O backend precisa permanecer aberto para o scheduler avaliar a fila. Fechar apenas o navegador não remove jobs. Nenhuma ação desta versão abre Appium, cria Story ou publica; o motor existente não foi modificado. Não há ingestão de portal, WhatsApp, e-mail ou API externa.
+
+O menu agora possui Dashboard, Fila (todos/agendados/com erro), Automação + timeline, Publicações, Story, Contas, Sistema e Logs. A fila usa a mídia de teste configurada em `STORY_MEDIA` (ou `STORY_IMAGE`) no backend; sem configuração, usa `assets/story-test.jpg`. URL e texto recebidos no formulário são preservados. Vídeos podem ser reconhecidos como dados, mas a política bloqueia sua execução.
+
+**Persistência:** JSON local versionado em `ADMIN_DATA_DIR` (padrão `data/admin`), sem dependências nativas. `admin.json` preserva o histórico importado e as configurações legadas; na primeira inicialização operacional, essas configurações são copiadas para `operations.json`, que passa a ser a fonte das configurações por conta. `operations.json` guarda `instagram_accounts`, `account_settings`, `publishing`, `safety`, `system`, `queue`, `events`, `audit` e `locks`. Escritas são serializadas e substituem o arquivo atomicamente; um arquivo inválido não é zerado silenciosamente. Faça backup dos dois JSON com o backend parado. Não edite arquivos enquanto o backend estiver aberto.
+
+`backend.lock` impede dois backends no mesmo diretório; um PID vivo bloqueia a segunda inicialização. Lock de processo morto é recuperado. Um lock incompleto/inválido exige revisão manual, em vez de liberar execução indevidamente. Este armazenamento é destinado a **um backend local**, não a múltiplos servidores ou compartilhamento de rede.
+
+**Serviços:** `StorySettingsService`, `PublicationQueueService`, `PublishingPolicyService`, `PublishingScheduler`, `InstagramAccountService`, `SystemHealthService`, `PublicationLogService` e `DeduplicationService`. Repositories isolam persistência; `CombinedPublicationsRepository` une fila e histórico sem duplicar registros. O scheduler roda exclusivamente no backend, a cada 10 segundos, com interface `PublishingAdapter` ainda sem implementação conectada ao Instagram.
+
+**Já operacional:** criação de job de teste, agendamento, prioridade URGENT/HIGH/NORMAL, pausa/retomada/cancelamento, mover ao topo dentro da prioridade e tornar imediato. “Publicar agora” somente limpa o agendamento e torna o job elegível; “Publicar próximo” informa `ENGINE_ADAPTER_NOT_CONNECTED`, sem iniciar tentativa. Não há ação de esvaziar fila. Jobs ativos ou finalizados não podem ser recolocados na fila por esses controles.
+
+A política exige automação habilitada, postador ONLINE, conta verificada, saúde confirmada, ausência de lock/duplicidade, agendamento vencido, janela de Brasília, limites diário/horário e intervalo mínimo. Janela pode atravessar meia-noite; início igual ao fim representa 24 horas. URGENT pode ultrapassar a janela somente quando configurado; não ultrapassa limites, saúde, conta ou locks. RATE usa limite móvel de 60 minutos; INTERVAL acrescenta seu intervalo ao intervalo mínimo. Para segurança, limites contabilizam tentativas iniciadas, inclusive inconclusivas, pois podem ter publicado. `nextEligibleAt` informa a próxima avaliação pela restrição encontrada, não garante publicação.
+
+Deduplicação usa SHA-256 de `account_id + URL exata + hash dos bytes da mídia`; nomes diferentes não geram nova identidade. Duplicatas ficam `DUPLICATE`, com evento. Cancelados podem dar origem a uma nova tarefa. Proteções do motor permanecem independentes e intactas. Histórico antigo sem conta detectada fica `legacy-unverified`, sem inventar username ou vincular publicação antiga à conta configurada.
+
+Ao iniciar PREPARING, o backend congela a configuração efetiva no job, preservando seu `sticker_text` recebido. Alterações seguintes do painel não alteram o snapshot. Um lock por conta e exclusão de execução concorrente no scheduler impedem duas tentativas simultâneas. Cada tentativa tem registro próprio; falha no limite ou após clique de risco exige revisão. INCONCLUSIVE nunca é repetido automaticamente. Ao reiniciar, PREPARING/READY/PUBLISHING viram REQUIRES_REVIEW com `RECOVERED_AFTER_CRASH`; não são considerados sucesso nem retomados automaticamente.
+
+**Conta e saúde:** configure o username esperado em Contas; não há conta previamente confirmada. `detectCurrentAccount()` permanece UNKNOWN sem detector confiável. A interface futura permite OK/MISMATCH/LOGGED_OUT/UNAVAILABLE; não há botão para fingir OK. Saúde verifica o painel/persistência, `http://127.0.0.1:4723/status`, disponibilidade de `adb` e dispositivo `emulator-5554` via `adb devices`, com timeouts curtos. Não inicia emulador nem sessão Appium. INSTAGRAM permanece UNKNOWN até integração confiável. Quando configurado, falha observada pausa o sistema preservando jobs; não há loop de publicação.
+
+**Preparado, ainda sem integração:** execução do motor pela fila, detecção real da conta, eventos de cada fase do motor e tratamento operacional de tentativas/revisão. O adapter futuro deve conservar as duas travas de publicação, confirmação da transação e layout do job, clique único e resultado INCONCLUSIVE sem retry em caso de dúvida. Configurações do painel ainda não alteram o fluxo Appium existente. O histórico continua importando somente resumos reais disponíveis; não reconstrói fases/timestamps ausentes. Crosspost não é confirmação de entrega no Facebook.
+
+O backend atende somente loopback, valida origem/Host, exige JSON com header do painel para alterações e não expõe `.env`, senhas ou endpoints de publicação. Caminhos locais da mídia ficam no backend; o frontend recebe filename e endpoint de miniatura. Auditoria registra `admin-local`, timestamp, configuração e valores anteriores/novos. Autenticação multiusuário e acesso remoto não fazem parte desta fase.
+
+Validação: `npm run typecheck`, `npm run build`, `node --test tests/*.test.mjs`. Os testes operacionais usam dados e adapters simulados; nenhum publica no Instagram.
+
+O contrato do adapter também rejeita SUCCESS sem confirmação positiva contendo o `job_id` e `media_hash` atuais e horário válido. Uma confirmação de outro job vira INCONCLUSIVE. A presença de Home ou de Story antigo não satisfaz esse contrato.
+
+
+## Complemento: estilo, texto e geometria do Link Sticker
+
+`story.sticker.style_index` guarda o ciclo técnico 0/1/2/3, com nomes de apresentação Azul/Translúcido/Preto/Colorido. Default 0; escala continua 529/696 (~0,76). Presets passam a guardar `name`, `text`, `style_index` e escala opcional, mantendo os textos que já existiam. O snapshot em PREPARING congela também `sticker_style_index` e `max_text_length`.
+
+`story.sticker.max_text_length` é **null por padrão**: o máximo real aceito pelo Instagram ainda não foi definido. Na tela Story, o campo opcional permite configurar um limite confirmado; o contador usa code points Unicode, bloqueia salvamento/entrada de job quando excedido e nunca corta o texto recebido. Não há mais regra arbitrária de 140 caracteres no painel. Limites de transporte HTTP (64 KiB) continuam independentes do limite do Instagram. Se um job QUEUED ultrapassar um limite reduzido posteriormente, ele exige revisão antes de PREPARING, sem consumir tentativa.
+
+Preview no Dashboard e na tela Story calcula largura aproximadamente como ícone + estimativa dos glifos do texto + padding, multiplicados pela escala e limitados à largura da tela. A referência 696 px calibra somente o texto padrão; não determina uma largura fixa para outros textos. Mostra caracteres, largura estimada e aviso de preview limitado para textos muito longos; conteúdo integral permanece no job. A UI diz **Escala do Sticker**, com observação de que a largura depende do texto. É simulação; bounds reais do Instagram permanecem a fonte de verdade.
+
+`sticker_x_pct` / `sticker_y_pct` representam o **centro** do sticker relativamente ao canvas. `src/instagram/configuredStickerLayout.ts` fornece contrato separado para integração futura: exige Link recém-criado, URL/texto e transação do job confirmados; aplica 0–3 taps de estilo no centro vivo; invalida geometria após texto/estilo; relê antes/depois das ações; solicita resize nativo e movimento W3C aos adapters das implementações já validadas; compara tamanho relativo aos bounds naturais atuais (não a uma largura fixa) e posição do centro, com tolerâncias de 8%/4%.
+
+`StickerBoundsSession` descarta bounds quando texto/estilo/resize/posição mudam e recusa uso do cache antes de nova leitura. O contrato retorna `text`, `style_index`, `requested_scale`, bounds antes/depois do resize e finais, centro final/alvo, delta, `within_tolerance` e `layout_confirmed`. Também registra STICKER_CREATED/TEXT_APPLIED/STYLE_APPLIED/BOUNDS_READ/RESIZED/POSITIONED/LAYOUT_CONFIRMED com dados reais recebidos do adapter. O ciclo de estilo é baseado em taps no sticker novo; cor visual não é fingida como verificada (`style_verified_visually=false`).
+
+**Ainda preparado, não conectado:** o painel não executa taps nem teste de layout real nesta entrega. `ConfiguredStickerLayoutPort` precisa ser ligado explicitamente ao driver, aos guards do job atual e aos gestos existentes. O módulo não contém função de publicação, não abre sessão e não substitui as implementações aprovadas. O motor principal, os smokes de publicação, MediaStore, navegação e Facebook permanecem intactos. A primeira validação futura desse adapter deve parar antes de publicar.
