@@ -7,6 +7,7 @@ import {
 import {
   renderOperations,
   operationBanner,
+  queueOverview,
   operationalLogs,
 } from "./operationsClient.js";
 import { REFERENCE } from "./domain.js";
@@ -201,7 +202,10 @@ async function load() {
       node.classList.toggle("active", node.dataset.route === current),
     );
   try {
-    if (current === "feed") { await renderFeed(); return; }
+    if (current === "feed") {
+      await renderFeed();
+      return;
+    }
     if (["queue", "automation", "accounts", "system"].includes(current)) {
       await renderOperations(current);
       return;
@@ -213,9 +217,10 @@ async function load() {
         imported: { warnings: string[] };
       }>("/api/dashboard");
       if (version !== viewVersion) return;
-      const [operational, savedStory] = await Promise.all([
+      const [operational, savedStory, queueView] = await Promise.all([
         operationBanner(),
         api<StorySettings>("/api/settings"),
+        queueOverview(),
       ]);
       if (version !== viewVersion) return;
       const s = data.stats,
@@ -254,7 +259,7 @@ async function load() {
           ],
         ];
       element("content").innerHTML =
-        `${operational.html}<p class="subtext">Acompanhe os resultados do postador. Horários de Brasília.</p><div class="stats-grid">${cards.map(([label, value, note]) => `<div class="stat-card"><div class="label">${escape(label)}<span>↗</span></div><strong class="${value.length > 9 ? "date" : ""}">${escape(value)}</strong><small>${escape(note)}</small></div>`).join("")}</div><div class="dashboard-bottom"><section class="panel"><div class="panel-heading"><div><h2>Últimas publicações</h2><span class="muted">Registros reais dos resumos locais do motor</span></div><a href="#publications">Ver histórico →</a></div>${jobsTable(data.recent)}</section>${dashboardStickerPreview(savedStory)}</div><p class="muted">${s.inconclusive} resultado(s) inconclusivo(s). Na ausência de horário exato de publicação, as contagens usam o término registrado. ${data.imported.warnings.length ? `${data.imported.warnings.length} resumo(s) não puderam ser importados.` : ""}</p>`;
+        `${operational.html}${queueView.html}<p class="subtext">Acompanhe os resultados do postador. Horários de Brasília.</p><div class="stats-grid">${cards.map(([label, value, note]) => `<div class="stat-card"><div class="label">${escape(label)}<span>↗</span></div><strong class="${value.length > 9 ? "date" : ""}">${escape(value)}</strong><small>${escape(note)}</small></div>`).join("")}</div><div class="dashboard-bottom"><section class="panel"><div class="panel-heading"><div><h2>Últimas publicações</h2><span class="muted">Registros reais dos resumos locais do motor</span></div><a href="#publications">Ver histórico →</a></div>${jobsTable(data.recent)}</section>${dashboardStickerPreview(savedStory)}</div><p class="muted">${s.inconclusive} resultado(s) inconclusivo(s). Na ausência de horário exato de publicação, as contagens usam o término registrado. ${data.imported.warnings.length ? `${data.imported.warnings.length} resumo(s) não puderam ser importados.` : ""}</p>`;
       wireJobs();
       document
         .querySelectorAll<HTMLElement>(".dashboard-bottom .preview-sticker")
@@ -262,6 +267,7 @@ async function load() {
           fitPreviewText(sticker, sticker.dataset.capped === "true"),
         );
       operational.wire();
+      queueView.wire();
     } else if (current === "publications") {
       const query = new URLSearchParams({ ...filters, page: String(pubPage) });
       const data = await api<{

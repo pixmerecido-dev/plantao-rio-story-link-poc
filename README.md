@@ -877,8 +877,8 @@ Configure em **Entradas RSS** no painel:
 - `feed.enabled`: inicia/pausa novas consultas automáticas; padrão `true`.
 - `feed.url`: padrão `https://plantaorio.com.br/feed.xml`.
 - `feed.poll_interval_seconds`: padrão `60` (10–86400).
-- `feed.auto_enqueue`: padrão `false`. Válida fica `READY`; “Enviar para fila”
-  cria job `QUEUED`. Ao ativar, novos itens válidos e itens `READY` aguardando
+- `feed.auto_enqueue`: padrão `false`. Mídia válida cria job `READY` na Fila; “Enviar para fila”
+  aprova o mesmo job como `QUEUED`. Ao ativar, novos itens válidos e itens `READY` aguardando
   entram na fila na próxima consulta bem-sucedida. Isso não autoriza publicação.
 - `feed.account_id`: conta de destino persistida (`instagram-default` inicialmente).
   API de configuração valida que a conta existe. Texto do sticker é copiado exatamente
@@ -940,7 +940,7 @@ npm run smoke:ingestion
 ```
 
 `smoke:feed` somente consulta/analisa RSS e lista URL/guid. `smoke:article-resolve`
-somente analisa HTML. `smoke:ingestion` usa por padrão a matéria de Valença:
+somente analisa HTML. `smoke:ingestion-isolated` usa por padrão a matéria de Valença:
 `https://plantaorio.com.br/valenca-amplia-atendimento-pelo-sus-com-aditivo-de-35-milhoes-mrdd68z`.
 Resolve, baixa, valida e cria job em armazenamento **isolado**
 `data/ingestion-smoke/operations.json`, mídia em `data/ingestion-smoke/media/`.
@@ -957,3 +957,56 @@ No cloud com proxy, os comandos foram executados com Node 24 e
 `NODE_USE_ENV_PROXY=1` (não necessário no Windows sem proxy). Domínios de rede
 `plantaorio.com.br` e `www.plantaorio.com.br` foram adicionados ao draft do ambiente.
 Nenhuma publicação real foi executada.
+
+### Ingestão visível na Fila e no dashboard
+
+Com RSS habilitado (padrão ON) e auto-enfileirar OFF, toda matéria validada agora
+cria **um job READY na fila do painel**. O job mantém `awaiting_operator=true` e
+zero tentativas; READY aguardando aprovação não entra no scheduler. Reiniciar o
+backend preserva esse READY. Entradas antigas READY ainda sem job são materializadas
+na inicialização, revalidando/reutilizando o arquivo local, sem novo download.
+A recuperação de preparações interrompidas do motor continua exigindo revisão.
+
+Abra `npm run admin`, acesse o painel local e escolha **Fila** na barra lateral.
+O **Dashboard** também mostra uma seção Fila com os primeiros cinco jobs pendentes
+(e link para a lista completa). Os dois usam a mesma renderização/ações. Cada linha
+mostra preview local, URL, entrada, status, conta alvo configurada, horário agendado
+(ou Não agendado), tentativas e último erro. “Ver mídia” lê o arquivo já baixado;
+“Ver logs” inclui eventos do resolvedor/download e os eventos posteriores do job.
+Não há download remoto para exibir previews.
+
+Ações: **Enviar para fila** aprova READY como QUEUED, **Agendar**, **Pausar/Retomar**,
+**Cancelar**, **Abrir matéria**, **Ver mídia** e **Ver logs**. **Publicar agora** fica
+visível e desabilitado: não chama Appium. **Tentar novamente** só pode reativar FAILED
+com tentativas terminadas comprovadamente antes de qualquer clique de publicação,
+ainda abaixo do limite de tentativas e com hash local íntegro. SUCCESS, INCONCLUSIVE,
+REQUIRES_REVIEW, envio incerto ou ocorrido nunca são automaticamente repetidos.
+Pausar e retomar um READY sem aprovação mantém READY; não o promove a QUEUED.
+
+Configuração RSS continua em **Entradas RSS**: RSS habilitado ON/OFF, intervalo
+(em segundos), auto-enfileirar ON/OFF. Padrões: ON, 60 segundos, OFF. Ao ativar
+auto-enfileirar, o mesmo job READY é aprovado na próxima consulta; não é duplicado.
+Cancelamento/ignorar preserva a identidade da matéria para não recriar sua tarefa.
+Repetições registram **DUPLICATE_ARTICLE_SKIPPED**, visível em Entradas RSS/Logs.
+
+Teste com nova matéria no painel, em **dois terminais** no Windows:
+
+```bat
+REM Primeiro terminal: manter servidor aberto
+npm run admin
+```
+
+```bat
+REM Segundo terminal: opcionalmente usar outra URL de matéria
+set ARTICLE_URL=https://plantaorio.com.br/valenca-amplia-atendimento-pelo-sus-com-aditivo-de-35-milhoes-mrdd68z
+npm run smoke:ingestion
+```
+
+O comando agora chama `POST /api/feed/ingest` no backend local em `ADMIN_PORT`
+(padrão 4310) e confirma o job na mesma fila do painel. Com auto-enfileirar OFF,
+o resultado é READY; atualizar Dashboard/Fila mostra a tarefa. Repetir a URL
+reutiliza o registro/job, sem duplicar ou publicar. Outra opção é **Consultar agora**
+em Entradas RSS: toda matéria nova válida gera READY na Fila.
+O smoke isolado anterior continua em `npm run smoke:ingestion-isolated`, usando
+`data/ingestion-smoke/`; essa persistência separada não aparece no painel operacional.
+Nenhuma opção desta integração acessa o Instagram ou executa publicação.

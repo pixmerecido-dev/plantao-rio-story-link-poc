@@ -174,7 +174,9 @@ test("auto_enqueue=false -> local READY; repeated polling, enqueue concurrency a
     assert.equal((await f.service.pollOnce()).detected, 1);
     let state = await f.store.read();
     assert.equal(state.feed.entries[0].status, "READY");
-    assert.equal(state.queue.length, 0);
+    assert.equal(state.queue.length, 1);
+    assert.equal(state.queue[0].status, "READY");
+    assert.equal(state.queue[0].awaiting_operator, true);
     assert.equal(
       state.feed.entries[0].downloaded_media.file_size,
       bytes.length,
@@ -219,7 +221,7 @@ test("auto_enqueue=false -> local READY; repeated polling, enqueue concurrency a
       "MEDIA_VALIDATED",
       "QUEUE_JOB_SKIPPED",
       "QUEUE_JOB_CREATED",
-      "DUPLICATE_ARTICLE",
+      "DUPLICATE_ARTICLE_SKIPPED",
     ])
       assert.ok(events.includes(event), event);
   } finally {
@@ -262,9 +264,10 @@ test("temporary feed failure recovers; media error has no job and can retry safe
     await f.service.action(entry.id, "ignore");
     await f.service.pollOnce();
     assert.equal((await f.store.read()).feed.entries[0].status, "IGNORED");
-    assert.equal((await f.store.read()).queue.length, 0);
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.equal((await f.store.read()).queue[0].status, "CANCELLED");
     const hits = f.counters().mediaHits;
-    await f.service.action(entry.id, "retry");
+    await assert.rejects(f.service.action(entry.id, "retry"), /já vinculada/);
     assert.equal(f.counters().mediaHits, hits);
   } finally {
     await f.close();
@@ -296,11 +299,12 @@ test("disabled polling, config validation, recovery with cached media and hash r
     await writeFile(e.downloaded_media.local_media_path, "corrupt");
     await assert.rejects(
       f.service.action(e.id, "enqueue"),
-      /Mídia baixada mudou|Mídia local inválida/,
+      /Mídia baixada mudou|Mídia local inválida|Mídia local alterada/,
     );
-    assert.equal((await f.store.read()).queue.length, 0);
-    await f.service.action(e.id, "retry");
-    assert.equal(f.counters().mediaHits, 2);
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.equal((await f.store.read()).queue[0].status, "READY");
+    await assert.rejects(f.service.action(e.id, "retry"), /já vinculada/);
+    assert.equal(f.counters().mediaHits, 1);
     assert.equal((await f.store.read()).feed.entries[0].status, "READY");
   } finally {
     await f.close();
@@ -318,7 +322,9 @@ test("backend timer operates with no frontend and stops without creating publica
       await new Promise((r) => setTimeout(r, 20));
     await f.service.stop();
     assert.equal((await f.store.read()).feed.entries[0].status, "READY");
-    assert.equal((await f.store.read()).queue.length, 0);
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.equal((await f.store.read()).queue[0].status, "READY");
+    assert.equal((await f.store.read()).queue[0].attempts, 0);
   } finally {
     await f.close();
   }
@@ -441,8 +447,163 @@ test("migration keeps old local state and video downloads stay generic without r
       (await f.store.read()).feed.entries[0].status,
       "REQUIRES_REVIEW",
     );
-    assert.equal((await f.store.read()).queue.length, 0);
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.equal((await f.store.read()).queue[0].status, "READY");
   } finally {
     await f.close();
+  }
+});
+test("READY appears in the actual panel API, preview/logs reuse media, restart and pause never auto-approve", async () => {
+  const f = await fixture();
+  const admin = createAdminServer({
+    repository: new JsonStorage(join(f.root, "admin.json")),
+    root: f.root,
+    operationsStore: f.store,
+    feedService: f.service,
+    clientPath: resolve("dist/admin/client.js"),
+  });
+  await new Promise((r) => admin.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${admin.address().port}`;
+  const req = async (path, method = "GET", body) => {
+    const r = await fetch(base + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Request": "local",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, data: await r.json() };
+  };
+  try {
+    await req("/api/feed/ingest", "POST", { article_url: f.base + "/article" });
+    const jobs = (await req("/api/operations/queue")).data.jobs;
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0].status, "READY");
+    assert.equal(jobs[0].attempts, 0);
+    assert.equal(jobs[0].account_id, "instagram-default");
+    assert.equal((await req("/api/operations")).data.queue_count, 1);
+    const id = jobs[0].id;
+    const preview = await fetch(base + `/api/publications/${id}/media`);
+    assert.deepEqual(Buffer.from(await preview.arrayBuffer()), bytes);
+    const logs = (await req(`/api/operations/queue/${id}`)).data.events;
+    assert.ok(logs.some((e) => e.event === "MEDIA_DOWNLOADED"));
+    assert.ok(logs.some((e) => e.event === "STORY_MEDIA_FOUND"));
+    assert.equal(f.counters().mediaHits, 1);
+    await req("/api/feed/ingest", "POST", { article_url: f.base + "/article" });
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.ok(
+      (await f.store.read()).events.some(
+        (e) => e.event === "DUPLICATE_ARTICLE_SKIPPED",
+      ),
+    );
+    const { PublicationQueueService } = await import(
+      "../dist/admin/publicationQueueService.js"
+    );
+    const queue = new PublicationQueueService(f.store);
+    assert.equal(await queue.recoverAfterCrash(), 0);
+    await req(`/api/operations/queue/${id}/pause`, "POST", {});
+    await req(`/api/operations/queue/${id}/resume`, "POST", {});
+    assert.equal((await f.store.read()).queue[0].status, "READY");
+    const scheduled_at = "2030-10-13T12:00:00.000Z";
+    await req(`/api/operations/queue/${id}/schedule`, "POST", { scheduled_at });
+    assert.equal((await f.store.read()).queue[0].status, "SCHEDULED");
+    assert.equal((await f.store.read()).queue[0].scheduled_at, scheduled_at);
+    assert.equal(
+      (await req("/api/operations/next", "POST", {})).data.reason,
+      "ENGINE_ADAPTER_NOT_CONNECTED",
+    );
+    assert.equal((await f.store.read()).queue[0].attempts, 0);
+    await req(`/api/operations/queue/${id}/cancel`, "POST", {});
+    await f.service.pollOnce();
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.equal((await f.store.read()).queue[0].status, "CANCELLED");
+  } finally {
+    admin.closeAllConnections();
+    await new Promise((r) => admin.close(r));
+    await f.close();
+  }
+});
+test("queue retries only proven pre-publish failures, retaining attempts and never retrying uncertain sends", async () => {
+  const f = await fixture();
+  try {
+    await f.service.pollOnce();
+    const { PublicationQueueService } = await import(
+      "../dist/admin/publicationQueueService.js"
+    );
+    const q = new PublicationQueueService(f.store);
+    const id = (await f.store.read()).queue[0].id;
+    const timestamp = new Date().toISOString();
+    const failure = async (clicked) =>
+      f.store.transact((s) => {
+        const j = s.queue[0];
+        j.status = "FAILED";
+        j.attempts = 1;
+        j.started_at = timestamp;
+        j.finished_at = timestamp;
+        j.error_message = "TEST pre-send error";
+        j.awaiting_operator = false;
+        j.attempt_history = [
+          {
+            number: 1,
+            started_at: timestamp,
+            finished_at: timestamp,
+            outcome: "FAILED",
+            publish_clicked: clicked,
+          },
+        ];
+      });
+    await failure(true);
+    await assert.rejects(q.action(id, "retry"));
+    await failure(null);
+    await assert.rejects(q.action(id, "retry"));
+    await failure(false);
+    await q.action(id, "retry");
+    assert.equal((await f.store.read()).queue[0].status, "QUEUED");
+    assert.equal((await f.store.read()).queue[0].attempts, 1);
+    assert.equal((await f.store.read()).queue[0].attempt_history.length, 1);
+    assert.equal((await f.store.read()).queue[0].error_message, null);
+  } finally {
+    await f.close();
+  }
+});
+test("legacy READY entries materialize once without download and article with any existing job is skipped", async () => {
+  const f = await fixture();
+  try {
+    await f.service.pollOnce();
+    await f.store.transact((s) => {
+      s.queue = [];
+      s.feed.entries[0].job_id = null;
+    });
+    await f.service.recover();
+    await f.service.recover();
+    assert.equal((await f.store.read()).queue.length, 1);
+    assert.equal((await f.store.read()).queue[0].status, "READY");
+    assert.equal(f.counters().mediaHits, 1);
+  } finally {
+    await f.close();
+  }
+  const g = await fixture();
+  try {
+    const { PublicationQueueService } = await import(
+      "../dist/admin/publicationQueueService.js"
+    );
+    await new PublicationQueueService(g.store).enqueueJob({
+      account_id: "instagram-default",
+      media_path: resolve("assets/story-test.jpg"),
+      story_url: g.base + "/article",
+      sticker_text: "Leia",
+    });
+    await g.service.pollOnce();
+    assert.equal((await g.store.read()).queue.length, 1);
+    assert.equal((await g.store.read()).feed.entries[0].status, "DUPLICATE");
+    assert.equal(g.counters().mediaHits, 0);
+    assert.ok(
+      (await g.store.read()).events.some(
+        (e) => e.event === "DUPLICATE_ARTICLE_SKIPPED",
+      ),
+    );
+  } finally {
+    await g.close();
   }
 });

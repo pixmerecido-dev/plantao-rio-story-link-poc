@@ -60,6 +60,21 @@ export function createFeedApi(service: FeedPollingService) {
       });
       return true;
     }
+    if (req.method === "POST" && path === "/api/feed/ingest") {
+      const value = await payload();
+      if (typeof value.article_url !== "string")
+        throw new ValidationError("article_url obrigatória.");
+      const entry = await service.ingestArticle(value.article_url);
+      send(res, {
+        id: entry.id,
+        article_url: entry.article_url,
+        job_id: entry.job_id,
+        status: entry.status,
+        last_error: entry.last_error,
+        engineConnected: false,
+      });
+      return true;
+    }
     if (req.method === "PUT" && path === "/api/feed/config") {
       send(res, await service.configure(await payload()));
       return true;

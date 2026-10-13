@@ -53,14 +53,14 @@ export async function renderFeed() {
     `<section class="panel"><div class="panel-head"><h2>Entradas RSS</h2><button id="feed-check" class="button secondary">Consultar agora</button></div>
     <p class="info">Matérias existentes no primeiro feed também serão detectadas. Mídias são baixadas localmente; este módulo somente alimenta a fila. Publicação permanece desconectada.</p>
     <form id="feed-config" class="ops-form">
-      <label class="check"><input id="feed-enabled" type="checkbox" ${config.enabled ? "checked" : ""}>Polling habilitado</label>
+      <label class="check"><input id="feed-enabled" type="checkbox" ${config.enabled ? "checked" : ""}>RSS habilitado</label>
       <label>URL do feed<input id="feed-url" type="url" required value="${esc(config.url)}"></label>
       <label>Intervalo (segundos)<input id="feed-interval" type="number" min="10" max="86400" required value="${config.poll_interval_seconds}"></label>
-      <label class="check"><input id="feed-auto" type="checkbox" ${config.auto_enqueue ? "checked" : ""}>Enviar automaticamente à fila</label>
+      <label class="check"><input id="feed-auto" type="checkbox" ${config.auto_enqueue ? "checked" : ""}>Auto-enfileirar</label>
       <button class="button" type="submit">Salvar RSS</button>
     </form><p>Conta: ${esc(config.account_id)} · Última consulta: ${date(state.last_checked_at)} · Conclusão: ${date(state.last_completed_at)}</p>
     ${state.last_error ? `<div class="notice error">${esc(state.last_error)}</div>` : ""}
-    <p class="info">auto_enqueue=false: mídia válida fica READY até o operador enviá-la à fila. Texto do sticker vem da configuração da conta, preservado no momento da detecção. Nenhuma limpeza de mídia está ativa.</p>
+    <p class="info">Auto-enfileirar OFF: mídia válida cria job READY na Fila, aguardando o operador. Texto do sticker vem da configuração da conta, preservado no momento da detecção. Nenhuma limpeza de mídia está ativa.</p>
     <div class="table-wrap"><table><thead><tr><th>Story / matéria</th><th>Detectado</th><th>Ingestão</th><th>Download / fila</th><th>Ações</th></tr></thead><tbody>
     ${
       state.entries
@@ -71,9 +71,9 @@ export async function renderFeed() {
       ${e.article_url ? `<a href="${esc(e.article_url)}" target="_blank" rel="noopener noreferrer" class="feed-link">${esc(e.article_url)}</a>` : "URL da matéria ausente"}
       <small>${esc(e.feed_guid ?? e.id)}</small></td><td>${date(e.detected_at)}</td><td><span class="badge">${esc(e.status)}</span>${e.last_error ? `<p class="error-message">${esc(e.last_error)}</p>` : ""}</td>
       <td>${esc(e.download_status)}<br>Fila: ${esc(e.queue_status ?? "não inserida")}<br>${esc(e.media_type ?? "—")} · ${esc(e.downloaded_media?.mime_type ?? "—")}<br>${e.downloaded_media ? `${e.downloaded_media.file_size} bytes` : ""}</td>
-      <td><div class="queue-actions"><button class="button secondary" data-feed-action="enqueue" data-id="${e.id}" ${e.status !== "READY" || e.job_id ? "disabled" : ""}>Enviar para fila</button>
+      <td><div class="queue-actions"><button class="button secondary" data-feed-action="enqueue" data-id="${e.id}" ${e.status !== "READY" ? "disabled" : ""}>Enviar para fila</button>
       <button class="button secondary" disabled title="Motor de publicação não conectado">Publicar agora</button>
-      <button class="button secondary" data-feed-action="ignore" data-id="${e.id}" ${e.job_id || ["IGNORED", "DUPLICATE", "RESOLVING", "DOWNLOADING"].includes(e.status) ? "disabled" : ""}>Ignorar</button>
+      <button class="button secondary" data-feed-action="ignore" data-id="${e.id}" ${(e.job_id && e.queue_status !== "READY") || ["IGNORED", "DUPLICATE", "RESOLVING", "DOWNLOADING"].includes(e.status) ? "disabled" : ""}>Ignorar</button>
       <button class="button secondary" data-feed-action="retry" data-id="${e.id}" ${e.job_id || !["ARTICLE_RESOLVE_FAILED", "MEDIA_NOT_FOUND", "MEDIA_DOWNLOAD_FAILED", "MEDIA_INVALID", "DISCOVERED", "READY", "IGNORED", "REQUIRES_REVIEW"].includes(e.status) ? "disabled" : ""}>Tentar novamente</button></div></td></tr>`,
         )
         .join("") ||

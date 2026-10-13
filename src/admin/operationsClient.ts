@@ -120,29 +120,110 @@ export async function operationBanner() {
       }),
   };
 }
-function rows(jobs: QueueJob[]) {
+function rows(jobs: QueueJob[], accounts: Account[] = []) {
+  const labels = Object.fromEntries(
+    accounts.map((a) => [
+      a.id,
+      a.expected_username
+        ? `@${a.expected_username}`
+        : `${a.display_name} (${a.id})`,
+    ]),
+  );
   return jobs.length
-    ? `<div class="table-wrap"><table><thead><tr><th>Job / mídia</th><th>Conta</th><th>Prioridade</th><th>Modo</th><th>Horário</th><th>Status</th><th>Ações</th></tr></thead><tbody>${jobs
-        .map(
-          (j) =>
-            `<tr><td><button class="job-link" data-detail="${esc(j.id)}">${esc(j.media_filename)}</button><small class="muted">${esc(j.job_id.slice(0, 8))}</small></td><td>${esc(j.instagram_username ?? j.account_id)}</td><td>${badge(j.priority)}</td><td>${esc(j.mode)}</td><td>${esc(date(j.scheduled_at))}</td><td>${badge(j.status)}</td><td>${
-              ["QUEUED", "SCHEDULED", "PAUSED"].includes(j.status)
-                ? `<div class="queue-actions">${(j.status === "PAUSED"
-                    ? ["resume"]
-                    : ["pause"]
-                  )
-                    .concat(["top", "schedule", "publish-now", "cancel"])
-                    .map(
-                      (a) =>
-                        `<button class="preset" data-queue-id="${esc(j.id)}" data-queue-action="${a}">${esc({ resume: "Retomar", pause: "Pausar", top: "Topo", schedule: "Adiar", "publish-now": "Publicar agora", cancel: "Cancelar" }[a])}</button>`,
-                    )
-                    .join("")}</div>`
-                : "Revisão / histórico"
-            }</td></tr>`,
-        )
+    ? `<div class="table-wrap"><table class="queue-grid"><thead><tr><th>Preview / matéria</th><th>Entrada / previsto</th><th>Conta alvo</th><th>Status</th><th>Tentativas / erro</th><th>Ações</th></tr></thead><tbody>${jobs
+        .map((j) => {
+          const manual = j.status === "READY" && j.awaiting_operator;
+          const pending =
+            manual || ["QUEUED", "SCHEDULED", "PAUSED"].includes(j.status);
+          const retry =
+            j.status === "FAILED" &&
+            j.attempts > 0 &&
+            j.attempt_history.length === j.attempts &&
+            j.attempt_history.every(
+              (a) => a.publish_clicked === false && a.finished_at,
+            );
+          const media = `/api/publications/${encodeURIComponent(j.id)}/media`;
+          const actions = [
+            ...(manual ? ["enqueue"] : []),
+            ...(pending
+              ? [
+                  j.status === "PAUSED" ? "resume" : "pause",
+                  "schedule",
+                  "cancel",
+                ]
+              : []),
+          ];
+          const actionLabels: Record<string, string> = {
+            enqueue: "Enviar para fila",
+            pause: "Pausar",
+            resume: "Retomar",
+            schedule: "Agendar",
+            cancel: "Cancelar",
+          };
+          return `<tr><td>${j.media_type === "IMAGE" ? `<a href="${media}" target="_blank" rel="noopener"><img class="queue-thumb" src="${media}" alt="Preview local do Story" loading="lazy"></a>` : esc(j.media_type)}<a class="feed-link" href="${esc(j.story_url)}" target="_blank" rel="noopener noreferrer">${esc(j.story_url)}</a><button class="job-link" data-detail="${esc(j.id)}">${esc(j.media_filename)}</button></td>
+    <td>${date(j.created_at)}<br><small>Previsto: ${j.scheduled_at ? date(j.scheduled_at) : "Não agendado"}</small></td><td>${esc(labels[j.account_id] ?? j.instagram_username ?? j.account_id)}</td><td>${badge(j.status)}<small>${esc(j.priority)} · ${esc(j.mode)}</small></td><td>${j.attempts}${j.error_message ? `<p class="error-message">${esc(j.error_message)}</p>` : "<small>Sem erro</small>"}</td>
+    <td><div class="queue-actions"><button class="preset" disabled title="Instagram não conectado ao painel">Publicar agora</button>${actions.map((a) => `<button class="preset" data-queue-id="${esc(j.id)}" data-queue-action="${a}">${actionLabels[a]}</button>`).join("")}<button class="preset" data-queue-id="${esc(j.id)}" data-queue-action="retry" ${retry ? "" : 'disabled title="Retry somente para falha comprovada antes do envio"'}>Tentar novamente</button><a class="preset" href="${esc(j.story_url)}" target="_blank" rel="noopener noreferrer">Abrir matéria</a>${j.media_type === "IMAGE" ? `<a class="preset" href="${media}" target="_blank" rel="noopener">Ver mídia</a>` : '<button class="preset" disabled>Ver mídia</button>'}<button class="preset" data-detail="${esc(j.id)}" data-log="true">Ver logs</button></div></td></tr>`;
+        })
         .join("")}</tbody></table></div>`
     : empty("Nenhum job neste filtro.");
 }
+function wireQueueActions(reload: () => Promise<void>) {
+  wireDetails();
+  document.querySelectorAll<HTMLButtonElement>("[data-queue-action]").forEach(
+    (b) =>
+      (b.onclick = () =>
+        void (async () => {
+          try {
+            const action = b.dataset.queueAction!;
+            let scheduled_at: string | undefined;
+            if (action === "schedule") {
+              const value = prompt(
+                "Agendar para data/hora local (AAAA-MM-DDTHH:mm):",
+              );
+              if (!value) return;
+              const date = new Date(value);
+              if (!Number.isFinite(date.getTime()))
+                throw Error("Data inválida.");
+              scheduled_at = date.toISOString();
+            }
+            if (action === "cancel" && !confirm("Cancelar este job pendente?"))
+              return;
+            b.disabled = true;
+            await api(
+              `/queue/${encodeURIComponent(b.dataset.queueId!)}/${action}`,
+              "POST",
+              { scheduled_at },
+            );
+            await reload();
+            note("Fila atualizada; publicação não executada.");
+          } catch (e) {
+            fail(e);
+            b.disabled = false;
+          }
+        })()),
+  );
+}
+export async function queueOverview() {
+  const data = await api<{ jobs: QueueJob[]; accounts: Account[] }>("/queue");
+  const pending = data.jobs.filter((j) =>
+    [
+      "READY",
+      "QUEUED",
+      "SCHEDULED",
+      "PAUSED",
+      "PREPARING",
+      "PUBLISHING",
+    ].includes(j.status),
+  );
+  return {
+    html: `<section class="panel"><div class="panel-heading"><h2>Fila</h2><a href="#queue">Ver fila completa →</a></div>${rows(pending.slice(0, 5), data.accounts)}</section>`,
+    wire: () =>
+      wireQueueActions(async () => {
+        node<HTMLButtonElement>("refresh").click();
+      }),
+  };
+}
+
 function wireDetails() {
   document.querySelectorAll<HTMLButtonElement>("[data-detail]").forEach(
     (b) =>
@@ -158,7 +239,7 @@ function wireDetails() {
                 : "/api/operations",
             );
             node("detail-content").innerHTML =
-              `<div class="detail-head"><h2>Detalhes do job</h2><button class="button secondary" id="ops-close">Fechar</button></div>${badge(d.job.status)}<div class="detail-data">${Object.entries(
+              `<div class="detail-head"><h2>${b.dataset.log ? "Logs do job" : "Detalhes do job"}</h2><button class="button secondary" id="ops-close">Fechar</button></div>${badge(d.job.status)}<div class="detail-data">${Object.entries(
                 d.job,
               )
                 .filter(
@@ -172,7 +253,7 @@ function wireDetails() {
                 )
                 .map(
                   ([k, v]) =>
-                    `<div><label>${esc(k)}</label><p>${esc(v ?? "—")}</p></div>`,
+                    `<div><label>${esc(k)}</label><p>${esc(typeof v === "object" && v !== null ? JSON.stringify(v) : (v ?? "—"))}</p></div>`,
                 )
                 .join(
                   "",
@@ -217,52 +298,11 @@ export async function renderOperations(route: string) {
     const data = await api<{
       jobs: QueueJob[];
       decisions: Summary["decisions"];
+      accounts: Account[];
     }>("/queue");
     if (location.hash.slice(1) !== route) return;
-    content.innerHTML = `<p class="subtext">Fila persistente por conta. “Publicar agora” apenas torna o job elegível; não executa o Instagram.</p><section class="panel"><h2>Adicionar job de teste</h2><form id="enqueue-form" class="ops-form"><label>URL da matéria<input id="queue-url" type="url" required value="https://plantaorio.com.br/"></label><label>Texto do sticker<input id="queue-text" required value="Leia a matéria completa"></label><label>Prioridade<select id="queue-priority"><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label><label>Modo<select id="queue-mode"><option>AUTO_QUEUE</option><option>IMMEDIATE</option><option>SCHEDULED</option><option>PAUSED</option></select></label><label>Agendamento (horário local do computador)<input id="queue-date" type="datetime-local"></label><button class="button">Adicionar à fila</button></form><p class="muted">Usa somente STORY_MEDIA / STORY_IMAGE configurada no backend ou assets/story-test.jpg. Entradas RSS são gerenciadas na tela Entradas RSS.</p></section><section class="panel"><div class="filters"><label>Visão <select id="queue-filter"><option value="all">Atual / todos</option><option value="scheduled">Agendados</option><option value="errors">Com erro / revisão</option></select></label></div><div id="queue-table">${rows(data.jobs)}</div></section><section class="panel"><h2>Decisões do scheduler</h2>${data.decisions.length ? data.decisions.map((d) => `<p><code>${esc(d.job_id.slice(0, 8))}</code> ${badge(d.decision.reason)} ${esc(date(d.decision.nextEligibleAt))}</p>`).join("") : empty("Nenhum job elegível para avaliação.")}</section>`;
-    const wire = () => {
-      wireDetails();
-      document
-        .querySelectorAll<HTMLButtonElement>("[data-queue-action]")
-        .forEach(
-          (b) =>
-            (b.onclick = () =>
-              void (async () => {
-                try {
-                  const action = b.dataset.queueAction!;
-                  let scheduled_at: string | undefined;
-                  if (action === "schedule") {
-                    const value = prompt(
-                      "Adiar para data/hora local (AAAA-MM-DDTHH:mm):",
-                    );
-                    if (!value) return;
-                    const date = new Date(value);
-                    if (!Number.isFinite(date.getTime()))
-                      throw Error("Data inválida.");
-                    scheduled_at = date.toISOString();
-                  }
-                  if (
-                    action === "cancel" &&
-                    !confirm("Cancelar este job pendente?")
-                  )
-                    return;
-                  await api(
-                    `/queue/${encodeURIComponent(b.dataset.queueId!)}/${action}`,
-                    "POST",
-                    { scheduled_at },
-                  );
-                  note(
-                    action === "publish-now"
-                      ? "Job elegível; publicação real não executada."
-                      : "Fila atualizada.",
-                  );
-                  await renderOperations("queue");
-                } catch (e) {
-                  fail(e);
-                }
-              })()),
-        );
-    };
+    content.innerHTML = `<p class="subtext">Fila persistente por conta. READY aguarda o operador. Publicar agora está desabilitado; agendar e enviar para fila não executam o Instagram.</p><section class="panel"><h2>Adicionar job de teste</h2><form id="enqueue-form" class="ops-form"><label>URL da matéria<input id="queue-url" type="url" required value="https://plantaorio.com.br/"></label><label>Texto do sticker<input id="queue-text" required value="Leia a matéria completa"></label><label>Prioridade<select id="queue-priority"><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label><label>Modo<select id="queue-mode"><option>AUTO_QUEUE</option><option>IMMEDIATE</option><option>SCHEDULED</option><option>PAUSED</option></select></label><label>Agendamento (horário local do computador)<input id="queue-date" type="datetime-local"></label><button class="button">Adicionar à fila</button></form><p class="muted">Usa somente STORY_MEDIA / STORY_IMAGE configurada no backend ou assets/story-test.jpg. Entradas RSS são gerenciadas na tela Entradas RSS.</p></section><section class="panel"><div class="filters"><label>Visão <select id="queue-filter"><option value="all">Atual / todos</option><option value="scheduled">Agendados</option><option value="errors">Com erro / revisão</option></select></label></div><div id="queue-table">${rows(data.jobs, data.accounts)}</div></section><section class="panel"><h2>Decisões do scheduler</h2>${data.decisions.length ? data.decisions.map((d) => `<p><code>${esc(d.job_id.slice(0, 8))}</code> ${badge(d.decision.reason)} ${esc(date(d.decision.nextEligibleAt))}</p>`).join("") : empty("Nenhum job elegível para avaliação.")}</section>`;
+    const wire = () => wireQueueActions(async () => renderOperations("queue"));
     wire();
     node<HTMLSelectElement>("queue-filter").onchange = (e) => {
       const v = (e.target as HTMLSelectElement).value;
@@ -279,6 +319,7 @@ export async function renderOperations(route: string) {
                   "DUPLICATE",
                 ].includes(j.status)),
         ),
+        data.accounts,
       );
       wire();
     };

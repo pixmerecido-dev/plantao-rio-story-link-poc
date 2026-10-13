@@ -77,12 +77,40 @@ export class FeedPollingService {
     await this.store.transact((s) => {
       for (const entry of s.feed.entries) {
         if (["RESOLVING", "DOWNLOADING"].includes(entry.status)) {
-          entry.status = "DISCOVERED";
+          const job = entry.job_id
+            ? s.queue.find((j) => j.job_id === entry.job_id)
+            : null;
+          entry.status = entry.job_id
+            ? job?.status === "READY"
+              ? "READY"
+              : job?.status === "CANCELLED"
+                ? "IGNORED"
+                : job
+                  ? "QUEUED"
+                  : "REQUIRES_REVIEW"
+            : "DISCOVERED";
           entry.last_error =
             "Ingestão interrompida; retomada sem nova publicação.";
         }
       }
     });
+    await this.materializeReadyEntries();
+  }
+  async materializeReadyEntries() {
+    for (const entry of (await this.store.read()).feed.entries) {
+      if (entry.status === "READY" && !entry.job_id) {
+        try {
+          await this.enqueueEntry(entry.id, true);
+        } catch (error) {
+          await this.event(
+            entry.id,
+            "INGESTION_FAILED",
+            "Job READY não pôde ser criado.",
+            { error: String(error) },
+          );
+        }
+      }
+    }
   }
   start() {
     if (this.timer) return;
@@ -204,12 +232,19 @@ export class FeedPollingService {
         logEvent(
           s,
           match.id,
-          "DUPLICATE_ARTICLE",
+          "DUPLICATE_ARTICLE_SKIPPED",
           "Matéria já detectada; nenhuma nova tarefa.",
           { article_url: item.article_url, feed_guid: item.feed_guid },
         );
         return { entry: match, isNew: false };
       }
+      const priorJob = item.article_url
+        ? s.queue.find(
+            (j) =>
+              articleIdentity(j.article_url ?? j.story_url) ===
+              articleIdentity(item.article_url!),
+          )
+        : undefined;
       const text = s.account_settings[config.account_id]?.story.sticker.text;
       if (text === undefined)
         throw new ValidationError(
@@ -226,7 +261,11 @@ export class FeedPollingService {
         detected_at: timestamp,
         created_at: timestamp,
         updated_at: timestamp,
-        status: item.article_url ? "DISCOVERED" : "ARTICLE_RESOLVE_FAILED",
+        status: priorJob
+          ? "DUPLICATE"
+          : item.article_url
+            ? "DISCOVERED"
+            : "ARTICLE_RESOLVE_FAILED",
         attempts: 0,
         last_error: item.article_url
           ? null
@@ -234,11 +273,23 @@ export class FeedPollingService {
         media_url: null,
         media_type: null,
         downloaded_media: null,
-        job_id: null,
+        job_id: priorJob?.job_id ?? null,
         duplicate_of: null,
         retention_days: null,
       };
       s.feed.entries.push(entry);
+      if (priorJob)
+        logEvent(
+          s,
+          priorJob.job_id,
+          "DUPLICATE_ARTICLE_SKIPPED",
+          "Matéria já possui job; nova criação/download bloqueados.",
+          {
+            article_url: entry.article_url,
+            entry_id: entry.id,
+            job_id: priorJob.job_id,
+          },
+        );
       logEvent(s, entry.id, "NEW_ARTICLE_DETECTED", "Matéria detectada.", {
         article_url: entry.article_url,
         feed_guid: entry.feed_guid,
@@ -334,20 +385,27 @@ export class FeedPollingService {
                   articleIdentity(a) === articleIdentity(found.article_url),
               )),
         );
+        const priorJob = s.queue.find(
+          (j) =>
+            j.feed_entry_id !== id &&
+            articleIdentity(j.article_url ?? j.story_url) ===
+              articleIdentity(found.article_url),
+        );
         if (!current.aliases.includes(found.article_url))
           current.aliases.push(found.article_url);
         current.article_url = found.article_url;
         current.media_url = found.media_url;
-        if (other) {
+        if (other || priorJob) {
           current.status = "DUPLICATE";
-          current.duplicate_of = other.id;
+          current.duplicate_of = other?.id ?? null;
+          current.job_id = priorJob?.job_id ?? other?.job_id ?? null;
         }
-        return !!other;
+        return !!other || !!priorJob;
       });
       if (duplicate) {
         await this.event(
           id,
-          "DUPLICATE_ARTICLE",
+          "DUPLICATE_ARTICLE_SKIPPED",
           "Canonical já processado; download/fila ignorados.",
         );
         return;
@@ -418,10 +476,12 @@ export class FeedPollingService {
         "Mídia local pronta; nenhuma execução no Instagram.",
         { sha256: media.sha256 },
       );
-      if ((await this.store.read()).feed.config.auto_enqueue) {
-        phase = "REQUIRES_REVIEW";
-        await this.enqueueEntry(id);
-      } else
+      phase = "REQUIRES_REVIEW";
+      await this.enqueueEntry(
+        id,
+        !(await this.store.read()).feed.config.auto_enqueue,
+      );
+      if (!(await this.store.read()).feed.config.auto_enqueue)
         await this.event(
           id,
           "QUEUE_JOB_SKIPPED",
@@ -451,9 +511,16 @@ export class FeedPollingService {
       );
     }
   }
-  private async enqueueEntry(id: string) {
+  private async enqueueEntry(id: string, readyOnly = false) {
     const entry = await this.entry(id);
-    if (entry.job_id) return entry;
+    if (entry.job_id) {
+      const job = (await this.store.read()).queue.find(
+        (j) => j.job_id === entry.job_id,
+      );
+      if (!readyOnly && job?.status === "READY" && job.awaiting_operator)
+        await this.queue.action(job.id, "enqueue");
+      return this.entry(id);
+    }
     if (
       entry.status !== "READY" ||
       !entry.downloaded_media ||
@@ -502,6 +569,7 @@ export class FeedPollingService {
       media_path: entry.downloaded_media.local_media_path,
       downloaded_media: entry.downloaded_media,
       feed_entry_id: entry.id,
+      ready_only: readyOnly,
       story_url: entry.article_url,
       sticker_text: entry.sticker_text,
       priority: "NORMAL",
@@ -513,7 +581,16 @@ export class FeedPollingService {
     return this.exclusive(async () => {
       const entry = await this.entry(id);
       if (entry.job_id) {
-        if (action === "enqueue") return entry;
+        if (action === "enqueue") return this.enqueueEntry(id);
+        if (action === "ignore") {
+          const job = (await this.store.read()).queue.find(
+            (j) => j.job_id === entry.job_id,
+          );
+          if (job?.status === "READY" && job.awaiting_operator) {
+            await this.queue.action(job.id, "cancel");
+            return this.entry(id);
+          }
+        }
         throw new ValidationError(
           "Matéria já vinculada à fila; use os controles do job.",
         );

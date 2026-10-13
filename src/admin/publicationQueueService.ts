@@ -1,3 +1,4 @@
+import { articleIdentity } from "../ingestion/feedDomain.js";
 import { randomUUID } from "node:crypto";
 import { resolveStoryMedia } from "../media/resolveStoryMedia.js";
 import {
@@ -20,6 +21,7 @@ export class PublicationQueueService {
   async enqueueJob(input: {
     account_id: string;
     downloaded_media?: import("../media/downloadStoryMedia.js").DownloadedMedia;
+    ready_only?: boolean;
     feed_entry_id?: string;
     media_path: string;
     story_url: string;
@@ -98,6 +100,25 @@ export class PublicationQueueService {
           throw new ValidationError("Job RSS ausente; revisão necessária.");
         return existing;
       }
+      const priorArticleJob = entry
+        ? s.queue.find(
+            (j) =>
+              articleIdentity(j.article_url ?? j.story_url) ===
+              articleIdentity(entry.article_url!),
+          )
+        : undefined;
+      if (entry && priorArticleJob) {
+        entry.job_id = priorArticleJob.job_id;
+        entry.status = "DUPLICATE";
+        logEvent(
+          s,
+          priorArticleJob.job_id,
+          "DUPLICATE_ARTICLE_SKIPPED",
+          "Job existente reutilizado; duplicata bloqueada.",
+          { article_url: entry.article_url, entry_id: entry.id },
+        );
+        return priorArticleJob;
+      }
       if (entry && ["IGNORED", "DUPLICATE"].includes(entry.status))
         throw new ValidationError(
           "Matéria ignorada/duplicada não pode entrar na fila.",
@@ -152,11 +173,14 @@ export class PublicationQueueService {
         published_at: null,
         status: duplicate
           ? "DUPLICATE"
-          : mode === "PAUSED"
-            ? "PAUSED"
-            : mode === "SCHEDULED"
-              ? "SCHEDULED"
-              : "QUEUED",
+          : input.ready_only
+            ? "READY"
+            : mode === "PAUSED"
+              ? "PAUSED"
+              : mode === "SCHEDULED"
+                ? "SCHEDULED"
+                : "QUEUED",
+        ...(input.ready_only ? { awaiting_operator: true } : {}),
         attempts: 0,
         duration_ms: null,
         error_code: null,
@@ -170,14 +194,20 @@ export class PublicationQueueService {
       s.queue.push(job);
       if (entry) {
         entry.job_id = job.job_id;
-        entry.status = duplicate ? "DUPLICATE" : "QUEUED";
+        entry.status = duplicate
+          ? "DUPLICATE"
+          : input.ready_only
+            ? "READY"
+            : "QUEUED";
         entry.updated_at = timestamp;
         entry.last_error = null;
         logEvent(
           s,
           job.job_id,
           duplicate ? "QUEUE_JOB_SKIPPED" : "QUEUE_JOB_CREATED",
-          "Ingestão RSS vinculada à fila.",
+          input.ready_only
+            ? "Job READY criado na fila; aguardando operador."
+            : "Ingestão RSS vinculada à fila.",
           {
             article_url: entry.article_url,
             media_url: entry.media_url,
@@ -209,24 +239,80 @@ export class PublicationQueueService {
   }
   async action(
     id: string,
-    action: "pause" | "resume" | "cancel" | "top" | "publish-now" | "schedule",
+    action:
+      | "pause"
+      | "resume"
+      | "cancel"
+      | "top"
+      | "publish-now"
+      | "schedule"
+      | "enqueue"
+      | "retry",
     scheduled_at?: string,
   ) {
+    if (["retry", "enqueue", "schedule", "publish-now"].includes(action)) {
+      const current = (await this.store.read()).queue.find((j) => j.id === id);
+      if (!current) throw new ValidationError("Job não encontrado.");
+      if (action === "retry" || current.awaiting_operator) {
+        const media = await resolveStoryMedia(current.media_path);
+        if (media.sha256 !== current.media_hash || media.type === "UNSUPPORTED")
+          throw new ValidationError("Mídia local alterada; ação bloqueada.");
+      }
+    }
     return this.store.transact((s) => {
       const j = s.queue.find((j) => j.id === id);
       if (!j) throw new ValidationError("Job não encontrado.");
-      if (!["QUEUED", "SCHEDULED", "PAUSED"].includes(j.status))
+      const manualReady =
+        j.status === "READY" &&
+        j.awaiting_operator === true &&
+        j.attempts === 0 &&
+        !j.started_at;
+      const safeRetry =
+        action === "retry" &&
+        j.status === "FAILED" &&
+        j.attempts > 0 &&
+        j.attempts < s.publishing.max_attempts &&
+        j.attempt_history.length === j.attempts &&
+        j.attempt_history.every(
+          (a) => a.publish_clicked === false && !!a.finished_at,
+        );
+      if (
+        !manualReady &&
+        !safeRetry &&
+        !["QUEUED", "SCHEDULED", "PAUSED"].includes(j.status)
+      )
         throw new ValidationError(
           "Job em execução ou finalizado não pode ser alterado/republicado.",
         );
+      if (action === "retry" && !safeRetry)
+        throw new ValidationError(
+          "Retry exige falha comprovadamente anterior ao envio; revisão obrigatória nos demais casos.",
+        );
+      if (["enqueue", "retry", "schedule", "publish-now"].includes(action))
+        validateStickerText(
+          j.sticker_text,
+          s.account_settings[j.account_id]?.story.sticker.max_text_length ??
+            null,
+        );
       const before = structuredClone(j);
+      if (action === "enqueue" || action === "retry") {
+        j.status = "QUEUED";
+        j.mode = "AUTO_QUEUE";
+        j.awaiting_operator = false;
+        j.scheduled_at = null;
+        j.finished_at = null;
+        j.started_at = null;
+        j.error_code = null;
+        j.error_message = null;
+      }
       if (action === "pause") {
         j.status = "PAUSED";
         j.mode = "PAUSED";
       }
       if (action === "resume") {
-        j.status =
-          j.scheduled_at && Date.parse(j.scheduled_at) > Date.now()
+        j.status = j.awaiting_operator
+          ? "READY"
+          : j.scheduled_at && Date.parse(j.scheduled_at) > Date.now()
             ? "SCHEDULED"
             : "QUEUED";
         j.mode = j.status === "SCHEDULED" ? "SCHEDULED" : "AUTO_QUEUE";
@@ -246,6 +332,7 @@ export class PublicationQueueService {
       }
       if (action === "publish-now") {
         j.status = "QUEUED";
+        j.awaiting_operator = false;
         j.mode = "IMMEDIATE";
         j.scheduled_at = null;
       }
@@ -253,8 +340,21 @@ export class PublicationQueueService {
         if (!scheduled_at || !Number.isFinite(Date.parse(scheduled_at)))
           throw new ValidationError("Agendamento inválido.");
         j.status = "SCHEDULED";
+        j.awaiting_operator = false;
         j.mode = "SCHEDULED";
         j.scheduled_at = scheduled_at;
+      }
+      if (j.feed_entry_id) {
+        const entry = s.feed.entries.find((e) => e.id === j.feed_entry_id);
+        if (entry) {
+          entry.status =
+            j.status === "READY"
+              ? "READY"
+              : action === "cancel"
+                ? "IGNORED"
+                : "QUEUED";
+          entry.updated_at = nowISO();
+        }
       }
       audit(
         s,
@@ -365,7 +465,16 @@ export class PublicationQueueService {
     return this.store.transact((s) => {
       let count = 0;
       for (const j of s.queue)
-        if (["PREPARING", "READY", "PUBLISHING"].includes(j.status)) {
+        if (
+          ["PREPARING", "READY", "PUBLISHING"].includes(j.status) &&
+          !(
+            j.status === "READY" &&
+            j.awaiting_operator === true &&
+            j.attempts === 0 &&
+            !j.started_at &&
+            s.locks[j.account_id]?.job_id !== j.id
+          )
+        ) {
           j.status = "REQUIRES_REVIEW";
           j.error_code = "RECOVERED_AFTER_CRASH";
           j.error_message =

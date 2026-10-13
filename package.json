@@ -42,7 +42,8 @@
     "smoke:media-download": "tsx src/media/mediaDownloadSmokeTest.ts",
     "smoke:feed": "tsx src/ingestion/ingestionSmokeTest.ts feed",
     "smoke:article-resolve": "tsx src/ingestion/ingestionSmokeTest.ts article",
-    "smoke:ingestion": "tsx src/ingestion/ingestionSmokeTest.ts ingestion"
+    "smoke:ingestion": "tsx src/ingestion/ingestionPanelSmokeTest.ts",
+    "smoke:ingestion-isolated": "tsx src/ingestion/ingestionSmokeTest.ts ingestion"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

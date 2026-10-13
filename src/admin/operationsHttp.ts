@@ -87,7 +87,7 @@ export function createOperationsApi(
       publishing: s.publishing,
       safety: s.safety,
       queue_count: s.queue.filter((j) =>
-        ["QUEUED", "SCHEDULED", "PAUSED"].includes(j.status),
+        ["READY", "QUEUED", "SCHEDULED", "PAUSED"].includes(j.status),
       ).length,
       published_today: publishedToday,
       next_job: orderedJobs(s)[0] ? publicJob(orderedJobs(s)[0]!) : null,
@@ -125,6 +125,8 @@ export function createOperationsApi(
         const s = await store.read();
         send(res, {
           jobs: displayQueue(s.queue).map(publicJob),
+          accounts: s.instagram_accounts,
+          engineConnected: false,
           decisions: await scheduler.inspect(new Date(), await check()),
         });
         return true;
@@ -149,7 +151,7 @@ export function createOperationsApi(
         return true;
       }
       const jobMatch =
-        /^\/api\/operations\/queue\/([^/]+)(?:\/(pause|resume|cancel|top|publish-now|schedule))?$/.exec(
+        /^\/api\/operations\/queue\/([^/]+)(?:\/(pause|resume|cancel|top|publish-now|schedule|enqueue|retry))?$/.exec(
           path,
         );
       if (jobMatch) {
@@ -160,7 +162,13 @@ export function createOperationsApi(
           if (!j) throw new ValidationError("Job não encontrado.");
           send(res, {
             job: publicJob(j),
-            events: s.events.filter((e) => e.job_id === id),
+            events: s.events.filter(
+              (e) =>
+                e.job_id === id ||
+                (j.feed_entry_id &&
+                  (e.metadata?.entry_id === j.feed_entry_id ||
+                    e.job_id === j.feed_entry_id)),
+            ),
           });
           return true;
         }

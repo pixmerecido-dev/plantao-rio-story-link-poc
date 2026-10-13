@@ -69,6 +69,7 @@ export interface QueueJob extends Partial<DownloadedMedia> {
   account_id: string;
   instagram_username: string | null;
   downloaded_media?: import("../media/downloadStoryMedia.js").DownloadedMedia;
+  awaiting_operator?: boolean;
   feed_entry_id?: string;
   article_url?: string;
   detected_at?: string;
@@ -284,6 +285,8 @@ export function validateOperationsState(s: OperationsState): OperationsState {
       !text(j.dedup_key) ||
       typeof j.story_url !== "string" ||
       typeof j.sticker_text !== "string" ||
+      (j.awaiting_operator !== undefined &&
+        typeof j.awaiting_operator !== "boolean") ||
       !Number.isInteger(j.attempts) ||
       j.attempts < 0 ||
       !Number.isFinite(j.order) ||

@@ -27,6 +27,7 @@ import { CombinedPublicationsRepository } from "./combinedPublicationsRepository
 import { DEFAULT_ACCOUNT_ID } from "./operationsDomain.js";
 import {
   feedCss,
+  queueCss,
   shellHtml,
   adminCss,
   operationalCss,
@@ -178,7 +179,8 @@ export function createAdminServer(options: {
             operationalCss +
             stickerStyleCss +
             dashboardPreviewCss +
-            feedCss,
+            feedCss +
+            queueCss,
         );
         return;
       }
