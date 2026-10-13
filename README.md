@@ -826,3 +826,39 @@ Preview no Dashboard e na tela Story calcula largura aproximadamente como ícone
 `StickerBoundsSession` descarta bounds quando texto/estilo/resize/posição mudam e recusa uso do cache antes de nova leitura. O contrato retorna `text`, `style_index`, `requested_scale`, bounds antes/depois do resize e finais, centro final/alvo, delta, `within_tolerance` e `layout_confirmed`. Também registra STICKER_CREATED/TEXT_APPLIED/STYLE_APPLIED/BOUNDS_READ/RESIZED/POSITIONED/LAYOUT_CONFIRMED com dados reais recebidos do adapter. O ciclo de estilo é baseado em taps no sticker novo; cor visual não é fingida como verificada (`style_verified_visually=false`).
 
 **Ainda preparado, não conectado:** o painel não executa taps nem teste de layout real nesta entrega. `ConfiguredStickerLayoutPort` precisa ser ligado explicitamente ao driver, aos guards do job atual e aos gestos existentes. O módulo não contém função de publicação, não abre sessão e não substitui as implementações aprovadas. O motor principal, os smokes de publicação, MediaStore, navegação e Facebook permanecem intactos. A primeira validação futura desse adapter deve parar antes de publicar.
+
+### Ingestão de mídia local antes da fila
+
+`MediaIngestionService.ingest()` é a fronteira para o futuro conector RSS:
+RSS → `article_url` → resolução de `data-story`/`data-link` pelo conector →
+`source_media_url` → download → validação local → criação do job.
+O conector RSS/resolvedor de HTML ainda não está conectado; esta etapa recebe a URL
+já resolvida e preserva `story_url` e `sticker_text` exatamente como recebidos.
+
+Arquivos ficam em `data/media/`, com nome seguro composto pela base da URL,
+digest da URL e digest do conteúdo. A extensão vem do Content-Type, confirmado
+pela assinatura do arquivo: JPEG (`.jpg`, incluindo origem `.jpeg`), PNG, WebP e MP4.
+Download em streaming: limite padrão 50 MiB, timeout 30 segundos, até 5 redirects.
+Arquivo vazio, erro HTTP, assinatura incompatível ou download incompleto não cria job.
+O arquivo temporário é removido e só um arquivo validado é promovido para uso local.
+
+A auditoria persistente em `data/ingestion/<ingestion_id>.json` mantém
+`source_media_url`, `local_media_path`, `mime_type`, `extension`, `file_size`,
+`sha256`, `downloaded_at`, artigo e job associado. Falhas têm
+`status=MEDIA_DOWNLOAD_FAILED` e não entram na fila publicável. Falha posterior
+na criação do job é distinta: `JOB_CREATION_FAILED`. O job guarda os mesmos dados
+em `downloaded_media`, além de `media_path` e `media_hash`; o evento JOB_CREATED
+inclui a URL de origem. Revalidação antes da criação impede aceitar conteúdo alterado.
+`STORY_MEDIA` deve receber somente `local_media_path`, nunca `source_media_url`.
+O resolvedor do motor rejeita URLs remotas explicitamente.
+MP4 pode ser baixado/validado; execução/publicação de vídeo continua não implementada.
+
+Teste local independente, sem Instagram/Appium ou publicação (CMD):
+
+```bat
+set SOURCE_MEDIA_URL=https://plantaorio.com.br/story/mrdd68z.jpg
+npm run smoke:media-download
+```
+
+O comando imprime os metadados e o caminho local para `STORY_MEDIA`.
+Nenhum download cria/publica Story automaticamente.

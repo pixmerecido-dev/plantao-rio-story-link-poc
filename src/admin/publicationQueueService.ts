@@ -19,6 +19,7 @@ export class PublicationQueueService {
   constructor(public store: OperationsRepository) {}
   async enqueueJob(input: {
     account_id: string;
+    downloaded_media?: import("../media/downloadStoryMedia.js").DownloadedMedia;
     media_path: string;
     story_url: string;
     sticker_text: string;
@@ -57,6 +58,10 @@ export class PublicationQueueService {
     if (mode === "SCHEDULED" && !input.scheduled_at)
       throw new ValidationError("Horário obrigatório.");
     const media = await resolveStoryMedia(input.media_path);
+    if (media.type === "UNSUPPORTED" || media.size === 0) throw new ValidationError("Mídia local inválida.");
+    if (input.downloaded_media && (input.downloaded_media.local_media_path !== media.path ||
+      input.downloaded_media.sha256 !== media.sha256 || input.downloaded_media.file_size !== media.size ||
+      input.downloaded_media.mime_type !== media.mimeType)) throw new ValidationError("Mídia baixada mudou antes da criação do job.");
     const timestamp = nowISO(),
       id = randomUUID(),
       key = DeduplicationService.key(
@@ -78,6 +83,7 @@ export class PublicationQueueService {
         job_id: id,
         account_id: input.account_id,
         instagram_username: null,
+        ...(input.downloaded_media ? { downloaded_media: structuredClone(input.downloaded_media) } : {}),
         media_path: media.path,
         media_type: media.type,
         media_filename: media.filename,
@@ -114,6 +120,7 @@ export class PublicationQueueService {
         id,
         "JOB_CREATED",
         "Job local criado; nenhuma execução no Instagram.",
+        input.downloaded_media ? { ...input.downloaded_media } : undefined,
       );
       if (duplicate)
         logEvent(

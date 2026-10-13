@@ -17,6 +17,7 @@ export function storyMediaInput(environment: NodeJS.ProcessEnv = process.env): s
 }
 /** Primeiro caminho exato; depois candidatos de mesma base no MESMO diretório. Tipo vem de assinatura. */
 export async function resolveStoryMedia(inputPath: string,hint: StoryMediaHint = 'auto'): Promise<StoryMedia> {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(inputPath)) throw new StoryMediaError('REMOTE_MEDIA_NOT_ALLOWED','Baixe e valide a mídia antes de entrar no motor.');
   if (!inputPath?.trim()) throw new StoryMediaError('MEDIA_NOT_FOUND','Caminho de mídia ausente.');
   if (!['image','video','auto'].includes(hint)) throw new StoryMediaError('INVALID_MEDIA_TYPE',String(hint));
   console.log(`[MEDIA] requested=${inputPath}`);

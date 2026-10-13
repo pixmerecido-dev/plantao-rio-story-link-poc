@@ -62,6 +62,7 @@ export interface QueueJob {
   job_id: string;
   account_id: string;
   instagram_username: string | null;
+  downloaded_media?: import("../media/downloadStoryMedia.js").DownloadedMedia;
   media_path: string;
   media_type: "IMAGE" | "VIDEO" | "UNSUPPORTED";
   media_filename: string;

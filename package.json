@@ -38,7 +38,8 @@
     "smoke:sticker-resize": "tsx src/instagram/stickerResizeSmokeTest.ts",
     "smoke:sticker-final-position": "tsx src/instagram/stickerFinalPositionSmokeTest.ts",
     "smoke:media-resolve": "tsx src/media/mediaResolveSmokeTest.ts",
-    "admin": "npm run build && tsx src/admin/server.ts"
+    "admin": "npm run build && tsx src/admin/server.ts",
+    "smoke:media-download": "tsx src/media/mediaDownloadSmokeTest.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",

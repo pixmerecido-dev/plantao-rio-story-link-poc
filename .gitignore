@@ -13,3 +13,7 @@ story-selectors.local.json
 
 # Persistência local do painel (histórico e preferências do usuário)
 data/admin/
+
+# Mídias baixadas e auditoria de ingestão local
+data/media/
+data/ingestion/
