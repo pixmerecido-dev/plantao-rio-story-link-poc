@@ -529,3 +529,33 @@ test('mesmo AVD em outro dispositivo com CRCRLF não inicia segunda instância',
   assert.deepEqual(f.starts, []);
   assert.ok((await f.store.read()).events.some(e => /já está aberto/.test(e.technical)));
 });
+
+test('confirmação sem preparação apresenta orientação por HTTP sem acessar detector', async () => {
+  const f = await fixture();
+  const server = createAdminServer({repository: new JsonStorage(join(f.root,'admin.json')),root:f.root,operationsStore:f.ops,runtime:f.manager,accountDetector:s=>f.manager.detectAccount(s)});
+  await new Promise(ok=>server.listen(0,'127.0.0.1',ok));
+  try {
+    const response=await fetch(`http://127.0.0.1:${server.address().port}/api/operations/account/detect`,{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Request':'local'},body:'{}'});
+    assert.equal(response.status,400);
+    assert.match((await response.json()).error,/Prepare o sistema em Diagnóstico/);
+    assert.equal((await f.store.read()).ready,false);
+    assert.equal((await f.account.validateActiveAccount('instagram-default')).match,false);
+    assert.ok((await f.store.read()).events.some(e=>/antes de verificar/.test(e.message)));
+  } finally { server.closeAllConnections();await new Promise(ok=>server.close(ok)); }
+});
+
+test('perda da conexão invalida confirmação anterior e dá orientação específica', async () => {
+  const f=await fixture();await f.manager.prepare();await f.manager.waitForTask();await f.account.detectCurrentAccount('instagram-default');
+  f.host.appiumReady=async()=>false;
+  await assert.rejects(f.manager.detectAccount(),/Conexão com Instagram indisponível/);
+  assert.equal((await f.manager.status()).ready,false);
+  assert.equal((await f.account.validateActiveAccount('instagram-default')).match,false);
+});
+
+test('tela mostra bloqueio conhecido e não expõe erros internos ou de transporte', async () => {
+  const {EditorialRequestError,accountVerificationFailureMessage}=await import('../dist/admin/editorialUi.js');
+  assert.equal(accountVerificationFailureMessage(new EditorialRequestError(400,'Prepare o sistema.')),'Prepare o sistema.');
+  for(const error of [new EditorialRequestError(500,'PRIVATE STACK SDK_PATH'),new Error('PRIVATE STACK'),new TypeError('PRIVATE TRANSPORT')]){
+    assert.equal(accountVerificationFailureMessage(error),'Não foi possível verificar a conta agora. Consulte o Diagnóstico.');
+  }
+});

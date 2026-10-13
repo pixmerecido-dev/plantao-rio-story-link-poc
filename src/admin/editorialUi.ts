@@ -1,5 +1,15 @@
 /** Presentation permissions, not authentication. Server authorization will use this contract later. */
 export type UiRole = "OPERATOR" | "ADMIN";
+export class EditorialRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+export function accountVerificationFailureMessage(error: unknown): string {
+  return error instanceof EditorialRequestError && [400, 409].includes(error.status)
+    ? error.message
+    : "Não foi possível verificar a conta agora. Consulte o Diagnóstico.";
+}
 export const UI_STATUS_LABELS: Record<string, string> = {
   READY: "Pronto",
   QUEUED: "Na fila",

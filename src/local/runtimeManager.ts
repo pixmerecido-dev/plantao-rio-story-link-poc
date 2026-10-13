@@ -11,6 +11,7 @@ import {
 import { findAndroidSdk, validateRuntimeConfig } from "./androidSdk.js";
 import { acquireDeviceLock, isDeviceOccupied } from "./deviceLock.js";
 import type { LocalHost } from "./processSupervisor.js";
+import { ValidationError } from "../admin/domain.js";
 
 /** Windows ADB may emit CRCRLF; require one unambiguous name, excluding console acknowledgements. */
 export function parseAdbAvdName(response: string): string {
@@ -364,15 +365,29 @@ export class RuntimeManager {
     });
   }
   async detectAccount(selector?: string) {
-    if (this.busy) throw Error("Aguarde a operação atual.");
+    if (this.busy)
+      throw new ValidationError("Aguarde a operação atual antes de verificar a conta.");
     this.busy = true;
     try {
       const s = await this.store.read();
       if (!s.ready)
-        throw Error("Prepare o sistema antes de verificar a conta.");
-      if (!(await this.host.appiumReady()))
-        throw Error("Conexão indisponível. Prepare o sistema novamente.");
-      return await this.detector(selector);
+        throw new ValidationError("Prepare o sistema em Diagnóstico antes de verificar a conta.");
+      if (!(await this.host.appiumReady())) {
+        await this.store.change((state) => { state.ready = false; });
+        await this.invalidateAccount();
+        await this.service("APPIUM", "OFFLINE", "Conexão com Instagram indisponível.");
+        throw new ValidationError("Conexão com Instagram indisponível. Clique em Preparar sistema no Diagnóstico e tente novamente.");
+      }
+      const result = await this.detector(selector);
+      await this.store.change((state) => runtimeEvent(state,
+        result.status === "OK" ? "Leitura da conta realizada; comparando com a conta esperada." : "Não foi possível identificar a conta conectada.",
+        result.status === "OK" ? "" : result.message ?? result.status));
+      return result;
+    } catch (error) {
+      const message = error instanceof ValidationError ? error.message : "Não foi possível verificar a conta agora. Consulte o Diagnóstico.";
+      await this.store.change((state) => runtimeEvent(state, message, error));
+      if (error instanceof ValidationError) throw error;
+      throw new ValidationError(message);
     } finally {
       this.busy = false;
     }

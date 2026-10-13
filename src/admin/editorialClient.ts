@@ -5,7 +5,13 @@ import type {
   AutomationSettings,
 } from "./operationsDomain.js";
 import type { StorySettings, PublicationJob } from "./domain.js";
-import { articleLabel, UI_STATUS_LABELS, type UiRole } from "./editorialUi.js";
+import {
+  articleLabel,
+  UI_STATUS_LABELS,
+  type UiRole,
+  EditorialRequestError,
+  accountVerificationFailureMessage,
+} from "./editorialUi.js";
 const esc = (v: unknown) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -39,7 +45,11 @@ async function api<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const value = await r.json();
-  if (!r.ok) throw Error(value.error ?? "Não foi possível concluir.");
+  if (!r.ok)
+    throw new EditorialRequestError(
+      r.status,
+      typeof value.error === "string" ? value.error : "Não foi possível concluir.",
+    );
   return value;
 }
 const notice = (text: string, error = false) => {
@@ -429,9 +439,9 @@ export async function renderEditorialRoute(route: string, role: UiRole) {
                   : "Não foi possível confirmar a conta. Abra o Instagram no computador e tente novamente.",
             result.status !== "OK",
           );
-        } catch {
+        } catch (error) {
           b.disabled = false;
-          fail();
+          notice(accountVerificationFailureMessage(error), true);
         }
       })();
     if (role === "ADMIN")
