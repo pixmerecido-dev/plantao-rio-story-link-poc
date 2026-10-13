@@ -8,14 +8,17 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { assertRealPublishAllowed, publishStoryOnce } from '../dist/instagram/storyPublishReal.js';
 import { resourceIdSelector, SHARE_SHORTCUT_ID, LINK_STICKER_HOLDER_ID } from '../dist/instagram/instagramStateMachine.js';
+const previousTestMode = process.env.STORY_TEST_MODE;
 const previous = { allow: process.env.ALLOW_PUBLISH, confirm: process.env.CONFIRM_REAL_PUBLISH };
 after(() => {
+  if(previousTestMode === undefined)delete process.env.STORY_TEST_MODE;else process.env.STORY_TEST_MODE=previousTestMode;
   for (const [name, value] of [['ALLOW_PUBLISH', previous.allow], ['CONFIRM_REAL_PUBLISH', previous.confirm]]) {
     if (value === undefined) delete process.env[name]; else process.env[name] = value;
   }
 });
 function clock() { let time = 0; return { now: () => time, pause: async ms => { time += ms; } }; }
-const authorize = () => { process.env.ALLOW_PUBLISH = 'true'; process.env.CONFIRM_REAL_PUBLISH = 'YES'; };
+// Isolated mocks exercise the real-mode path; production defaults to Test Mode.
+const authorize = () => { process.env.STORY_TEST_MODE='false'; process.env.ALLOW_PUBLISH = 'true'; process.env.CONFIRM_REAL_PUBLISH = 'YES'; };
 function fixture({ target = 'STATE_HOME', clickable = 'true', enabled = true, ambiguous = false, clickThrows = false, revoke = false, holder = true, failure = false, facebook = false, stuckFacebook = false, ack = false, ambiguousFacebook = false } = {}) {
   let clicked = false;
   let count = 0, facebookClicks = 0, facebookClosed = false;

@@ -1,3 +1,7 @@
+import { RuntimeStore } from "../local/runtimeStore.js";
+import { RuntimeManager } from "../local/runtimeManager.js";
+import { ProcessSupervisor } from "../local/processSupervisor.js";
+import { panelTestPort } from "../local/panelTestPort.js";
 import { localAccountDetector } from "../instagram/accountVerification.js";
 import { FeedPollingService } from "../ingestion/feedPollingService.js";
 import "dotenv/config";
@@ -70,9 +74,27 @@ const feedService = new FeedPollingService(
   resolve(root, "data/media"),
 );
 await feedService.recover();
+const runtimeStore = new RuntimeStore(resolve(data, "runtime.json"));
+const supervisor = new ProcessSupervisor(runtimeStore, root);
+const runtime = new RuntimeManager(
+  runtimeStore,
+  operationsStore,
+  supervisor,
+  root,
+  localAccountDetector(),
+  panelTestPort(supervisor, runtimeStore, repository, root, operationsStore),
+);
+await runtime.recover();
+const runtimeMonitor = setInterval(() => {
+  void runtime
+    .refresh()
+    .catch((error) => console.error("[RUNTIME]", error.message));
+}, 15000);
+runtimeMonitor.unref();
 const server = createAdminServer({
   feedService,
-  accountDetector: localAccountDetector(),
+  runtime,
+  accountDetector: (selector) => runtime.detectAccount(selector),
   repository,
   root,
   operationsStore,
@@ -89,19 +111,25 @@ server.on("error", (error) => {
 });
 server.listen(port, "127.0.0.1", () => {
   console.log(`Admin: http://127.0.0.1:${port}`);
-  console.log(
-    "Painel local; publicação e teste no Instagram permanecem desabilitados.",
-  );
+  console.log("Painel local em Modo Teste; publicação permanece desabilitada.");
   console.log(`Persistência: ${data}`);
   feedService.start();
 });
+let shuttingDown = false;
+function closeApplication() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  server.close(() => {
+    clearInterval(schedulerTimer);
+    clearInterval(runtimeMonitor);
+    void feedService
+      .stop()
+      .then(() => runtime.shutdown())
+      .then(() => supervisor.shutdown())
+      .then(() => unlink(lockPath))
+      .finally(() => process.exit(0));
+  });
+}
+runtime.onCloseApplication(closeApplication);
 for (const signal of ["SIGINT", "SIGTERM"] as const)
-  process.on(signal, () =>
-    server.close(() => {
-      clearInterval(schedulerTimer);
-      void feedService
-        .stop()
-        .then(() => unlink(lockPath))
-        .finally(() => process.exit(0));
-    }),
-  );
+  process.on(signal, closeApplication);

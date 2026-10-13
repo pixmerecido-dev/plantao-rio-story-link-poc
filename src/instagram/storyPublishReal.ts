@@ -1,3 +1,4 @@
+import { assertNotInTestMode } from '../local/publicationMode.js';
 import { requireApprovedStickerLayout } from './approvedStickerLayout.js';
 import { inspectFacebookStorySharingPrompt, findAlwaysShareControl, hasUnknownPublicationDialog } from './facebookStorySharingPrompt.js';
 import type { InstagramDriver } from './InstagramDriver.js';
@@ -15,6 +16,7 @@ export function assertRealPublishAllowed(): void {
     console.log('[SAFE] Publicação bloqueada');
     throw new Error('Publicação real exige ALLOW_PUBLISH=true e CONFIRM_REAL_PUBLISH=YES.');
   }
+  assertNotInTestMode();
 }
 
 export type PublicationResult = ReturnType<typeof verifyPublishedStory> & {

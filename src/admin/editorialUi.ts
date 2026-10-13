@@ -41,7 +41,7 @@ export const UI_ROUTES = {
   settings: { title: "Configuração do Story", category: "editorial" },
   alerts: { title: "Alertas", category: "editorial" },
   configuration: { title: "Configurações", category: "administrative" },
-  system: { title: "Diagnóstico", category: "technical" },
+  system: { title: "Diagnóstico", category: "editorial" },
   logs: { title: "Logs técnicos", category: "technical" },
   "queue-tools": { title: "Teste de fila", category: "technical" },
   "agenda-tools": { title: "Políticas avançadas", category: "administrative" },

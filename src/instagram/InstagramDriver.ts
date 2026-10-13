@@ -1,10 +1,12 @@
 import { remote } from 'webdriverio';
+import { acquireDeviceLock } from '../local/deviceLock.js';
 
 const INSTAGRAM_PACKAGE = 'com.instagram.android';
 const APPIUM_URL = 'http://127.0.0.1:4723';
 
 /** Integração local: não altera dados ou autenticação do Instagram. */
 export class InstagramDriver {
+  private releaseDevice: (() => Promise<void>) | undefined;
   private session: Awaited<ReturnType<typeof remote>> | undefined;
 
   async checkAppium(): Promise<void> {
@@ -22,6 +24,8 @@ export class InstagramDriver {
 
   async connect(): Promise<void> {
     if (this.session) throw new Error('Já existe uma sessão Appium neste driver.');
+    this.releaseDevice = await acquireDeviceLock();
+    try {
     this.session = await remote({
       hostname: '127.0.0.1',
       port: 4723,
@@ -45,6 +49,7 @@ export class InstagramDriver {
     });
     // Probes de estado ausente devem responder imediatamente no Appium.
     await this.session.setTimeout({ implicit: 0 });
+    } catch (error) { await this.session?.deleteSession().catch(()=>{}); this.session=undefined; await this.releaseDevice(); this.releaseDevice=undefined; throw error; }
   }
 
   async openAndConfirmInstagram(): Promise<void> {
@@ -73,7 +78,6 @@ export class InstagramDriver {
   async disconnect(): Promise<void> {
     if (!this.session) return;
     // Apenas DELETE /session: sem terminateApp, reset, uninstall ou logout.
-    await this.session.deleteSession();
-    this.session = undefined;
+    try { await this.session.deleteSession(); } finally { this.session = undefined; await this.releaseDevice?.(); this.releaseDevice=undefined; }
   }
 }

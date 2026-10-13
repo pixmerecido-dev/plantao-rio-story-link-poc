@@ -24,7 +24,7 @@ export function discoverCustomTextField(elements: InstagramElement[]): string {
   throw new Error('Campo custom CTA não expõe resource-id/accessibility id; diagnóstico salvo, nenhum seletor inventado.');
 }
 
-export async function prepareNewStory(driver: Driver, job: StoryJob, directory: string, prepareNewImage: () => Promise<void>) {
+export async function prepareNewStory(driver: Driver, job: StoryJob, directory: string, prepareNewImage: () => Promise<void>, configuredLayout?: () => Promise<{ layout_confirmed: boolean }>) {
   if (process.env.DRY_RUN !== 'true') throw new Error('Preparação exige DRY_RUN=true.');
   const session = driver.getSession();
   clearCurrentLinkTransaction(session);
@@ -72,7 +72,8 @@ export async function prepareNewStory(driver: Driver, job: StoryJob, directory: 
     { ...WAIT, timeoutMsg: 'Objeto visual novo do Link não confirmado para o job atual.' });
   await waitForState(session, 'STATE_EDITOR_WITH_LINK');
   if (await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw new Error('Story preparado não atingiu STATE_EDITOR_WITH_LINK.');
-  const layout = await applyApprovedStoryLayout(driver,job.job_id,`${directory}/layout`);
+  const layout = configuredLayout ? await configuredLayout() : await applyApprovedStoryLayout(driver,job.job_id,`${directory}/layout`);
+  if (!layout.layout_confirmed) throw new Error('Layout do teste não confirmado; nenhuma publicação permitida.');
   const capture = await saveScreenArtifacts(driver, directory, 'story-prepared');
   console.log('[STATE] STATE_EDITOR_WITH_LINK');
   console.log('[SAFE] publicação não executada');

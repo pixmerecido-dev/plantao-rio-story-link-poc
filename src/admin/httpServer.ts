@@ -1,3 +1,4 @@
+import { runtimeHttp } from '../local/runtimeHttp.js';
 import { fileURLToPath } from "node:url";
 import { FeedPollingService } from "../ingestion/feedPollingService.js";
 import { createFeedApi } from "./feedHttp.js";
@@ -72,8 +73,10 @@ export function createAdminServer(options: {
   operationsStore?: OperationsRepository;
   testMedia?: string;
   feedService?: FeedPollingService;
+  runtime?: import('../local/runtimeManager.js').RuntimeManager;
   accountDetector?: import("../instagram/accountVerification.js").AccountDetector;
 }) {
+  const runtimeApi = options.runtime ? runtimeHttp(options.runtime) : null;
   const publications = new PublicationsService(
     options.operationsStore
       ? new CombinedPublicationsRepository(
@@ -208,12 +211,13 @@ export function createAdminServer(options: {
         );
         return;
       }
+      if (runtimeApi && (await runtimeApi(req, res, url, () => body(req), send))) return;
       if (feedApi && (await feedApi(req, res, url, body, send))) return;
       if (operations && (await operations.handle(req, res, url, body, send)))
         return;
       if (
         method === "GET" &&
-        ["/assets/editorialClient.js", "/assets/editorialUi.js"].includes(
+        ["/assets/editorialClient.js", "/assets/editorialUi.js", "/assets/runtimeClient.js"].includes(
           url.pathname,
         )
       ) {
@@ -227,9 +231,7 @@ export function createAdminServer(options: {
                 options.clientPath ??
                   join(options.root, "dist/admin/client.js"),
               ),
-              url.pathname.endsWith("editorialUi.js")
-                ? "editorialUi.js"
-                : "editorialClient.js",
+              url.pathname.split("/").at(-1)!,
             ),
             "utf8",
           ),

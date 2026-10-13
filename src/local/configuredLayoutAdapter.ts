@@ -1,0 +1,105 @@
+import type { InstagramDriver } from "../instagram/InstagramDriver.js";
+import {
+  beginLinkLayoutTransform,
+  requireCurrentLinkTransaction,
+  inspectAppliedLinkSticker,
+} from "../instagram/appliedLinkSticker.js";
+import {
+  prepareConfiguredStickerLayout,
+  type ConfiguredStickerJob,
+} from "../instagram/configuredStickerLayout.js";
+import { stickerBox } from "../instagram/linkStickerLayout.js";
+import { buildSteppedStickerMoveActions } from "../instagram/stickerTouchActions.js";
+import { saveScreenArtifacts } from "../instagram/diagnostics.js";
+/** Test-only adapter; native resize and validated stepped move retained. No publication dependency. */
+export async function applyPanelLayout(
+  driver: Pick<InstagramDriver, "getSession">,
+  job: ConfiguredStickerJob,
+  directory: string,
+) {
+  const session = driver.getSession();
+  const read = async () => {
+    await requireCurrentLinkTransaction(session, job.job_id);
+    const report = await inspectAppliedLinkSticker(session);
+    if (!report.editorActive || report.liveVisualCandidates.length !== 1)
+      throw Error("Sticker do teste não confirmado.");
+    const c = report.liveVisualCandidates.find(() => true)!;
+    return {
+      job_id: job.job_id,
+      displayed: true,
+      bounds: stickerBox(c.bounds),
+      canvas: c.canvasBounds,
+    };
+  };
+  const transform = async (work: () => Promise<void>) => {
+    const accept = await beginLinkLayoutTransform(session, job.job_id);
+    await work();
+    await session.pause(1000);
+    await accept();
+  };
+  const result = await prepareConfiguredStickerLayout(job, {
+    assertOwnsFreshLink: async () => {
+      try {
+        await requireCurrentLinkTransaction(session, job.job_id);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    readSticker: async () => read(),
+    tapStyle: async (_id, center) =>
+      transform(async () => {
+        await session.execute("mobile: clickGesture", {
+          x: Math.round(center.x),
+          y: Math.round(center.y),
+        });
+      }),
+    resizeNative: async (_id, scale, bounds) => {
+      const current = await read();
+      if (JSON.stringify(current.bounds) !== JSON.stringify(bounds))
+        throw Error("Bounds mudaram antes do resize.");
+      if (scale > 1)
+        throw Error("Ampliação ainda não validada; reduza o tamanho do teste.");
+      if (scale !== 1)
+        await transform(async () => {
+          await session.execute("mobile: pinchCloseGesture", {
+            left: bounds.left,
+            top: bounds.top,
+            width: bounds.right - bounds.left,
+            height: bounds.bottom - bounds.top,
+            percent:
+              Math.abs(scale - 0.76) <= 0.01
+                ? 0.5
+                : Math.min(0.95, Math.max(0.05, (1 - scale) / 0.48)),
+          });
+        });
+    },
+    moveW3C: async (_id, target, bounds) => {
+      const current = await read();
+      if (JSON.stringify(current.bounds) !== JSON.stringify(bounds))
+        throw Error("Bounds mudaram antes do movimento.");
+      await transform(async () => {
+        try {
+          await session.performActions(
+            buildSteppedStickerMoveActions(
+              {
+                x: (bounds.left + bounds.right) / 2,
+                y: (bounds.top + bounds.bottom) / 2,
+              },
+              target,
+            ),
+          );
+        } finally {
+          await session.releaseActions();
+        }
+      });
+    },
+    recordEvent: async (_id, event, metadata) => {
+      console.log(`[TEST-LAYOUT] ${event} ${JSON.stringify(metadata)}`);
+    },
+  });
+  await saveScreenArtifacts(driver, directory, "test-layout");
+  if (!result.layout_confirmed)
+    throw Error("Layout fora da tolerância. Teste parou sem publicar.");
+  return result;
+}

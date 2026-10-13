@@ -1,5 +1,18 @@
 # plantao-rio-story-link-poc
 
+## Abrir sem CMD no Windows
+
+Dê duplo clique em **PlantaoRioStories.vbs** na raiz (Node.js e Android Studio/AVD
+instalados previamente pelo administrador). O launcher prepara o backend oculto
+e abre o painel. Em **Diagnóstico**, clique **Preparar sistema**; depois confirme
+a conta em **Contas**. Salve a configuração e use **Testar no Instagram** para
+preparar o Story sem publicar. **Encerrar teste** volta com segurança à Home.
+
+O cabeçalho indica **MODO TESTE ATIVO**. Publicação pelo painel continua bloqueada,
+assim como comandos reais quando esse modo estiver ativo. Fechar a aba não encerra
+o backend; o administrador usa **Encerrar aplicativo** em Diagnóstico.
+[Roteiro completo, componentes e limites](docs/LOCAL_APPLICATION.md).
+
 ## Painel administrativo local
 
 No terminal do Windows, dentro do repositório:
@@ -22,7 +35,9 @@ O preview altera texto, estilo, tamanho e posição imediatamente. Todo o sticke
 (texto, ícone, espaçamento e fundo) recebe a mesma escala. A imagem de demonstração local usa `assets/story-preview-demo.jpg`, separada da
 mídia de execução. `ADMIN_PREVIEW_IMAGE` permite escolher outra imagem local. O preview é uma
 aproximação visual: os bounds reais do Instagram continuam sendo a referência do motor.
-**Salvar no painel não autoriza publicação.**
+**Salvar no painel não autoriza publicação.** O botão Testar usa a configuração salva
+no motor local, apenas em modo seguro; tamanho/posição são validados pelos bounds
+e o estilo precisa de conferência visual.
 
 Para confirmar a conta no Windows, deixe Instagram e Appium disponíveis, abra
 **Contas**, cadastre o nome esperado como Administrador e clique **Verificar conta**.
