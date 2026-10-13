@@ -15,7 +15,7 @@ para criar o atalho **Plantão Rio Stories** na Área de Trabalho. Um instalador
 Se políticas da organização desabilitarem Windows Script Host/PowerShell, o
 administrador deverá autorizar esses scripts ou usar a inicialização técnica.
 
-O launcher identifica Node, instala dependências na primeira abertura ou quando package-lock.json mudar, compila,
+O launcher identifica Node, confere a instalação existente, reinstala somente se incompleta/divergente, compila,
 inicia o backend oculto e abre o navegador. Duplo clique reutiliza o backend
 identificado por /api/runtime, além de mutex do launcher e backend.lock.
 Depois de reiniciar o PC, abra novamente o atalho. Não é necessário abrir CMD
@@ -145,3 +145,23 @@ boot do AVD e gestos reais do novo adapter precisam do roteiro local acima.
 Node/SDK/AVD/Instagram/login são pré-requisitos administrativos. CMD continua
 opcional para desenvolvimento, instalação fora do padrão e investigação avançada;
 a operação pelo atalho/painel não pede comandos ao jornalista.
+
+## Arquivo esbuild.exe bloqueado na instalação (EPERM)
+
+Esse erro significa que o Windows recusou remover o executável. Ele pode estar
+em uso por um processo anterior; antivírus ou permissões também podem bloquear.
+Não apague node_modules, não desative antivírus e não encerre todos os processos Node.
+
+O launcher agora verifica a árvore npm, versões/integridade do registro, arquivos
+principais e componentes de inicialização antes de decidir por npm ci. Não
+reinstala uma árvore válida só porque launcher-lock.sha256 ainda não existe.
+Se a árvore ficou parcial, verifica processos cujo executável pertence ao
+node_modules deste checkout e recusa reinstalar enquanto estiverem em uso.
+
+Atualize main pelo GitHub Desktop. Feche as janelas antigas do painel/testes ou,
+se não conseguir identificar o processo, salve seu trabalho e reinicie o Windows.
+Depois abra PlantaoRioStories.vbs novamente. A reinstalação necessária ocorrerá
+oculta, mantendo data/admin, mídia e configurações. Se persistir, envie
+install.stderr.log e install.stdout.log. O launcher não tenta alterar permissões
+nem encerrar processos à força. O reconhecimento do lock Windows precisa de
+validação local; no cloud foram verificados preflight real e cenários simulados.
