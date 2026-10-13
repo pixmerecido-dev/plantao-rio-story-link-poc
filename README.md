@@ -13,17 +13,29 @@ Abra **http://127.0.0.1:4310** no navegador local. `ADMIN_PORT` altera a porta e
 `ADMIN_DATA_DIR` altera a pasta de dados (padrão `data/admin`). O servidor escuta
 apenas em 127.0.0.1. Não é um serviço público ou uma URL de preview do Codex Cloud.
 
-Telas: Dashboard, Fila, Automação/calendário, Publicações, Configuração do Story, Contas, Sistema e Logs. A configuração tem
-texto/presets, sliders, ajustes de 10 px convertidos em frações do canvas, escala,
-limites, restauração e preview imediato 1080x1920. Prefere a imagem em STORY_MEDIA
-(ou STORY_IMAGE); sem configuração usa assets/story-test.jpg. Miniatura ausente não
-impede os demais controles. Testar layout no Instagram permanece desabilitado.
-**Salvar no painel não altera o motor atual nem autoriza publicação.**
+Navegação editorial: **Visão geral, Novas matérias, Fila de Stories, Agenda,
+Contas, Publicados, Configuração do Story e Alertas**. Escolha Administrador em
+“Visualização” para acessar Configurações, Sistema e Logs técnicos. Essa escolha
+organiza a interface; não substitui autenticação ou controle de acesso do servidor.
 
-Defaults medidos: escala529/696≈76%, X347.5/1080≈32.2%, Y1138/1920≈59.3%. Limites
-iniciais de escala50–100%, ajustáveis dentro da faixa absoluta25–125%. Destinos
-Instagram/Facebook ativos como preferências; confirmação Link/layout e aborto em
-falha sempre ativos. Pixels aparecem apenas como diagnóstico do preview.
+O preview altera texto, estilo, tamanho e posição imediatamente. Todo o sticker
+(texto, ícone, espaçamento e fundo) recebe a mesma escala. A imagem usa STORY_MEDIA
+ou STORY_IMAGE; sem configuração usa assets/story-test.jpg. O preview é uma
+aproximação visual: os bounds reais do Instagram continuam sendo a referência do motor.
+**Salvar no painel não autoriza publicação.**
+
+Para confirmar a conta no Windows, deixe Instagram e Appium disponíveis, abra
+**Contas**, cadastre o nome esperado como Administrador e clique **Verificar conta**.
+O diagnóstico abre o próprio perfil e lê o nome observado. Se houver ambiguidade,
+selecione o nome encontrado na lista em Configurações e verifique novamente.
+Não é necessário procurar resource-ids manualmente. Conta divergente ou sem prova
+bloqueia o fluxo real. A verificação não cria Story nem publica. O comando local
+`npm run inspect:instagram-account` salva XML/PNG/JSON para diagnóstico.
+
+O comando real end-to-end faz uma nova verificação na mesma sessão antes da
+preparação; uma confirmação antiga no painel não substitui essa leitura.
+Facebook só aparece confirmado quando há evidência; preferência de destino não
+comprova vínculo ou entrega. [Auditoria de produto e UX](docs/UX_PANEL_AUDIT.md).
 
 ### Arquitetura e persistência
 
@@ -39,7 +51,7 @@ falha sempre ativos. Pixels aparecem apenas como diagnóstico do preview.
   e métricas com horário de Brasília.
 - `artifactImporter.ts`: importação somente de resumos existentes em artifacts.
 - `httpServer.ts` / `server.ts`: rotas locais e inicialização.
-- `client.ts` / `operationsClient.ts` / `view.ts`: nove telas responsivas e simulação do sticker.
+- `client.ts` / `operationsClient.ts` / `view.ts`: telas editoriais, ferramentas administrativas e preview do sticker.
 
 As preferências e registros sobrevivem ao fechamento/reabertura. data/admin fica
 ignorado no Git; não exclua essa pasta se quiser manter o histórico. Uma instância

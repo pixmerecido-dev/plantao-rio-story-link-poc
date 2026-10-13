@@ -252,6 +252,7 @@ export class FeedPollingService {
         );
       const timestamp = nowISO();
       const entry: FeedEntry = {
+        ...(item.article_title ? { article_title: item.article_title } : {}),
         id: randomUUID(),
         article_url: item.article_url,
         aliases: item.article_url ? [item.article_url] : [],

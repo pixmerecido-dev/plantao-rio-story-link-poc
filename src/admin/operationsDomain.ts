@@ -27,6 +27,18 @@ export type QueueStatus =
 export type Priority = "NORMAL" | "HIGH" | "URGENT";
 export type JobMode = "IMMEDIATE" | "SCHEDULED" | "AUTO_QUEUE" | "PAUSED";
 export interface Account {
+  account_expected?: string;
+  account_detected?: string | null;
+  account_verified_at?: string | null;
+  account_match?: boolean;
+  username_resource_id?: string;
+  verification_evidence?: {
+    profile_selected: boolean;
+    username_resource_id: string;
+    captured_at: string;
+  } | null;
+  verification_candidates?: import("../instagram/accountVerification.js").AccountCandidate[];
+  verification_message?: string;
   id: string;
   username: string;
   display_name: string;
@@ -64,6 +76,7 @@ export interface FrozenSettings {
   abort_on_layout_failure: true;
 }
 export interface QueueJob extends Partial<DownloadedMedia> {
+  article_title?: string;
   id: string;
   job_id: string;
   account_id: string;

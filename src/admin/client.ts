@@ -1,8 +1,12 @@
+import { UI_ROUTES, canViewRoute, type UiRole } from "./editorialUi.js";
+import { renderEditorialRoute } from "./editorialClient.js";
 import { renderFeed } from "./feedClient.js";
 import {
   estimateStickerPreview,
   PREVIEW_STYLE_LABELS,
   dashboardStickerPreview,
+  applyStickerPreview,
+  refreshDashboardPreview,
 } from "./stickerPreview.js";
 import {
   renderOperations,
@@ -107,7 +111,7 @@ function eventRows(events: PublicationEvent[]) {
     ? events
         .map(
           (event) =>
-            `<div class="event-row"><time>${escape(date(event.timestamp))}</time><div><strong>${escape(event.event)}</strong><p>${escape(event.message)}</p><small class="muted">Job: ${escape(event.job_id)}</small>${event.metadata ? `<details><summary class="muted">Metadados</summary><pre>${escape(JSON.stringify(event.metadata, null, 2))}</pre></details>` : ""}</div></div>`,
+            `<div class="event-row"><time>${escape(date(event.timestamp))}</time><div><strong>${escape(event.event)}</strong><p>${escape(event.message)}</p><small class="muted">Job: ${escape(event.job_id)}</small>${event.metadata ? `<details class="admin-only"><summary class="muted">Metadados</summary><pre>${escape(JSON.stringify(event.metadata, null, 2))}</pre></details>` : ""}</div></div>`,
         )
         .join("")
     : empty(
@@ -180,17 +184,17 @@ const route = () => location.hash.slice(1) || "dashboard";
 async function load() {
   const version = ++viewVersion,
     current = route();
-  const titles: Record<string, string> = {
-    dashboard: "Dashboard",
-    publications: "Publicações",
-    settings: "Configuração do Story",
-    logs: "Logs",
-    queue: "Fila de Stories",
-    automation: "Automação de publicação",
-    accounts: "Contas Instagram",
-    system: "Sistema / Health Check",
-    feed: "Entradas RSS",
-  };
+  const titles = Object.fromEntries(
+    Object.entries(UI_ROUTES).map(([key, value]) => [key, value.title]),
+  );
+  let role: UiRole =
+    localStorage.getItem("postador-ui-role") === "ADMIN" ? "ADMIN" : "OPERATOR";
+  document.body.dataset.uiRole = role;
+  element<HTMLSelectElement>("ui-role").value = role;
+  if (!canViewRoute(role, current)) {
+    location.hash = "dashboard";
+    return;
+  }
   if (!titles[current]) {
     location.hash = "dashboard";
     return;
@@ -202,8 +206,25 @@ async function load() {
       node.classList.toggle("active", node.dataset.route === current),
     );
   try {
-    if (current === "feed") {
-      await renderFeed();
+    if (
+      [
+        "dashboard",
+        "feed",
+        "queue",
+        "automation",
+        "accounts",
+        "publications",
+        "alerts",
+        "configuration",
+      ].includes(current)
+    ) {
+      await renderEditorialRoute(current, role);
+      return;
+    }
+    if (current === "queue-tools" || current === "agenda-tools") {
+      await renderOperations(
+        current === "queue-tools" ? "queue" : "automation",
+      );
       return;
     }
     if (["queue", "automation", "accounts", "system"].includes(current)) {
@@ -261,11 +282,7 @@ async function load() {
       element("content").innerHTML =
         `${operational.html}${queueView.html}<p class="subtext">Acompanhe os resultados do postador. Horários de Brasília.</p><div class="stats-grid">${cards.map(([label, value, note]) => `<div class="stat-card"><div class="label">${escape(label)}<span>↗</span></div><strong class="${value.length > 9 ? "date" : ""}">${escape(value)}</strong><small>${escape(note)}</small></div>`).join("")}</div><div class="dashboard-bottom"><section class="panel"><div class="panel-heading"><div><h2>Últimas publicações</h2><span class="muted">Registros reais dos resumos locais do motor</span></div><a href="#publications">Ver histórico →</a></div>${jobsTable(data.recent)}</section>${dashboardStickerPreview(savedStory)}</div><p class="muted">${s.inconclusive} resultado(s) inconclusivo(s). Na ausência de horário exato de publicação, as contagens usam o término registrado. ${data.imported.warnings.length ? `${data.imported.warnings.length} resumo(s) não puderam ser importados.` : ""}</p>`;
       wireJobs();
-      document
-        .querySelectorAll<HTMLElement>(".dashboard-bottom .preview-sticker")
-        .forEach((sticker) =>
-          fitPreviewText(sticker, sticker.dataset.capped === "true"),
-        );
+      refreshDashboardPreview(savedStory);
       operational.wire();
       queueView.wire();
     } else if (current === "publications") {
@@ -328,7 +345,7 @@ async function load() {
     );
     element("content").innerHTML = empty(
       "Não foi possível carregar",
-      "Verifique o terminal do painel e tente atualizar.",
+      "Tente atualizar. Se continuar, peça ajuda ao administrador.",
     );
   }
 }
@@ -337,7 +354,7 @@ function renderSettings() {
   const s = model.story.sticker;
   const presets = s.presets;
   element("content").innerHTML =
-    `<div class="settings-grid"><section class="panel"><h2>Configuração padrão do Link Sticker</h2><p class="muted">Ajuste o padrão e acompanhe a simulação ao lado.</p><div class="field"><label for="sticker-text">Texto padrão</label><input id="sticker-text" type="text" value="${escape(s.text)}"><p class="muted" id="text-counter"></p><p class="muted" id="text-warning" role="status"></p><div class="presets">${presets.map((p) => `<button class="preset" data-preset="${escape(p.name)}" title="${escape(p.text)}">${escape(p.name)}</button>`).join("")}</div></div><div class="field"><label for="sticker-style">Estilo do Sticker</label><select id="sticker-style">${PREVIEW_STYLE_LABELS.map((name, index) => `<option value="${index}" ${s.style_index === index ? "selected" : ""}>${name}</option>`).join("")}</select><p class="muted">Estilo inicial e ciclos de toque; aplicação real será conectada ao motor.</p></div><div class="field"><label for="sticker-max-text">Limite de caracteres confirmado (opcional)</label><input id="sticker-max-text" type="number" min="1" step="1" value="${s.max_text_length ?? ""}"><p class="muted">Vazio = limite ainda não definido. O texto nunca é truncado automaticamente.</p></div><div class="field"><div class="field-row"><label for="sticker-x">Centro horizontal</label><output id="x-value"></output></div><input id="sticker-x" type="range" min="0" max="100" step="any" value="${s.x_pct * 100}"><div class="range-labels"><span>Esquerda</span><span>Direita</span></div><div class="fine-buttons"><button data-nudge="x:-10">← 10</button><button data-nudge="x:10">→ 10</button></div></div><div class="field"><div class="field-row"><label for="sticker-y">Centro vertical</label><output id="y-value"></output></div><input id="sticker-y" type="range" min="0" max="100" step="any" value="${s.y_pct * 100}"><div class="range-labels"><span>Cima</span><span>Baixo</span></div><div class="fine-buttons"><button data-nudge="y:-10">↑ 10</button><button data-nudge="y:10">↓ 10</button></div></div><div class="field"><div class="field-row"><label for="sticker-scale">Escala do Sticker</label><output id="scale-value"></output></div><p class="muted">A largura final também depende do texto.</p><input id="sticker-scale" type="range" min="${s.min_scale * 100}" max="${s.max_scale * 100}" step="0.1" value="${s.scale * 100}"><div class="range-labels"><span>Menor</span><span>Maior</span></div><div class="fine-buttons"><button data-size="-1">− Diminuir</button><button data-size="1">+ Aumentar</button><button id="reset-size">Restaurar escala</button></div><details><summary class="muted" style="margin-top:16px">Limites de escala</summary><div class="limits"><label>Mínimo (%)<input id="scale-min" type="number" min="25" max="125" value="${s.min_scale * 100}"></label><label>Máximo (%)<input id="scale-max" type="number" min="25" max="125" value="${s.max_scale * 100}"></label></div></details></div><label class="check"><input id="sticker-enabled" type="checkbox" ${s.enabled ? "checked" : ""}>Mostrar sticker na simulação</label><div class="field"><h3>Destinos padrão</h3><label class="check"><input id="instagram-enabled" type="checkbox" ${model.publishing.instagram_enabled ? "checked" : ""}>Instagram</label><label class="check"><input id="facebook-enabled" type="checkbox" ${model.publishing.facebook_enabled ? "checked" : ""}>Facebook Story</label><p class="muted">Preferências para integração futura; não autorizam publicação.</p></div><div class="info">Confirmação do Link, confirmação do layout e interrupção em caso de falha permanecem ativas.</div><div class="form-actions"><button id="save-settings" class="button">Salvar configuração</button><button id="reset-settings" class="button secondary">Restaurar padrão</button></div><div class="info">Configuração salva no painel. A aplicação no Instagram será habilitada na próxima etapa.</div></section><section class="panel preview-panel"><div class="preview-top"><div><h2>Preview do Story</h2><span class="muted">Simulação visual</span></div><span class="preview-pill">1080 × 1920</span></div><div class="preview-shell"><div class="story-preview" id="preview"><div class="preview-placeholder">Imagem de teste indisponível</div><img id="preview-image" src="/api/preview" alt="Imagem de teste do Story"><div class="preview-sticker" id="preview-sticker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14l4-4m-6 7l-1 1a4 4 0 01-6-6l5-5a4 4 0 015.5-.2M16 7l1-1a4 4 0 016 6l-5 5a4 4 0 01-5.5.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span id="preview-text"></span></div></div></div><p class="diagnostic" id="preview-diagnostic"></p><button disabled class="button secondary" title="Será habilitado na próxima etapa">Testar layout no Instagram</button><p class="muted">Será habilitado na próxima etapa</p></section></div>`;
+    `<div class="settings-grid"><section class="panel"><h2>Aparência padrão do Story</h2><p class="muted">Ajuste o padrão e acompanhe a simulação ao lado.</p><div class="field"><label for="sticker-text">Texto do link</label><input id="sticker-text" type="text" value="${escape(s.text)}"><p class="muted" id="text-counter"></p><p class="muted" id="text-warning" role="status"></p><div class="presets">${presets.map((p) => `<button class="preset" data-preset="${escape(p.name)}" title="${escape(p.text)}">${escape(p.text)}</button>`).join("")}</div></div><div class="field"><label for="sticker-style">Estilo do link</label><select id="sticker-style">${PREVIEW_STYLE_LABELS.map((name, index) => `<option value="${index}" ${s.style_index === index ? "selected" : ""}>${name}</option>`).join("")}</select><p class="muted">Escolha como o link deve aparecer.</p></div><div class="field admin-only"><label for="sticker-max-text">Máximo de caracteres</label><input id="sticker-max-text" placeholder="Automático" type="number" min="1" step="1" value="${s.max_text_length ?? ""}"><p class="muted">Deixe vazio para usar o padrão automático.</p></div><div class="field"><div class="field-row"><label for="sticker-x">Posição horizontal</label><output id="x-value"></output></div><input id="sticker-x" type="range" min="0" max="100" step="any" value="${s.x_pct * 100}"><div class="range-labels"><span>Esquerda</span><span>Direita</span></div></div><div class="field"><div class="field-row"><label for="sticker-y">Posição vertical</label><output id="y-value"></output></div><input id="sticker-y" type="range" min="0" max="100" step="any" value="${s.y_pct * 100}"><div class="range-labels"><span>Cima</span><span>Baixo</span></div></div><div class="field"><div class="field-row"><label for="sticker-scale">Tamanho do link</label><output id="scale-value"></output></div><p class="muted">Altera proporcionalmente texto, ícone e fundo.</p><input id="sticker-scale" type="range" min="${s.min_scale * 100}" max="${s.max_scale * 100}" step="0.1" value="${s.scale * 100}"><div class="range-labels"><span>Menor</span><span>Maior</span></div><div class="fine-buttons"><button data-size="-1">− Diminuir</button><button data-size="1">+ Aumentar</button><button id="reset-size">Restaurar tamanho</button></div><details class="admin-only"><summary class="muted" style="margin-top:16px">Limites de escala</summary><div class="limits"><label>Mínimo (%)<input id="scale-min" type="number" min="25" max="125" value="${s.min_scale * 100}"></label><label>Máximo (%)<input id="scale-max" type="number" min="25" max="125" value="${s.max_scale * 100}"></label></div></details></div><label class="check admin-only"><input id="sticker-enabled" type="checkbox" ${s.enabled ? "checked" : ""}>Mostrar link na prévia</label><div class="field admin-only"><h3>Destinos padrão</h3><label class="check"><input id="instagram-enabled" type="checkbox" ${model.publishing.instagram_enabled ? "checked" : ""}>Instagram</label><label class="check"><input id="facebook-enabled" type="checkbox" ${model.publishing.facebook_enabled ? "checked" : ""}>Facebook Story</label><p class="muted">Preferências para integração futura; não autorizam publicação.</p></div><div class="info">O envio só será permitido quando todas as verificações estiverem concluídas.</div><div class="form-actions"><button id="save-settings" class="button">Salvar configuração</button><button id="reset-settings" class="button secondary">Restaurar padrão</button></div><div class="info">Salve o padrão para os próximos Stories. O envio pelo painel ainda está desativado.</div></section><section class="panel preview-panel"><div class="preview-top"><div><h2>Prévia do Story</h2><span class="muted">Aparência aproximada</span></div><span class="preview-pill">STORY</span></div><div class="preview-shell"><div class="story-preview" id="preview"><div class="preview-placeholder">Imagem de teste indisponível</div><img id="preview-image" src="/api/preview" alt="Imagem de teste do Story"><div class="preview-sticker" id="preview-sticker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14l4-4m-6 7l-1 1a4 4 0 01-6-6l5-5a4 4 0 015.5-.2M16 7l1-1a4 4 0 016 6l-5 5a4 4 0 01-5.5.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span id="preview-text"></span></div></div></div><details class="admin-only"><summary>Informações técnicas</summary><p class="diagnostic" id="preview-diagnostic"></p></details></section></div>`;
   element<HTMLImageElement>("preview-image").onerror = () =>
     (element("preview-image").hidden = true);
   const sync = () => {
@@ -463,16 +480,7 @@ function renderSettings() {
     }
   };
   updatePreview();
-}
-function fitPreviewText(sticker: HTMLElement, capped: boolean) {
-  const text = sticker.querySelector<HTMLElement>("span");
-  if (!text || capped || sticker.style.display === "none") return;
-  let size = parseFloat(getComputedStyle(sticker).fontSize);
-  while (text.scrollWidth > text.clientWidth - 2 && size > 4) {
-    size = Math.max(4, size - 0.25);
-    sticker.style.fontSize = `${size}px`;
-  }
-  text.style.textOverflow = "clip";
+  void document.fonts.ready.then(updatePreview);
 }
 function updatePreview() {
   if (!model || route() !== "settings") return;
@@ -487,28 +495,30 @@ function updatePreview() {
   sticker.style.top = `${s.y_pct * 100}%`;
   const estimated = estimateStickerPreview(s.text, s.scale);
   sticker.dataset.style = String(s.style_index);
-  sticker.style.width = `${estimated.width_pct * 100}%`;
-  sticker.style.height = `${(estimated.height_px / REFERENCE.height) * 100}%`;
-  const box = element("preview").getBoundingClientRect();
-  sticker.style.fontSize = `${Math.max(4, (estimated.font_size_px * box.width) / REFERENCE.width)}px`;
-  const previewText = element("preview-text");
-  previewText.textContent = s.text;
-  previewText.title = s.text;
-  fitPreviewText(sticker, estimated.capped);
+  applyStickerPreview(sticker, s.text, s.scale, element("preview").clientWidth);
+  element("preview-text").title = s.text;
   element("text-counter").textContent =
-    `Caracteres: ${estimated.text_length}${s.max_text_length === null ? " · limite não definido" : ` / ${s.max_text_length}`} · Largura estimada: ${(estimated.width_pct * 100).toFixed(1)}%`;
+    `${estimated.text_length} caracteres${s.max_text_length === null ? "" : ` / ${s.max_text_length}`}`;
   const exceeds =
     s.max_text_length !== null && estimated.text_length > s.max_text_length;
   element("text-warning").textContent = exceeds
-    ? "Texto excede o limite configurado. Salvamento e job serão bloqueados."
+    ? "Texto muito longo para o sticker."
     : estimated.capped
-      ? "Texto longo: preview limitado à tela; conteúdo completo preservado. Confira a largura real no Instagram."
+      ? "Texto longo: confira a aparência antes de publicar."
       : "";
   element<HTMLButtonElement>("save-settings").disabled =
     exceeds || savingSettings;
   element("preview-diagnostic").textContent =
     `Centro calculado: ${(s.x_pct * REFERENCE.width).toFixed(1)}, ${(s.y_pct * REFERENCE.height).toFixed(1)} px · Escala ${(s.scale * 100).toFixed(1)}%`;
 }
+element<HTMLSelectElement>("ui-role").onchange = () => {
+  localStorage.setItem(
+    "postador-ui-role",
+    element<HTMLSelectElement>("ui-role").value,
+  );
+  notice("");
+  void load();
+};
 element<HTMLButtonElement>("refresh").onclick = () => {
   notice("");
   void load();
@@ -518,4 +528,5 @@ window.addEventListener("hashchange", () => {
   void load();
 });
 window.addEventListener("resize", updatePreview);
+void document.fonts.ready.then(updatePreview);
 void load();

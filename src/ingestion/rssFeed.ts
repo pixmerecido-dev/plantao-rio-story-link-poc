@@ -1,6 +1,7 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { canonicalArticleURL } from "./feedDomain.js";
 export interface FeedItem {
+  article_title?: string;
   article_url: string | null;
   feed_guid: string | null;
 }
@@ -47,7 +48,14 @@ export function parseFeed(xml: string, feedURL: string): FeedItem[] {
       } catch {
         /* retain guid for diagnosis */
       }
-      return { article_url, feed_guid: guid };
+      const article_title = scalar(entry.title)?.trim();
+      return {
+        article_url,
+        feed_guid: guid,
+        ...(article_title
+          ? { article_title: article_title.slice(0, 500) }
+          : {}),
+      };
     })
     .filter((item: FeedItem) => item.article_url || item.feed_guid);
 }

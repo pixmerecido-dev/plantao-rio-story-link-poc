@@ -126,6 +126,7 @@ export function defaultSettings(): StorySettings {
   };
 }
 export interface PublicationJob {
+  article_title?: string;
   id: string;
   job_id: string;
   created_at: string;

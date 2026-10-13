@@ -398,5 +398,6 @@ test("preview do Dashboard escapa conteúdo do texto e não executa HTML", async
   const html = dashboardStickerPreview(s);
   assert.equal(html.includes("<script>"), false);
   assert.ok(html.includes("&lt;script&gt;"));
-  assert.ok(html.includes("Caracteres:"));
+  assert.ok(html.includes("Prévia aproximada"));
+  assert.ok(!html.includes("Centro calculado"));
 });

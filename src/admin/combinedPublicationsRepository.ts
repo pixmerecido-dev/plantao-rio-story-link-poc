@@ -4,6 +4,7 @@ import type { QueueJob } from "./operationsDomain.js";
 import type { OperationsRepository } from "./operationsStorage.js";
 function jobView(j: QueueJob): PublicationJob {
   return {
+    ...(j.article_title ? {article_title:j.article_title} : {}),
     id: j.id,
     job_id: j.job_id,
     account_id: j.account_id,

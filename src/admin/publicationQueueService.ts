@@ -152,6 +152,7 @@ export class PublicationQueueService {
           : {}),
         ...(entry
           ? {
+              ...(entry.article_title ? { article_title: entry.article_title } : {}),
               feed_entry_id: entry.id,
               article_url: entry.article_url!,
               detected_at: entry.detected_at,

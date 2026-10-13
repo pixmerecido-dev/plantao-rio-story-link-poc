@@ -292,6 +292,13 @@ export async function operationalLogs() {
       : empty("Nenhuma alteração administrativa.")
   }</section>`;
 }
+function operationRouteMatches(route: string) {
+  return (
+    location.hash.slice(1) === route ||
+    (route === "queue" && location.hash === "#queue-tools") ||
+    (route === "automation" && location.hash === "#agenda-tools")
+  );
+}
 export async function renderOperations(route: string) {
   const content = node("content");
   if (route === "queue") {
@@ -300,7 +307,7 @@ export async function renderOperations(route: string) {
       decisions: Summary["decisions"];
       accounts: Account[];
     }>("/queue");
-    if (location.hash.slice(1) !== route) return;
+    if (!operationRouteMatches(route)) return;
     content.innerHTML = `<p class="subtext">Fila persistente por conta. READY aguarda o operador. Publicar agora está desabilitado; agendar e enviar para fila não executam o Instagram.</p><section class="panel"><h2>Adicionar job de teste</h2><form id="enqueue-form" class="ops-form"><label>URL da matéria<input id="queue-url" type="url" required value="https://plantaorio.com.br/"></label><label>Texto do sticker<input id="queue-text" required value="Leia a matéria completa"></label><label>Prioridade<select id="queue-priority"><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label><label>Modo<select id="queue-mode"><option>AUTO_QUEUE</option><option>IMMEDIATE</option><option>SCHEDULED</option><option>PAUSED</option></select></label><label>Agendamento (horário local do computador)<input id="queue-date" type="datetime-local"></label><button class="button">Adicionar à fila</button></form><p class="muted">Usa somente STORY_MEDIA / STORY_IMAGE configurada no backend ou assets/story-test.jpg. Entradas RSS são gerenciadas na tela Entradas RSS.</p></section><section class="panel"><div class="filters"><label>Visão <select id="queue-filter"><option value="all">Atual / todos</option><option value="scheduled">Agendados</option><option value="errors">Com erro / revisão</option></select></label></div><div id="queue-table">${rows(data.jobs, data.accounts)}</div></section><section class="panel"><h2>Decisões do scheduler</h2>${data.decisions.length ? data.decisions.map((d) => `<p><code>${esc(d.job_id.slice(0, 8))}</code> ${badge(d.decision.reason)} ${esc(date(d.decision.nextEligibleAt))}</p>`).join("") : empty("Nenhum job elegível para avaliação.")}</section>`;
     const wire = () => wireQueueActions(async () => renderOperations("queue"));
     wire();
@@ -349,7 +356,7 @@ export async function renderOperations(route: string) {
       publishing: AutomationSettings;
       safety: OperationsState["safety"];
     }>("/automation");
-    if (location.hash.slice(1) !== route) return;
+    if (!operationRouteMatches(route)) return;
     content.innerHTML = `<p class="subtext">Políticas de publicação e timeline. Horários da janela em Brasília; nenhum timer no frontend.</p><section class="panel"><h2>Automação de publicação</h2><form id="automation-form" class="ops-form"><label>Modo<select id="auto-mode">${["IMMEDIATE", "INTERVAL", "RATE"].map((m) => `<option ${p.mode === m ? "selected" : ""}>${m}</option>`).join("")}</select></label>${(["interval_minutes", "max_per_hour", "max_per_day", "min_interval_minutes", "max_attempts"] as const).map((k) => `<label>${esc({ interval_minutes: "Intervalo (minutos)", max_per_hour: "Máximo por hora", max_per_day: "Máximo diário", min_interval_minutes: "Intervalo mínimo (minutos)", max_attempts: "Máximo de tentativas" }[k])}<input id="auto-${k}" type="number" min="1" required value="${p[k]}"></label>`).join("")}<label>Início da janela<input id="auto-start" type="time" required value="${p.window_start}"></label><label>Fim da janela<input id="auto-end" type="time" required value="${p.window_end}"></label><label class="check"><input id="auto-enabled" type="checkbox" ${p.enabled ? "checked" : ""}>Automação habilitada</label><label class="check"><input id="auto-urgent" type="checkbox" ${p.allow_urgent_outside_window ? "checked" : ""}>Urgentes fora da janela</label><label class="check"><input id="auto-failure" type="checkbox" ${safety.pause_on_system_failure ? "checked" : ""}>Pausar em falha do sistema</label><button class="button">Salvar políticas</button></form></section><section class="panel"><h2>Calendário / timeline</h2><div class="filters"><select id="calendar-range"><option value="1">Hoje</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="custom">Personalizado</option></select><label>De <input id="calendar-from" type="date"></label><label>Até <input id="calendar-to" type="date"></label><button id="calendar-load" class="button secondary">Atualizar timeline</button></div><div id="calendar-timeline"></div></section>`;
     node<HTMLFormElement>("automation-form").onsubmit = (e) => {
       e.preventDefault();
@@ -430,7 +437,7 @@ export async function renderOperations(route: string) {
   if (route === "accounts") {
     const accounts = await api<Account[]>("/accounts"),
       a = accounts[0]!;
-    if (location.hash.slice(1) !== route) return;
+    if (!operationRouteMatches(route)) return;
     content.innerHTML = `<p class="subtext">Uma conta nesta fase. Detecção real exige um adapter com seletor confiável; não há confirmação simulada.</p><section class="panel"><div class="panel-heading"><h2>Conta Instagram</h2>${badge(a.status)}</div><form id="account-form" class="ops-form"><label>Username esperado<input id="account-username" required value="${esc(a.expected_username)}" placeholder="@plantaorio"></label><label>Nome de exibição<input id="account-name" required value="${esc(a.display_name)}"></label><label class="check"><input id="account-enabled" type="checkbox" ${a.enabled ? "checked" : ""}>Conta habilitada</label><button class="button">Salvar conta</button><button type="button" id="account-detect" class="button secondary">Verificar conta ativa</button></form><div class="detail-data"><div><label>Detectado</label><p>${esc(a.detected_username ?? "Não verificado")}</p></div><div><label>Última detecção</label><p>${esc(date(a.detected_at))}</p></div><div><label>Última confirmação</label><p>${esc(date(a.last_seen_at))}</p></div><div><label>Account ID</label><p>${esc(a.id)}</p></div></div><p class="info">UNKNOWN, MISMATCH, LOGGED_OUT ou UNAVAILABLE bloqueiam publicação automática. Não armazenamos senha.</p><a href="#settings">Configuração do Story desta conta →</a></section>`;
     node<HTMLFormElement>("account-form").onsubmit = (e) => {
       e.preventDefault();
@@ -462,7 +469,7 @@ export async function renderOperations(route: string) {
   }
   if (route === "system") {
     const s = await api<Summary>("");
-    if (location.hash.slice(1) !== route) return;
+    if (!operationRouteMatches(route)) return;
     content.innerHTML = `<p class="subtext">Health checks locais e somente leitura. O painel continua disponível quando o emulador ou Appium estão offline.</p><section class="panel"><div class="panel-heading"><h2>Postador ${badge(s.system.status)}</h2></div><p>${esc(s.system.reason ?? "Adapter de execução não conectado.")}</p><div class="form-actions">${systemButtons()}<button class="button secondary" id="health-refresh">Verificar saúde</button></div></section><section class="panel"><h2>Health check</h2><div class="health-grid">${s.health.map((h) => `<div class="health-card"><strong>${h.component} ${badge(h.status)}</strong><p>${esc(h.message)}</p><small class="muted">${esc(date(h.checked_at))}</small></div>`).join("")}</div><p class="info">APP OK significa painel disponível. O motor de publicação não está conectado ao scheduler. INSTAGRAM UNKNOWN não autoriza execução.</p></section>`;
     wireSystem(async () => renderOperations(route));
     node<HTMLButtonElement>("health-refresh").onclick = () =>

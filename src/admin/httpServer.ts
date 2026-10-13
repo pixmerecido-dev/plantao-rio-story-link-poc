@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { FeedPollingService } from "../ingestion/feedPollingService.js";
 import { createFeedApi } from "./feedHttp.js";
 import {
@@ -28,6 +29,7 @@ import { DEFAULT_ACCOUNT_ID } from "./operationsDomain.js";
 import {
   feedCss,
   queueCss,
+  editorialCss,
   shellHtml,
   adminCss,
   operationalCss,
@@ -70,6 +72,7 @@ export function createAdminServer(options: {
   operationsStore?: OperationsRepository;
   testMedia?: string;
   feedService?: FeedPollingService;
+  accountDetector?: import("../instagram/accountVerification.js").AccountDetector;
 }) {
   const publications = new PublicationsService(
     options.operationsStore
@@ -93,6 +96,7 @@ export function createAdminServer(options: {
           await importer.sync();
           return options.repository.listJobs();
         },
+        options.accountDetector,
       )
     : null;
   const feed =
@@ -180,13 +184,58 @@ export function createAdminServer(options: {
             stickerStyleCss +
             dashboardPreviewCss +
             feedCss +
-            queueCss,
+            queueCss +
+            editorialCss,
+        );
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/assets/story-link-font.woff2"
+      ) {
+        res.writeHead(200, {
+          "Content-Type": "font/woff2",
+          "Cache-Control": "public, max-age=3600",
+        });
+        res.end(
+          await readFile(
+            fileURLToPath(
+              import.meta.resolve(
+                "@fontsource/barlow-condensed/files/barlow-condensed-latin-500-normal.woff2",
+              ),
+            ),
+          ),
         );
         return;
       }
       if (feedApi && (await feedApi(req, res, url, body, send))) return;
       if (operations && (await operations.handle(req, res, url, body, send)))
         return;
+      if (
+        method === "GET" &&
+        ["/assets/editorialClient.js", "/assets/editorialUi.js"].includes(
+          url.pathname,
+        )
+      ) {
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+        });
+        res.end(
+          await readFile(
+            join(
+              dirname(
+                options.clientPath ??
+                  join(options.root, "dist/admin/client.js"),
+              ),
+              url.pathname.endsWith("editorialUi.js")
+                ? "editorialUi.js"
+                : "editorialClient.js",
+            ),
+            "utf8",
+          ),
+        );
+        return;
+      }
       if (method === "GET" && url.pathname === "/assets/feedClient.js") {
         res.writeHead(200, {
           "Content-Type": "application/javascript; charset=utf-8",

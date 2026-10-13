@@ -89,7 +89,13 @@ test("RSS/Atom only preserve article link and guid, normalize URL, reject invali
       ),
       "https://example.com/feed",
     ),
-    [{ article_url: "https://example.com/a", feed_guid: "id" }],
+    [
+      {
+        article_url: "https://example.com/a",
+        feed_guid: "id",
+        article_title: "NOT_NEEDED",
+      },
+    ],
   );
   assert.equal(
     parseFeed(

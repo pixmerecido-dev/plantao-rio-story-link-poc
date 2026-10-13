@@ -1,3 +1,4 @@
+import { verifyPublicationAccount } from "./publicationAccountGuard.js";
 import { assertExecutableStoryMedia } from '../media/StoryMedia.js';
 import 'dotenv/config';
 import { writeFile } from 'node:fs/promises';
@@ -18,7 +19,8 @@ try {
   await driver.connect();
   connected = true;
   await driver.openAndConfirmInstagram();
-  const result = await prepareAndPublishStory(driver, job, directory);
+  const account = await verifyPublicationAccount(driver, join(directory, "account-check"));
+  const result = { ...await prepareAndPublishStory(driver, job, directory), account_verification: account, account_id: account.account_id, instagram_username: account.account_detected };
   await writeFile(join(directory, 'summary.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   if (result.publication.outcome !== 'SUCCESS' || result.publication.captureErrors.length) process.exitCode = 2;
 } catch (error) {

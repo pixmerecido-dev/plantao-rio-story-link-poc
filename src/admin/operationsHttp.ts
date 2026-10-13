@@ -42,9 +42,10 @@ export function createOperationsApi(
   store: OperationsRepository,
   testMedia: string,
   history?: () => Promise<PublicationJob[]>,
+  detector?: ConstructorParameters<typeof InstagramAccountService>[1],
 ) {
   const queue = new PublicationQueueService(store),
-    accounts = new InstagramAccountService(store),
+    accounts = new InstagramAccountService(store, detector),
     health = new SystemHealthService(store),
     logs = new PublicationLogService(store),
     scheduler = new PublishingScheduler(queue, new PublishingPolicyService());
@@ -223,6 +224,14 @@ export function createOperationsApi(
         send(
           res,
           await accounts.configure(DEFAULT_ACCOUNT_ID, await payload()),
+        );
+        return true;
+      }
+      if (method === "PUT" && path === "/api/operations/account/selector") {
+        const v = await payload();
+        send(
+          res,
+          await accounts.chooseUsernameField(DEFAULT_ACCOUNT_ID, v.resource_id),
         );
         return true;
       }

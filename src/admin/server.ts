@@ -1,3 +1,4 @@
+import { localAccountDetector } from "../instagram/accountVerification.js";
 import { FeedPollingService } from "../ingestion/feedPollingService.js";
 import "dotenv/config";
 import { resolve } from "node:path";
@@ -71,6 +72,7 @@ const feedService = new FeedPollingService(
 await feedService.recover();
 const server = createAdminServer({
   feedService,
+  accountDetector: localAccountDetector(),
   repository,
   root,
   operationsStore,

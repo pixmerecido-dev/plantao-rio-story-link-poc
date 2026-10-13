@@ -22,6 +22,7 @@ export type FeedEntryStatus =
   | "MEDIA_INVALID"
   | "REQUIRES_REVIEW";
 export interface FeedEntry {
+  article_title?: string;
   id: string;
   article_url: string | null;
   aliases: string[];
