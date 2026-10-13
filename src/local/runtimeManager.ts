@@ -341,19 +341,17 @@ export class RuntimeManager {
       "1",
     ]);
     await this.host.delay(1500);
-    const focus = await this.host.run(paths.adb, [
-      "-s",
-      device,
-      "shell",
-      "dumpsys",
-      "window",
-      "windows",
-    ]);
-    if (
-      !/mCurrentFocus[^\n]*com\.instagram\.android|mFocusedApp[^\n]*com\.instagram\.android/.test(
-        focus,
-      )
-    )
+    let instagramFocused = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      // The "windows" subcommand can omit the global focus summary.
+      const focus = await this.host.run(paths.adb, [
+        "-s", device, "shell", "dumpsys", "window",
+      ]);
+      instagramFocused = /mCurrentFocus[^\r\n]*com\.instagram\.android\/|mFocusedApp[^\r\n]*com\.instagram\.android\//.test(focus);
+      if (instagramFocused) break;
+      if (attempt < 9) await this.host.delay(500);
+    }
+    if (!instagramFocused)
       throw Error(
         "Instagram não respondeu. Abra o aplicativo e tente novamente.",
       );

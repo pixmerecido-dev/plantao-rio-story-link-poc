@@ -559,3 +559,18 @@ test('tela mostra bloqueio conhecido e não expõe erros internos ou de transpor
     assert.equal(accountVerificationFailureMessage(error),'Não foi possível verificar a conta agora. Consulte o Diagnóstico.');
   }
 });
+
+ test("preparation reads global window focus rather than windows-only listing", async () => {
+  const f = await fixture();
+  const run = f.host.run;
+  f.host.run = async (file, args) => {
+    if (args.includes("dumpsys")) {
+      assert.equal(args.at(-1), "window");
+      return "mCurrentFocus=Window{ u0 com.instagram.android/com.instagram.Main }\r\n";
+    }
+    return run(file, args);
+  };
+  await f.manager.prepare();
+  await f.manager.waitForTask();
+  assert.equal((await f.store.read()).ready, true);
+});
