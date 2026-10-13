@@ -11,6 +11,19 @@ import {
 import { findAndroidSdk, validateRuntimeConfig } from "./androidSdk.js";
 import { acquireDeviceLock, isDeviceOccupied } from "./deviceLock.js";
 import type { LocalHost } from "./processSupervisor.js";
+
+/** Windows ADB may emit CRCRLF; require one unambiguous name, excluding console acknowledgements. */
+export function parseAdbAvdName(response: string): string {
+  const names = response
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && line !== "OK");
+  const [name] = names;
+  if (names.length !== 1 || !name || !/^[A-Za-z0-9_.-]+$/.test(name))
+    throw Error("Nome do emulador não identificado inequivocamente na resposta do Android.");
+  return name;
+}
+
 export interface TestPort {
   prepare(
     id: string,
@@ -212,7 +225,7 @@ export class RuntimeManager {
               "avd",
               "name",
             ]);
-            if (name.split(/\r?\n/).includes(avd))
+            if (parseAdbAvdName(name) === avd.trim())
               throw Error(
                 "Esse emulador já está aberto em outro dispositivo; não será criada outra instância.",
               );
@@ -251,12 +264,10 @@ export class RuntimeManager {
       await this.host.delay(1000);
     }
     if (!boot) throw Error("Emulador não concluiu a inicialização.");
-    const actualAvd = (
+    const actualAvd = parseAdbAvdName(
       await this.host.run(paths.adb, ["-s", device, "emu", "avd", "name"])
-    )
-      .split(/\r?\n/)
-      .find((v) => v && v !== "OK");
-    if (state.config.avd && actualAvd !== state.config.avd)
+    );
+    if (state.config.avd && actualAvd !== state.config.avd.trim())
       throw Error("O emulador aberto é diferente do configurado.");
     if (!state.config.avd && actualAvd && /^[\w.-]+$/.test(actualAvd))
       await this.store.change((s) => {

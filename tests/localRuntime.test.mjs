@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RuntimeStore, redact } from "../dist/local/runtimeStore.js";
-import { RuntimeManager } from "../dist/local/runtimeManager.js";
+import { RuntimeManager, parseAdbAvdName } from "../dist/local/runtimeManager.js";
 import { OperationsStorage } from "../dist/admin/operationsStorage.js";
 import { InstagramAccountService } from "../dist/admin/instagramAccountService.js";
 import { acquireDeviceLock } from "../dist/local/deviceLock.js";
@@ -477,4 +477,55 @@ test("watchdog encerra somente filho de teste travado e registra interrupção",
   );
   assert.equal(host.owned("worker"), false);
   assert.ok((await f.store.read()).processes.worker.stopped_at);
+});
+
+test('parser AVD normaliza CR/LF, espaços, linhas vazias e ignora OK', () => {
+  for (const response of [
+    'Medium_Phone_API_37.0\nOK\n',
+    'Medium_Phone_API_37.0\r\nOK\r\n',
+    'Medium_Phone_API_37.0\r\r\nOK\r\r\n\n',
+    '\r\n OK \r\r\n\tMedium_Phone_API_37.0 \r\n\n',
+    'Medium_Phone_API_37.0\rOK\r',
+  ]) assert.equal(parseAdbAvdName(response), 'Medium_Phone_API_37.0');
+  for (const response of ['', '\r\r\n OK \r\n', 'Test_AVD\nOther_AVD\nOK', 'KO: emulator unavailable\nOK'])
+    assert.throws(() => parseAdbAvdName(response), /inequivocamente/);
+});
+
+test('resposta Windows CRCRLF permite continuar até Appium sem alterar AVD configurado', async () => {
+  const f = await fixture({ appium: false });
+  const run = f.host.run;
+  f.host.run = async (file, args) => args.includes('name') ? 'Test_AVD\r\r\nOK\r\r\n\n' : run(file, args);
+  await f.manager.prepare();
+  await f.manager.waitForTask();
+  assert.equal((await f.manager.status()).ready, true);
+  assert.equal((await f.store.read()).config.avd, 'Test_AVD');
+  assert.deepEqual(f.starts, ['appium']); // Simulated only; no Appium/emulator started in cloud.
+});
+
+test('AVD diferente ou resposta ambígua ainda aborta antes do Appium', async () => {
+  for (const response of ['Other_AVD\r\r\nOK\r\r\n', 'Test_AVD\r\nOther_AVD\r\nOK\r\n']) {
+    const f = await fixture({ appium: false });
+    const run = f.host.run;
+    f.host.run = async (file, args) => args.includes('name') ? response : run(file, args);
+    await f.manager.prepare();
+    await f.manager.waitForTask();
+    const state = await f.store.read();
+    assert.equal(state.ready, false);
+    assert.equal(state.config.avd, 'Test_AVD');
+    assert.deepEqual(f.starts, []);
+    assert.ok(state.events.some(e => /diferente do configurado|inequivocamente/.test(e.technical)));
+  }
+});
+
+test('mesmo AVD em outro dispositivo com CRCRLF não inicia segunda instância', async () => {
+  const f = await fixture({ absent: true, appium: false });
+  const run = f.host.run;
+  f.host.run = async (file, args) => args[0] === 'devices'
+    ? 'List of devices attached\r\nemulator-5556\tdevice\r\n'
+    : args.includes('name') ? 'Test_AVD\r\r\nOK\r\r\n' : run(file, args);
+  await f.manager.prepare();
+  await f.manager.waitForTask();
+  assert.equal((await f.store.read()).ready, false);
+  assert.deepEqual(f.starts, []);
+  assert.ok((await f.store.read()).events.some(e => /já está aberto/.test(e.technical)));
 });
