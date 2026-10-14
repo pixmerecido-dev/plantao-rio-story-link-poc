@@ -148,6 +148,9 @@ export class RuntimeManager {
               error instanceof Error && /^LAYOUT_NOT_CONFIRMED: (?:estilo|tamanho|posição|transação do link)(?:, (?:estilo|tamanho|posição))*$/.test(error.message)
                 ? `Story preparado parcialmente. Ajustes não confirmados: ${error.message.split(": ")[1]}. Nenhuma publicação foi realizada.`
                 : "Não foi possível concluir o teste. Nenhuma publicação foi realizada.";
+            if (error instanceof Error && error.cause && typeof error.cause === "object" && "size_ok" in error.cause && "position_ok" in error.cause) {
+              s.test.message += ` Tamanho: ${error.cause.size_ok === true ? "OK" : "não confirmado"}. Posição: ${error.cause.position_ok === true ? "OK" : "não confirmada"}.`;
+            }
             s.test.finished_at = new Date().toISOString();
           }
         });

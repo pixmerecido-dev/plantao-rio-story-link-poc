@@ -288,7 +288,7 @@ test("resize sem efeito retorna layout falso; não move nem publica nem troca es
     }),
     d = await prepareConfiguredStickerLayout(job(), p);
   assert.equal(d.layout_confirmed, false);
-  assert.equal(p.calls.filter((c) => c === "resize").length, 1);
+  assert.equal(p.calls.filter((c) => c === "resize").length, 3);
   assert.equal(p.calls.includes("move"), false);
   assert.equal(
     p.events.some((e) => e.event === "LAYOUT_CONFIRMED"),
@@ -450,16 +450,6 @@ test('unchanged position after two gestures remains partial, never successful', 
   assert.equal(result.position_ok, true);
  });
 
- test("integer Android bounds at tolerance edge do not prevent positioning", async () => {
-  const p = port();
-  p.bounds = { left: 192, top: 902, right: 888, bottom: 1018 };
-  p.resizeNative = async () => { p.bounds = { left: 264, top: 914, right: 815, bottom: 1005 }; };
-  const result = await prepareConfiguredStickerLayout(job({ sticker_scale: 0.853, sticker_x_pct: 0.35045632333767895, sticker_y_pct: 0.631775004656361 }), p);
-  assert.equal(result.size_ok, true);
-  assert.equal(result.move_command_sent, true);
-  assert.equal(result.position_confirmed, true);
-  assert.ok(Math.abs(result.actual_scale - 551 / 696) < 0.00001);
- });
  test("rounding tolerance does not accept materially undersized sticker", async () => {
   const p = port();
   p.resizeNative = async () => { p.bounds = { left: 264, top: 914, right: 750, bottom: 994 }; };
@@ -467,4 +457,18 @@ test('unchanged position after two gestures remains partial, never successful', 
   assert.equal(result.size_ok, false);
   assert.equal(result.move_command_sent, false);
   assert.equal(result.layout_confirmed, false);
+ });
+
+ test("resize feedback corrects an overshoot with fresh measured bounds", async () => {
+  const p = port(); const native = p.resizeNative; const corrections = [];
+  p.resizeNative = async (...args) => {
+    corrections.push(args[1]);
+    if (corrections.length === 1) p.bounds = { left: 268, top: 914, right: 811, bottom: 1005 };
+    else await native(...args);
+  };
+  const result = await prepareConfiguredStickerLayout(job({ sticker_scale: 0.853 }), p);
+  assert.equal(corrections.length, 2);
+  assert.ok(corrections[1] > 1);
+  assert.equal(result.resize_confirmed, true);
+  assert.equal(result.position_confirmed, true);
  });

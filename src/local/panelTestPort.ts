@@ -2,7 +2,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { SettingsRepository } from "../admin/repositories.js";
 import type { ProcessSupervisor } from "./processSupervisor.js";
-import type { RuntimeStore } from "./runtimeStore.js";
+import { runtimeEvent, type RuntimeStore } from "./runtimeStore.js";
 import { findAndroidSdk } from "./androidSdk.js";
 import type { TestPort } from "./runtimeManager.js";
 import { validateStoryJobInput } from "../config/prepareStoryJob.js";
@@ -22,6 +22,8 @@ export function panelTestPort(
     directory: string,
   ) => {
     const settings = await repository.getSettings();
+    const sticker = settings.story.sticker;
+    await store.change(s => { runtimeEvent(s, "Configuração salva carregada para o teste.", `CONFIG_LOADED ${JSON.stringify({ style: sticker.style_index, scale: sticker.scale, x: sticker.x_pct, y: sticker.y_pct, text: sticker.text, updated_at: null, loaded_at: new Date().toISOString(), saved_scale: sticker.scale, loaded_scale: sticker.scale, saved_x: sticker.x_pct, loaded_x: sticker.x_pct, saved_y: sticker.y_pct, loaded_y: sticker.y_pct })}`); });
     const media = resolve(root, "assets/story-preview-demo.jpg"),
       url = "https://plantaorio.com.br/";
     if (action === "prepare") {
@@ -69,7 +71,10 @@ export function panelTestPort(
     try { await host.wait("worker"); }
     catch (error) {
       const failure = await readFile(join(directory, "test-failure.json"), "utf8").then(JSON.parse).catch(() => null);
-      if (failure?.job_id === id && failure.published === false && /^LAYOUT_NOT_CONFIRMED: (?:estilo|tamanho|posição|transação do link)(?:, (?:estilo|tamanho|posição))*$/.test(failure.reason)) throw Error(failure.reason);
+      if (failure?.job_id === id && failure.published === false && /^LAYOUT_NOT_CONFIRMED: (?:estilo|tamanho|posição|transação do link)(?:, (?:estilo|tamanho|posição))*$/.test(failure.reason)) {
+        const layout = await readFile(join(directory, "test-layout.json"), "utf8").then(JSON.parse).catch(() => null);
+        throw new Error(failure.reason, { cause: layout?.job_id === id ? { size_ok: layout.size_ok === true, position_ok: layout.position_ok === true } : null });
+      }
       throw error;
     }
     if (action === "prepare") {

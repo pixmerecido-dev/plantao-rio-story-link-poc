@@ -229,20 +229,22 @@ export async function prepareConfiguredStickerLayout(
   const before = await read(),
     targetWidth = width(before.bounds) * job.sticker_scale,
     targetHeight = height(before.bounds) * job.sticker_scale;
-  const sizeOK = (b: StickerBounds) =>
-    Math.abs(width(b) - targetWidth) <= targetWidth * 0.08 + 1 &&
-    Math.abs(height(b) - targetHeight) <= targetHeight * 0.08 + 1;
+  const sizeOK = (b: StickerBounds) => Math.abs(width(b) - targetWidth) <= targetWidth * 0.03 + 1;
   const resizeRequired = !sizeOK(before.bounds);
-  if (resizeRequired) {
+  let afterResize = before;
+  for (let attempt = 1; !sizeOK(afterResize.bounds) && attempt <= 3; attempt++) {
+    const fresh = await read();
+    const correction = targetWidth / width(fresh.bounds);
     state.invalidate("resize");
-    await port.resizeNative(job.job_id, job.sticker_scale, before.bounds);
-  }
-  let afterResize = await read();
-  // Only shrink again when still too large. Never compensate an overshoot with an unvalidated enlargement.
-  if (!sizeOK(afterResize.bounds) && width(afterResize.bounds) < width(before.bounds) * 0.99 && width(afterResize.bounds) > targetWidth * 1.08 && height(afterResize.bounds) > targetHeight * 1.08) {
-    state.invalidate("resize");
-    await port.resizeNative(job.job_id, targetWidth / width(afterResize.bounds), afterResize.bounds);
+    await port.resizeNative(job.job_id, correction, fresh.bounds);
     afterResize = await read();
+    await port.recordEvent(job.job_id, "STICKER_RESIZE_ATTEMPT", {
+      attempt, before_bounds: fresh.bounds, before_width: width(fresh.bounds), before_height: height(fresh.bounds),
+      target_width: targetWidth, correction_scale: correction,
+      after_bounds: afterResize.bounds, after_width: width(afterResize.bounds), after_height: height(afterResize.bounds),
+      size_error_percent: (width(afterResize.bounds) - targetWidth) / targetWidth,
+      size_ok: sizeOK(afterResize.bounds),
+    });
   }
   await port.recordEvent(job.job_id, "STICKER_SIZE_VALIDATED", {
     resize_required: resizeRequired, before_bounds: before.bounds,
@@ -250,12 +252,9 @@ export async function prepareConfiguredStickerLayout(
     bounds_rounding_tolerance_px: 1,
     scale_ratio: width(afterResize.bounds) / width(before.bounds), size_ok: sizeOK(afterResize.bounds),
   });
-  if (resizeRequired)
-    await port.recordEvent(job.job_id, "STICKER_RESIZED", {
-      bounds: afterResize.bounds,
-      scale: job.sticker_scale,
-      within_tolerance: sizeOK(afterResize.bounds),
-    });
+  if (resizeRequired) await port.recordEvent(job.job_id, "STICKER_RESIZED", {
+    bounds: afterResize.bounds, scale: job.sticker_scale, within_tolerance: sizeOK(afterResize.bounds),
+  });
   const targets = configuredCenterTarget(
     afterResize.canvas,
     afterResize.bounds,

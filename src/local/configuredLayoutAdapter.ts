@@ -61,19 +61,15 @@ export async function applyPanelLayout(
       const current = await read();
       if (JSON.stringify(current.bounds) !== JSON.stringify(bounds))
         throw Error("Bounds mudaram antes do resize.");
-      if (scale > 1)
-        throw Error("Ampliação ainda não validada; reduza o tamanho do teste.");
       if (scale !== 1)
         await transform(async () => {
-          await session.execute("mobile: pinchCloseGesture", {
-            left: bounds.left,
-            top: bounds.top,
-            width: bounds.right - bounds.left,
-            height: bounds.bottom - bounds.top,
-            percent:
-              Math.abs(scale - 0.76) <= 0.01
-                ? 0.5
-                : Math.min(0.95, Math.max(0.05, (1 - scale) / 0.48)),
+          // Small native corrections; always measure the effect before the next gesture.
+          const percent = Math.min(0.15, Math.max(0.02, Math.abs(1 - scale)));
+          console.log(`[RESIZE] native=${scale > 1 ? 'open' : 'close'} percent=${percent} bounds=${JSON.stringify(bounds)}`);
+          await session.execute(scale > 1 ? "mobile: pinchOpenGesture" : "mobile: pinchCloseGesture", {
+            left: bounds.left, top: bounds.top,
+            width: bounds.right - bounds.left, height: bounds.bottom - bounds.top,
+            percent,
           });
         });
     },
