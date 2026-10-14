@@ -107,6 +107,7 @@ export function analyzeResetHierarchy(source: string) {
     element['content-desc'].trim() === value || /Button$/.test(element.class) && element.text.trim() === value);
   const homeSignals: string[] = [];
   if (label('For you')) homeSignals.push('home-feed-header');
+  if (hasId('com.instagram.android:id/main_feed_action_bar') && elements.some(element => element['resource-id'] === 'com.instagram.android:id/title_logo' && element['content-desc'] === 'Instagram Home Feed')) homeSignals.push('home-feed-logo-and-action-bar');
   if (hasId(HOME_CREATE_ID) || hasId(HOME_STORY_ID) && buttonLabel('Add to story')) homeSignals.push('home-create-or-own-story-shortcut');
   if (elements.some(element => element['resource-id'] === 'com.instagram.android:id/username' && element.text === 'Your story') && hasId(HOME_STORY_ID)) homeSignals.push('own-story-tray');
   const blockers: string[] = [];

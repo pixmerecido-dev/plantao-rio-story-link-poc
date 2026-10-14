@@ -169,3 +169,16 @@ test('profile labels without selected own-profile tab remain blocked', async () 
   await assert.rejects(normalizeInstagramToHome(mock.driver, await mkdtemp('/tmp/normalize-profile-unsafe-')), /desconhecido ou ambíguo/);
   assert.equal(mock.counts().backs, 0);
 });
+
+const observedHomeHeader = '<node resource-id="com.instagram.android:id/main_feed_action_bar"/><node resource-id="com.instagram.android:id/title_logo" content-desc="Instagram Home Feed"/>';
+const observedHomeTray = '<node resource-id="com.instagram.android:id/reel_empty_badge" class="android.widget.ImageView"/><node resource-id="com.instagram.android:id/username" text="Your story" class="android.widget.TextView"/>';
+test('observed Home with feed logo and image badge needs two positive signals', () => {
+  assert.equal(analyzeResetHierarchy(`<hierarchy>${observedHomeHeader}${observedHomeTray}</hierarchy>`).state, 'STATE_HOME');
+  assert.equal(analyzeResetHierarchy(`<hierarchy>${observedHomeHeader}</hierarchy>`).state, 'STATE_UNKNOWN');
+  assert.equal(analyzeResetHierarchy(`<hierarchy>${observedHomeTray}</hierarchy>`).state, 'STATE_UNKNOWN');
+});
+test('observed Home header never overrides a Story editor overlay', () => {
+  const screen = analyzeResetHierarchy(`<hierarchy>${observedHomeHeader}${observedHomeTray}<node resource-id="${SHARE_SHORTCUT_ID}"/><node text="Close Friends" class="android.widget.Button"/></hierarchy>`);
+  assert.notEqual(screen.state, 'STATE_HOME');
+  assert.ok(screen.blockers.length > 0);
+});
