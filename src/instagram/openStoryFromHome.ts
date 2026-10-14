@@ -4,7 +4,7 @@ import { openStoryViaCreate } from './storyCreateRoute.js';
 import type { AndroidRunner } from './addStoryAndroidDiagnostics.js';
 import type { InstagramDriver } from './InstagramDriver.js';
 import { analyzeResetHierarchy } from './normalizeInstagramToHome.js';
-import { navigateFromHome, type InstagramState } from './instagramStateMachine.js';
+import { navigateFromHome, HOME_CREATE_ID, resourceIdSelector, type InstagramState } from './instagramStateMachine.js';
 import { saveScreenArtifacts } from './diagnostics.js';
 
 type Driver = Pick<InstagramDriver, 'getSession'>;
@@ -28,7 +28,14 @@ export async function openStoryFromHome(driver: Driver, directory: string, optio
   }
   let addAvailable = false;
   for (const element of await session.$$('~Add to story')) if (await element.isExisting() && await element.isDisplayed()) addAvailable = true;
-  if (!addAvailable) return navigateFromHome(session, directory); // Compatibilidade com a Home antiga.
+  if (!addAvailable) {
+    // Keep the older explicit Create control; otherwise use the observed contextual + route.
+    const traditional = await session.$$(resourceIdSelector(HOME_CREATE_ID));
+    for (const element of traditional)
+      if (await element.isExisting() && await element.isDisplayed()) return navigateFromHome(session, directory);
+    console.log('[HOME] Add to story ausente; iniciando fallback Create/+');
+    return openStoryViaCreate(driver, directory);
+  }
   try { return await openAddStory(session, directory, { runAdb: options.runAdb }); }
   catch (error) {
     if (!(error instanceof AddStoryRouteExhaustedError)) throw error;

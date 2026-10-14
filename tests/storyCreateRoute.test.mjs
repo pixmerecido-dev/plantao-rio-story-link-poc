@@ -96,3 +96,12 @@ test('galeria da câmera desconhecida ou ambígua aborta sem adivinhar coordenad
   assert.throws(() => discoverCameraGallery(camera.replace('content-desc="Gallery"', 'content-desc=""')), /não identificado/);
   assert.throws(() => discoverCameraGallery(camera.replace('</hierarchy>', '<node content-desc="Gallery" clickable="true"/></hierarchy>')), /inequivocamente/);
 });
+
+test('shared opening uses contextual Create when Add to story is absent', async () => {
+  const mock = fixture();
+  const session = mock.driver.getSession();
+  const query = session.$$;
+  session.$$ = async selector => selector === '~Add to story' ? [] : query(selector);
+  assert.equal(await openStoryFromHome(mock.driver, await mkdtemp(join(tmpdir(), 'open-no-add-'))), 'STATE_GALLERY');
+  assert.deepEqual(mock.clicks, ['plus', 'story']);
+});
