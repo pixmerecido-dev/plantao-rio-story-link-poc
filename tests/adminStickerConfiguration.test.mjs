@@ -66,6 +66,7 @@ function port(overrides = {}) {
     set bounds(v) {
       bounds = structuredClone(v);
     },
+    async verifyStyle() { return "PASS"; },
     async assertOwnsFreshLink() {
       return true;
     },
@@ -435,3 +436,16 @@ test('unchanged position after two gestures remains partial, never successful', 
   assert.equal(result.layout_confirmed, false);
   assert.equal(result.position_ok, false);
 });
+
+ test("style commands alone never confirm visual style or complete layout", async () => {
+  const p = port();
+  delete p.verifyStyle;
+  const result = await prepareConfiguredStickerLayout(job({ sticker_style_index: 1 }), p);
+  assert.equal(result.style_command_sent, true);
+  assert.equal(result.style_transaction_confirmed, true);
+  assert.equal(result.style_confirmed, false);
+  assert.equal(result.style_result, "UNKNOWN");
+  assert.equal(result.layout_confirmed, false);
+  assert.equal(result.size_ok, true);
+  assert.equal(result.position_ok, true);
+ });

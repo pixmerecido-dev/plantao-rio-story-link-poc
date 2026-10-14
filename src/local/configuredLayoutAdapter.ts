@@ -104,8 +104,8 @@ export async function applyPanelLayout(
   await saveScreenArtifacts(driver, directory, "test-layout");
   await writeFile(join(directory, "test-layout.json"), JSON.stringify({ job_id: job.job_id, ...result }, null, 2));
   if (!result.layout_confirmed) {
-    const failed = !result.style_transaction_confirmed ? "estilo" : !result.size_ok ? "tamanho" : !result.position_ok ? "posição" : "transação do link";
-    throw Error(`LAYOUT_NOT_CONFIRMED: ${failed}`);
+    const failed = [!result.style_confirmed && "estilo", !result.size_ok && "tamanho", !result.position_ok && "posição"].filter(Boolean).join(", ");
+    throw Error(`LAYOUT_NOT_CONFIRMED: ${failed || "transação do link"}`);
   }
   if (await detectInstagramState(session) !== 'STATE_EDITOR_WITH_LINK') throw Error('Editor final com Link não confirmado.');
   console.log('[READY] Story preparado com layout aprovado');

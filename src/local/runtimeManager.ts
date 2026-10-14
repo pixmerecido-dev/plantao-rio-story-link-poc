@@ -145,8 +145,8 @@ export class RuntimeManager {
                 ? "REQUIRES_REVIEW"
                 : "FAILED";
             s.test.message =
-              error instanceof Error && /^LAYOUT_NOT_CONFIRMED: (estilo|tamanho|posição|transação do link)$/.test(error.message)
-                ? `Story preparado parcialmente. Ajuste não confirmado: ${error.message.split(": ")[1]}. Nenhuma publicação foi realizada.`
+              error instanceof Error && /^LAYOUT_NOT_CONFIRMED: (?:estilo|tamanho|posição|transação do link)(?:, (?:estilo|tamanho|posição))*$/.test(error.message)
+                ? `Story preparado parcialmente. Ajustes não confirmados: ${error.message.split(": ")[1]}. Nenhuma publicação foi realizada.`
                 : "Não foi possível concluir o teste. Nenhuma publicação foi realizada.";
             s.test.finished_at = new Date().toISOString();
           }

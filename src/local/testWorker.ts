@@ -63,6 +63,7 @@ try {
     const publisher = new StoryLinkPublisher(driver),
       s = request.settings.story.sticker;
     if (!s.enabled) throw Error("Ative o link na configuração antes do teste.");
+    let confirmedLayout: Awaited<ReturnType<typeof applyPanelLayout>> | undefined;
     const result = await prepareNewStory(
       driver,
       job,
@@ -80,8 +81,8 @@ try {
           { requireNewImage: true, expectedFilename: filename },
         );
       },
-      () =>
-        applyPanelLayout(
+      async () => {
+        confirmedLayout = await applyPanelLayout(
           driver,
           {
             job_id: job.job_id,
@@ -94,8 +95,12 @@ try {
             max_text_length: s.max_text_length,
           },
           directory,
-        ),
+        );
+        return confirmedLayout;
+      },
     );
+    if (!confirmedLayout?.style_confirmed || !confirmedLayout.resize_confirmed || !confirmedLayout.position_confirmed)
+      throw Error("LAYOUT_NOT_CONFIRMED: estilo, tamanho, posição");
     await writeFile(
       join(directory, "test-result.json"),
       JSON.stringify({
@@ -103,8 +108,9 @@ try {
         published: false,
         layout_confirmed: result.layout_confirmed,
         style_verified_visually: false,
-        style_transaction_confirmed: true,
-        size_ok: true, position_ok: true,
+        style_transaction_confirmed: confirmedLayout.style_transaction_confirmed,
+        style_confirmed: confirmedLayout.style_confirmed,
+        size_ok: confirmedLayout.resize_confirmed, position_ok: confirmedLayout.position_confirmed,
         image_loaded: true, url_verified: result.url_verified,
         sticker_text_verified: result.sticker_text_verified,
         editor_final_confirmed: true,
@@ -117,7 +123,7 @@ try {
     await saveScreenArtifacts(driver, directory, "error").catch(() => {});
   await writeFile(join(directory, "test-failure.json"), JSON.stringify({
     job_id: request.id, published: false,
-    reason: error instanceof Error && /^LAYOUT_NOT_CONFIRMED: (estilo|tamanho|posição|transação do link)$/.test(error.message) ? error.message : "TEST_FAILED",
+    reason: error instanceof Error && /^LAYOUT_NOT_CONFIRMED: (?:estilo|tamanho|posição|transação do link)(?:, (?:estilo|tamanho|posição))*$/.test(error.message) ? error.message : "TEST_FAILED",
   })).catch(() => {});
   console.error(error);
   process.exitCode = 1;

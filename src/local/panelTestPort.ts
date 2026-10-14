@@ -69,7 +69,7 @@ export function panelTestPort(
     try { await host.wait("worker"); }
     catch (error) {
       const failure = await readFile(join(directory, "test-failure.json"), "utf8").then(JSON.parse).catch(() => null);
-      if (failure?.job_id === id && failure.published === false && /^LAYOUT_NOT_CONFIRMED: (estilo|tamanho|posição|transação do link)$/.test(failure.reason)) throw Error(failure.reason);
+      if (failure?.job_id === id && failure.published === false && /^LAYOUT_NOT_CONFIRMED: (?:estilo|tamanho|posição|transação do link)(?:, (?:estilo|tamanho|posição))*$/.test(failure.reason)) throw Error(failure.reason);
       throw error;
     }
     if (action === "prepare") {
@@ -80,7 +80,7 @@ export function panelTestPort(
         result.job_id !== id ||
         result.published !== false ||
         result.layout_confirmed !== true ||
-        result.style_transaction_confirmed !== true ||
+        result.style_transaction_confirmed !== true || result.style_confirmed !== true ||
         result.size_ok !== true || result.position_ok !== true ||
         result.image_loaded !== true || result.url_verified !== true ||
         result.sticker_text_verified !== true || result.editor_final_confirmed !== true

@@ -40,6 +40,7 @@ export interface ConfiguredStickerLayoutPort {
     target: { x: number; y: number },
     bounds: StickerBounds,
   ): Promise<void>;
+  verifyStyle?(job: ConfiguredStickerJob): Promise<"PASS" | "FAIL" | "UNKNOWN">;
   recordEvent(
     jobId: string,
     event: string,
@@ -62,6 +63,16 @@ export interface ConfiguredLayoutDiagnostic {
   style_transaction_confirmed: boolean;
   size_ok: boolean;
   position_ok: boolean;
+  style_result: "PASS" | "FAIL" | "UNKNOWN";
+  style_command_sent: boolean;
+  resize_command_sent: boolean;
+  move_command_sent: boolean;
+  style_confirmed: boolean;
+  resize_confirmed: boolean;
+  position_confirmed: boolean;
+  actual_scale: number;
+  actual_x_percent: number;
+  actual_y_percent: number;
 }
 const width = (b: StickerBounds) => b.right - b.left,
   height = (b: StickerBounds) => b.bottom - b.top;
@@ -188,6 +199,11 @@ export async function prepareConfiguredStickerLayout(
     text_length: Array.from(job.sticker_text).length,
     verified: true,
   });
+  await port.recordEvent(job.job_id, "CONFIG_RECEIVED", {
+    style: job.sticker_style_index, scale: job.sticker_scale,
+    x: job.sticker_x_pct, y: job.sticker_y_pct, text: job.sticker_text,
+  });
+  const tapCoordinates: { x: number; y: number }[] = [];
   for (let tap = 0; tap < job.sticker_style_index; tap++) {
     const live = await read();
     if (!(await port.assertOwnsFreshLink(job)))
@@ -195,6 +211,7 @@ export async function prepareConfiguredStickerLayout(
     const center = stickerBoundsCenter(live.bounds);
     state.invalidate("style");
     await port.tapStyle(job.job_id, center);
+    tapCoordinates.push(center);
     await read();
   }
   await port.recordEvent(job.job_id, "STICKER_STYLE_APPLIED", {
@@ -204,8 +221,11 @@ export async function prepareConfiguredStickerLayout(
     current_job: true,
     style_index: job.sticker_style_index,
     taps: job.sticker_style_index,
+    tap_count_requested: job.sticker_style_index,
+    tap_count_executed: tapCoordinates.length, tap_coordinates: tapCoordinates,
     visual_verification: false,
   });
+  const styleResult = await port.verifyStyle?.(job) ?? "UNKNOWN";
   const before = await read(),
     targetWidth = width(before.bounds) * job.sticker_scale,
     targetHeight = height(before.bounds) * job.sticker_scale;
@@ -274,6 +294,7 @@ export async function prepareConfiguredStickerLayout(
       y: center.y - targets.requested.y,
     },
     confirmed =
+      styleResult === "PASS" &&
       sizeOK(final.bounds) &&
       positionOK(final) &&
       (await port.assertOwnsFreshLink(job));
@@ -291,6 +312,17 @@ export async function prepareConfiguredStickerLayout(
       current_job: true,
       layout_confirmed: true,
     });
+  await port.recordEvent(job.job_id, "LAYOUT_RESULT", {
+    configured: { style: job.sticker_style_index, scale: job.sticker_scale, x: job.sticker_x_pct, y: job.sticker_y_pct },
+    obtained: { style_transaction: true, canvas_bounds: final.canvas,
+      actual_scale: width(final.bounds) / width(before.bounds),
+      actual_x: (center.x - final.canvas.left) / width(final.canvas),
+      actual_y: (center.y - final.canvas.top) / height(final.canvas) },
+    position_error_x_percent: positionDelta.x / width(final.canvas),
+    position_error_y_percent: positionDelta.y / height(final.canvas),
+    style: styleResult, size: sizeOK(final.bounds) ? "PASS" : "FAIL",
+    position: positionOK(final) ? "PASS" : "FAIL", layout_confirmed: confirmed,
+  });
   return {
     text: job.sticker_text,
     style_index: job.sticker_style_index,
@@ -303,6 +335,16 @@ export async function prepareConfiguredStickerLayout(
     position_delta: positionDelta,
     within_tolerance: confirmed,
     layout_confirmed: confirmed,
+    style_result: styleResult,
+    style_command_sent: tapCoordinates.length > 0,
+    resize_command_sent: resizeRequired,
+    move_command_sent: moveRequired,
+    style_confirmed: styleResult === "PASS",
+    resize_confirmed: sizeOK(final.bounds),
+    position_confirmed: positionOK(final),
+    actual_scale: width(final.bounds) / width(before.bounds),
+    actual_x_percent: (center.x - final.canvas.left) / width(final.canvas),
+    actual_y_percent: (center.y - final.canvas.top) / height(final.canvas),
     style_verified_visually: false,
     style_transaction_confirmed: true,
     size_ok: sizeOK(final.bounds),
