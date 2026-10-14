@@ -472,3 +472,12 @@ test('unchanged position after two gestures remains partial, never successful', 
   assert.equal(result.resize_confirmed, true);
   assert.equal(result.position_confirmed, true);
  });
+
+test("fresh style zero is accepted only as expected initial style without taps", async () => {
+  const p = port(); delete p.verifyStyle;
+  const result = await prepareConfiguredStickerLayout(job({ sticker_style_index: 0 }), p);
+  assert.equal(result.style_result, 'PASS');
+  assert.equal(result.style_command_sent, false);
+  assert.equal(result.style_verified_visually, false);
+  assert.ok(p.events.some(e => e.event === 'STYLE_ASSUMED_INITIAL' && e.meta.STYLE_ASSUMED_INITIAL));
+});

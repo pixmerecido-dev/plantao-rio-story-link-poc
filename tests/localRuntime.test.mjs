@@ -574,3 +574,15 @@ test('tela mostra bloqueio conhecido e não expõe erros internos ou de transpor
   await f.manager.waitForTask();
   assert.equal((await f.store.read()).ready, true);
 });
+
+test('isolated movement mode is forwarded and never presented as complete layout', async () => {
+  const f = await fixture();
+  await f.manager.prepare(); await f.manager.waitForTask();
+  await f.account.detectCurrentAccount('instagram-default');
+  let received;
+  f.manager.testPort.prepare = async (_id, _directory, mode) => { received = mode; return {published:false, layout_confirmed:true}; };
+  await f.manager.startTest('move'); await f.manager.waitForTask();
+  assert.equal(received, 'move');
+  assert.match((await f.manager.status()).test.message, /Movimento isolado confirmado/);
+  assert.equal((await f.manager.status()).test.published, false);
+});

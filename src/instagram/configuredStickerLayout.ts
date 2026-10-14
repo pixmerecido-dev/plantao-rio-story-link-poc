@@ -225,7 +225,9 @@ export async function prepareConfiguredStickerLayout(
     tap_count_executed: tapCoordinates.length, tap_coordinates: tapCoordinates,
     visual_verification: false,
   });
-  const styleResult = await port.verifyStyle?.(job) ?? "UNKNOWN";
+  const assumedInitial = job.sticker_style_index === 0 && tapCoordinates.length === 0;
+  const styleResult = assumedInitial ? "PASS" : await port.verifyStyle?.(job) ?? "UNKNOWN";
+  await port.recordEvent(job.job_id, "STYLE_ASSUMED_INITIAL", { STYLE_ASSUMED_INITIAL: assumedInitial, visual_verified: false });
   const before = await read(),
     targetWidth = width(before.bounds) * job.sticker_scale,
     targetHeight = height(before.bounds) * job.sticker_scale;

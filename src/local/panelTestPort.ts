@@ -8,7 +8,7 @@ import type { TestPort } from "./runtimeManager.js";
 import { validateStoryJobInput } from "../config/prepareStoryJob.js";
 import { assertExecutableStoryMedia } from "../media/StoryMedia.js";
 import type { OperationsRepository } from "../admin/operationsStorage.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 export function panelTestPort(
   host: ProcessSupervisor,
   store: RuntimeStore,
@@ -20,10 +20,12 @@ export function panelTestPort(
     action: "prepare" | "end",
     id: string,
     directory: string,
+    mode: "layout" | "move" = "layout",
   ) => {
     const settings = await repository.getSettings();
     const sticker = settings.story.sticker;
-    await store.change(s => { runtimeEvent(s, "Configuração salva carregada para o teste.", `CONFIG_LOADED ${JSON.stringify({ style: sticker.style_index, scale: sticker.scale, x: sticker.x_pct, y: sticker.y_pct, text: sticker.text, updated_at: null, loaded_at: new Date().toISOString(), saved_scale: sticker.scale, loaded_scale: sticker.scale, saved_x: sticker.x_pct, loaded_x: sticker.x_pct, saved_y: sticker.y_pct, loaded_y: sticker.y_pct })}`); });
+    const settingsSha = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
+    await store.change(s => { runtimeEvent(s, "Configuração salva carregada para o teste.", `PANEL_CONFIG_SAVED ${JSON.stringify({ snapshot_sha256: settingsSha, style: sticker.style_index, scale: sticker.scale, x: sticker.x_pct, y: sticker.y_pct, text: sticker.text, updated_at: null, loaded_at: new Date().toISOString(), saved_scale: sticker.scale, loaded_scale: sticker.scale, saved_x: sticker.x_pct, loaded_x: sticker.x_pct, saved_y: sticker.y_pct, loaded_y: sticker.y_pct })}`); });
     const media = resolve(root, "assets/story-preview-demo.jpg"),
       url = "https://plantaorio.com.br/";
     if (action === "prepare") {
@@ -37,16 +39,19 @@ export function panelTestPort(
       if (!settings.story.sticker.enabled)
         throw Error("Ative o link na configuração antes do teste.");
     }
+    if (mode === "move" && settings.story.sticker.style_index !== 0) throw Error("Teste isolado exige estilo Azul (estado inicial). Salve estilo 0 antes do teste.");
     await mkdir(directory, { recursive: true });
     const request = join(directory, "test-request.json");
     await writeFile(
       request,
       JSON.stringify({
         id,
+        mode,
         directory,
         media,
         url,
         settings,
+        settings_sha256: settingsSha,
         operations: await operations.read(),
       }),
       { mode: 0o600 },
@@ -85,17 +90,18 @@ export function panelTestPort(
         result.job_id !== id ||
         result.published !== false ||
         result.layout_confirmed !== true ||
-        result.style_transaction_confirmed !== true || result.style_confirmed !== true ||
+        mode !== "move" && (result.style_transaction_confirmed !== true || result.style_confirmed !== true ||
         result.size_ok !== true || result.position_ok !== true ||
         result.image_loaded !== true || result.url_verified !== true ||
-        result.sticker_text_verified !== true || result.editor_final_confirmed !== true
+        result.sticker_text_verified !== true || result.editor_final_confirmed !== true) ||
+        mode === "move" && result.movement_confirmed !== true
       )
         throw Error("Resultado do teste não comprovado.");
       return result;
     }
   };
   return {
-    prepare: (id, directory) => launch("prepare", id, directory),
+    prepare: (id, directory, mode) => launch("prepare", id, directory, mode),
     end: async () => {
       const id = `end-test-${randomUUID()}`;
       await launch("end", id, join(root, "artifacts", id));

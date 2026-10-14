@@ -29,6 +29,7 @@ export interface TestPort {
   prepare(
     id: string,
     directory: string,
+    mode?: "layout" | "move",
   ): Promise<{ published: false; layout_confirmed: boolean }>;
   end(): Promise<void>;
 }
@@ -395,7 +396,7 @@ export class RuntimeManager {
       this.busy = false;
     }
   }
-  async startTest() {
+  async startTest(mode: "layout" | "move" = "layout") {
     const state = await this.status();
     if (!state.ready) throw Error("Prepare o sistema primeiro.");
     if (!state.account_confirmed)
@@ -418,14 +419,14 @@ export class RuntimeManager {
           published: false,
         };
       });
-      const result = await this.testPort.prepare(id, directory);
+      const result = await this.testPort.prepare(id, directory, mode);
       if (result.published !== false || !result.layout_confirmed)
         throw Error("Teste não confirmou layout seguro.");
       await this.store.change((s) => {
         s.test!.status = "TEST_READY";
         s.test!.finished_at = new Date().toISOString();
         s.test!.message =
-          "Story preparado com sucesso. Nenhuma publicação foi realizada.";
+          mode === "move" ? "Movimento isolado confirmado. Sem resize e sem publicação." : "Story preparado com sucesso. Nenhuma publicação foi realizada.";
         runtimeEvent(s, s.test!.message);
       });
     });

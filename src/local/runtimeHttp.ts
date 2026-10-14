@@ -55,8 +55,9 @@ export function runtimeHttp(manager: RuntimeManager) {
       return true;
     }
     if (req.method === "POST" && url.pathname === "/api/runtime/test") {
-      await body();
-      await manager.startTest();
+      const input = await body() as {mode?: string};
+      if (input.mode !== undefined && input.mode !== "layout" && input.mode !== "move") throw Error("Modo de teste inválido.");
+      await manager.startTest(input.mode as "layout" | "move" | undefined);
       send(res, { started: true, published: false }, 202);
       return true;
     }

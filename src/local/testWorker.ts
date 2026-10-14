@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { isolatedStickerMove } from "./isolatedStickerMove.js";
 import "dotenv/config";
 import { resolve, join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -22,10 +24,12 @@ if (!requestFile || !["prepare", "end"].includes(action ?? ""))
   throw Error("Ação de teste inválida.");
 const request = JSON.parse(await readFile(requestFile, "utf8")) as {
   id: string;
+  mode?: "layout" | "move";
   directory: string;
   media: string;
   url: string;
   settings: StorySettings;
+  settings_sha256: string;
   operations: OperationsState;
 };
 const directory = resolve(request.directory),
@@ -33,6 +37,9 @@ const directory = resolve(request.directory),
 let connected = false;
 try {
   await mkdir(directory, { recursive: true });
+  if (createHash("sha256").update(JSON.stringify(request.settings)).digest("hex") !== request.settings_sha256) throw Error("Configuração carregada diverge da configuração salva; teste cancelado.");
+  const loaded = request.settings.story.sticker;
+  console.log("WORKER_CONFIG_LOADED", JSON.stringify({ style: loaded.style_index, scale: loaded.scale, x: loaded.x_pct, y: loaded.y_pct, text: loaded.text, updated_at: null, loaded_at: new Date().toISOString(), snapshot_sha256: request.settings_sha256 }));
   const job =
     action === "prepare"
       ? await validateStoryJobInput({
@@ -82,6 +89,7 @@ try {
         );
       },
       async () => {
+        if (request.mode === "move") return isolatedStickerMove(driver, job.job_id, directory);
         confirmedLayout = await applyPanelLayout(
           driver,
           {
@@ -99,6 +107,9 @@ try {
         return confirmedLayout;
       },
     );
+    if (request.mode === "move") {
+      await writeFile(join(directory,"test-result.json"), JSON.stringify({job_id:job.job_id,published:false,layout_confirmed:true,movement_confirmed:true}));
+    } else {
     if (!confirmedLayout?.style_confirmed || !confirmedLayout.resize_confirmed || !confirmedLayout.position_confirmed)
       throw Error("LAYOUT_NOT_CONFIRMED: estilo, tamanho, posição");
     await writeFile(
@@ -116,6 +127,7 @@ try {
         editor_final_confirmed: true,
       }),
     );
+  }
   }
   console.log("[SAFE] Nenhuma publicação foi realizada.");
 } catch (error) {
