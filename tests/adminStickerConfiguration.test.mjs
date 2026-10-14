@@ -449,3 +449,22 @@ test('unchanged position after two gestures remains partial, never successful', 
   assert.equal(result.size_ok, true);
   assert.equal(result.position_ok, true);
  });
+
+ test("integer Android bounds at tolerance edge do not prevent positioning", async () => {
+  const p = port();
+  p.bounds = { left: 192, top: 902, right: 888, bottom: 1018 };
+  p.resizeNative = async () => { p.bounds = { left: 264, top: 914, right: 815, bottom: 1005 }; };
+  const result = await prepareConfiguredStickerLayout(job({ sticker_scale: 0.853, sticker_x_pct: 0.35045632333767895, sticker_y_pct: 0.631775004656361 }), p);
+  assert.equal(result.size_ok, true);
+  assert.equal(result.move_command_sent, true);
+  assert.equal(result.position_confirmed, true);
+  assert.ok(Math.abs(result.actual_scale - 551 / 696) < 0.00001);
+ });
+ test("rounding tolerance does not accept materially undersized sticker", async () => {
+  const p = port();
+  p.resizeNative = async () => { p.bounds = { left: 264, top: 914, right: 750, bottom: 994 }; };
+  const result = await prepareConfiguredStickerLayout(job({ sticker_scale: 0.853 }), p);
+  assert.equal(result.size_ok, false);
+  assert.equal(result.move_command_sent, false);
+  assert.equal(result.layout_confirmed, false);
+ });

@@ -230,8 +230,8 @@ export async function prepareConfiguredStickerLayout(
     targetWidth = width(before.bounds) * job.sticker_scale,
     targetHeight = height(before.bounds) * job.sticker_scale;
   const sizeOK = (b: StickerBounds) =>
-    Math.abs(width(b) - targetWidth) <= targetWidth * 0.08 &&
-    Math.abs(height(b) - targetHeight) <= targetHeight * 0.08;
+    Math.abs(width(b) - targetWidth) <= targetWidth * 0.08 + 1 &&
+    Math.abs(height(b) - targetHeight) <= targetHeight * 0.08 + 1;
   const resizeRequired = !sizeOK(before.bounds);
   if (resizeRequired) {
     state.invalidate("resize");
@@ -247,6 +247,7 @@ export async function prepareConfiguredStickerLayout(
   await port.recordEvent(job.job_id, "STICKER_SIZE_VALIDATED", {
     resize_required: resizeRequired, before_bounds: before.bounds,
     after_bounds: afterResize.bounds, target_width: targetWidth, target_height: targetHeight,
+    bounds_rounding_tolerance_px: 1,
     scale_ratio: width(afterResize.bounds) / width(before.bounds), size_ok: sizeOK(afterResize.bounds),
   });
   if (resizeRequired)
