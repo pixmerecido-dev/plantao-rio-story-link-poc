@@ -140,3 +140,32 @@ for (const stuck of [false, true]) test(`descarte de foto uma vez; diálogo pres
   const files = await readdir(directory);
   for (const name of ['discard-dialog-1', 'discard-photo-after-1', 'reset-final']) for (const ext of ['xml', 'png', 'json']) assert.ok(files.includes(`${name}.${ext}`));
 });
+
+test('own profile left by account verification returns through Home and stabilizes', async () => {
+  const mock = fixture(['STATE_HOME']);
+  const session = mock.driver.getSession();
+  const source = session.getPageSource;
+  const query = session.$$;
+  let profile = true, clicks = 0;
+  session.getPageSource = async () => profile
+    ? '<hierarchy><node text="Edit profile"/><node text="Share profile"/><node resource-id="com.instagram.android:id/profile_tab"/></hierarchy>'
+    : source();
+  session.$$ = async selector => {
+    if (profile && selector.includes('profile_tab')) return [{ isDisplayed: async () => true, isSelected: async () => true }];
+    if (profile && selector.includes('feed_tab')) return [{ isDisplayed: async () => true, isEnabled: async () => true, getAttribute: async () => 'true', click: async () => { clicks++; profile = false; } }];
+    return query(selector);
+  };
+  await normalizeInstagramToHome(mock.driver, await mkdtemp('/tmp/normalize-profile-'));
+  assert.equal(clicks, 1);
+  assert.equal(mock.counts().backs, 0);
+  assert.equal(mock.counts().homeWaits, 1);
+});
+
+test('profile labels without selected own-profile tab remain blocked', async () => {
+  const mock = fixture(['STATE_UNKNOWN']);
+  const session = mock.driver.getSession();
+  session.getPageSource = async () => '<hierarchy><node text="Edit profile"/><node text="Share profile"/><node resource-id="com.instagram.android:id/profile_tab"/></hierarchy>';
+  session.$$ = async () => [{ isDisplayed: async () => true, isSelected: async () => false }];
+  await assert.rejects(normalizeInstagramToHome(mock.driver, await mkdtemp('/tmp/normalize-profile-unsafe-')), /desconhecido ou ambíguo/);
+  assert.equal(mock.counts().backs, 0);
+});

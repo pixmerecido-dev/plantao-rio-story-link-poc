@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 
 type Driver = Pick<InstagramDriver, 'getSession'>;
-type ResetState = InstagramState | 'STATE_SHARE' | 'STATE_DRAFT_DIALOG' | 'STATE_DISCARD_PHOTO_DIALOG' | 'STATE_UNSAFE_DIALOG';
+type ResetState = InstagramState | 'STATE_OWN_PROFILE' | 'STATE_SHARE' | 'STATE_DRAFT_DIALOG' | 'STATE_DISCARD_PHOTO_DIALOG' | 'STATE_UNSAFE_DIALOG';
 const intermediate = new Set<ResetState>(['STATE_EDITOR', 'STATE_EDITOR_WITH_LINK', 'STATE_STICKERS', 'STATE_LINK_EDITOR', 'STATE_GALLERY', 'STATE_CREATE', 'STATE_SHARE']);
 
 function visibleResetElements(source: string): InstagramElement[] {
@@ -90,6 +90,14 @@ export function inspectResetScreen(source: string) {
   return { state: undefined, evidence: elements };
 }
 
+/** Labels observed on the own profile; selected native tab is checked separately. */
+export function snapshotContainsOwnProfile(source: string): boolean {
+  const elements = visibleResetElements(source);
+  return ['Edit profile', 'Share profile'].every(text =>
+    elements.some(element => element.text === text)) &&
+    elements.some(element => element['resource-id'] === 'com.instagram.android:id/profile_tab');
+}
+
 /** Home é inferida somente do snapshot; tabs e containers não contam como sinais. */
 export function analyzeResetHierarchy(source: string) {
   const elements = visibleResetElements(source);
@@ -141,6 +149,12 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
       const base = await detectInstagramState(session);
       if (base === 'STATE_EDITOR_WITH_LINK') state = base;
     }
+    if (state === 'STATE_UNKNOWN' && !screen.state && snapshot.blockers.length === 0 &&
+        snapshotContainsOwnProfile(source)) {
+      const profiles = await session.$$(resourceIdSelector('com.instagram.android:id/profile_tab'));
+      if (profiles.length === 1 && await profiles[0]!.isDisplayed() && await profiles[0]!.isSelected())
+        state = 'STATE_OWN_PROFILE';
+    }
     return { ...screen, ...snapshot, state };
   };
   try {
@@ -166,6 +180,19 @@ export async function normalizeInstagramToHome(driver: Driver, directory: string
         console.log('[RESET] estado visual final confirmado: STATE_HOME');
         await writeFile(join(directory, 'normalization.json'), `${JSON.stringify({ backs, discards, trace, finalState: screen.state, homeSignals: final.homeSignals, blockers: final.blockers }, null, 2)}\n`, 'utf8');
         return;
+      }
+      if (screen.state === 'STATE_OWN_PROFILE') {
+        if (trace.some(entry => entry.action === 'own-profile-to-home')) throw new Error('Home não apareceu após sair do perfil; não repetir clique.');
+        const feeds = await session.$$(resourceIdSelector('com.instagram.android:id/feed_tab'));
+        if (feeds.length !== 1 || !await feeds[0]!.isDisplayed() || !await feeds[0]!.isEnabled() || await feeds[0]!.getAttribute('clickable') !== 'true')
+          throw new Error('Controle Home ausente ou ambíguo no perfil.');
+        console.log('[RESET] perfil próprio confirmado; retornando pela aba Home');
+        await feeds[0]!.click();
+        trace.push({ state: screen.state, action: 'own-profile-to-home' });
+        await session.pause(500);
+        await saveScreenArtifacts(driver, directory, `reset-step-${++captures}`);
+        screen = await read();
+        continue;
       }
       if (screen.state === 'STATE_DRAFT_DIALOG' || screen.state === 'STATE_DISCARD_PHOTO_DIALOG') {
         const photoDialog = screen.state === 'STATE_DISCARD_PHOTO_DIALOG';
