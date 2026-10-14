@@ -66,7 +66,12 @@ export function panelTestPort(
         CONFIRM_REAL_PUBLISH: "NO",
       },
     );
-    await host.wait("worker");
+    try { await host.wait("worker"); }
+    catch (error) {
+      const failure = await readFile(join(directory, "test-failure.json"), "utf8").then(JSON.parse).catch(() => null);
+      if (failure?.job_id === id && failure.published === false && /^LAYOUT_NOT_CONFIRMED: (estilo|tamanho|posição|transação do link)$/.test(failure.reason)) throw Error(failure.reason);
+      throw error;
+    }
     if (action === "prepare") {
       const result = JSON.parse(
         await readFile(join(directory, "test-result.json"), "utf8"),
@@ -74,7 +79,11 @@ export function panelTestPort(
       if (
         result.job_id !== id ||
         result.published !== false ||
-        result.layout_confirmed !== true
+        result.layout_confirmed !== true ||
+        result.style_transaction_confirmed !== true ||
+        result.size_ok !== true || result.position_ok !== true ||
+        result.image_loaded !== true || result.url_verified !== true ||
+        result.sticker_text_verified !== true || result.editor_final_confirmed !== true
       )
         throw Error("Resultado do teste não comprovado.");
       return result;

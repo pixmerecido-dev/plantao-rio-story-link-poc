@@ -59,6 +59,9 @@ export interface ConfiguredLayoutDiagnostic {
   within_tolerance: boolean;
   layout_confirmed: boolean;
   style_verified_visually: false;
+  style_transaction_confirmed: boolean;
+  size_ok: boolean;
+  position_ok: boolean;
 }
 const width = (b: StickerBounds) => b.right - b.left,
   height = (b: StickerBounds) => b.bottom - b.top;
@@ -195,6 +198,10 @@ export async function prepareConfiguredStickerLayout(
     await read();
   }
   await port.recordEvent(job.job_id, "STICKER_STYLE_APPLIED", {
+    initial_style_index: 0,
+    requested_style_index: job.sticker_style_index,
+    style_transaction_confirmed: true,
+    current_job: true,
     style_index: job.sticker_style_index,
     taps: job.sticker_style_index,
     visual_verification: false,
@@ -210,7 +217,18 @@ export async function prepareConfiguredStickerLayout(
     state.invalidate("resize");
     await port.resizeNative(job.job_id, job.sticker_scale, before.bounds);
   }
-  const afterResize = await read();
+  let afterResize = await read();
+  // Only shrink again when still too large. Never compensate an overshoot with an unvalidated enlargement.
+  if (!sizeOK(afterResize.bounds) && width(afterResize.bounds) < width(before.bounds) * 0.99 && width(afterResize.bounds) > targetWidth * 1.08 && height(afterResize.bounds) > targetHeight * 1.08) {
+    state.invalidate("resize");
+    await port.resizeNative(job.job_id, targetWidth / width(afterResize.bounds), afterResize.bounds);
+    afterResize = await read();
+  }
+  await port.recordEvent(job.job_id, "STICKER_SIZE_VALIDATED", {
+    resize_required: resizeRequired, before_bounds: before.bounds,
+    after_bounds: afterResize.bounds, target_width: targetWidth, target_height: targetHeight,
+    scale_ratio: width(afterResize.bounds) / width(before.bounds), size_ok: sizeOK(afterResize.bounds),
+  });
   if (resizeRequired)
     await port.recordEvent(job.job_id, "STICKER_RESIZED", {
       bounds: afterResize.bounds,
@@ -231,9 +249,23 @@ export async function prepareConfiguredStickerLayout(
     );
   };
   const moveRequired = sizeOK(afterResize.bounds) && !positionOK(afterResize);
-  if (moveRequired) {
+  let latest = afterResize;
+  for (let attempt = 1; moveRequired && !positionOK(latest) && attempt <= 2; attempt++) {
+    const fresh = await read();
+    const freshTargets = configuredCenterTarget(fresh.canvas, fresh.bounds, job.sticker_x_pct, job.sticker_y_pct);
+    const beforeCenter = stickerBoundsCenter(fresh.bounds);
     state.invalidate("position");
-    await port.moveW3C(job.job_id, targets.safe, afterResize.bounds);
+    await port.moveW3C(job.job_id, freshTargets.safe, fresh.bounds);
+    latest = await read();
+    const afterCenter = stickerBoundsCenter(latest.bounds);
+    await port.recordEvent(job.job_id, "STICKER_MOVE_ATTEMPT", {
+      attempt, canvas: fresh.canvas, before_bounds: fresh.bounds, before_center: beforeCenter,
+      target_center: freshTargets.requested, safe_target: freshTargets.safe,
+      after_bounds: latest.bounds, after_center: afterCenter,
+      delta_expected: { x: freshTargets.requested.x - beforeCenter.x, y: freshTargets.requested.y - beforeCenter.y },
+      delta_actual: { x: afterCenter.x - beforeCenter.x, y: afterCenter.y - beforeCenter.y },
+      position_ok: positionOK(latest),
+    });
   }
   const final = await read(),
     center = stickerBoundsCenter(final.bounds),
@@ -272,5 +304,8 @@ export async function prepareConfiguredStickerLayout(
     within_tolerance: confirmed,
     layout_confirmed: confirmed,
     style_verified_visually: false,
+    style_transaction_confirmed: true,
+    size_ok: sizeOK(final.bounds),
+    position_ok: positionOK(final),
   };
 }

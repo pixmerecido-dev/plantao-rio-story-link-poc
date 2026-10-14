@@ -401,3 +401,37 @@ test("preview do Dashboard escapa conteúdo do texto e não executa HTML", async
   assert.ok(html.includes("Prévia aproximada"));
   assert.ok(!html.includes("Centro calculado"));
 });
+
+test('style cycle records exactly the requested taps for the current job', async () => {
+  for (const index of [0, 1, 2, 3]) {
+    const p = port();
+    const result = await prepareConfiguredStickerLayout(job({ sticker_style_index: index }), p);
+    assert.equal(p.calls.filter(c => c === 'tap').length, index);
+    assert.equal(result.style_transaction_confirmed, true);
+    const style = p.events.find(e => e.event === 'STICKER_STYLE_APPLIED').meta;
+    assert.equal(style.initial_style_index, 0);
+    assert.equal(style.requested_style_index, index);
+    assert.equal(style.style_transaction_confirmed, true);
+  }
+});
+test('position retries once with fresh bounds, then confirms measurable movement', async () => {
+  const p = port();
+  const move = p.moveW3C;
+  let attempts = 0;
+  p.moveW3C = async (...args) => { if (++attempts === 2) await move(...args); };
+  const result = await prepareConfiguredStickerLayout(job(), p);
+  assert.equal(attempts, 2);
+  assert.equal(result.position_ok, true);
+  assert.equal(result.layout_confirmed, true);
+  const events = p.events.filter(e => e.event === 'STICKER_MOVE_ATTEMPT');
+  assert.equal(events.length, 2);
+  assert.deepEqual(events[0].meta.delta_actual, { x: 0, y: 0 });
+  assert.equal(events[1].meta.position_ok, true);
+});
+test('unchanged position after two gestures remains partial, never successful', async () => {
+  const p = port({ moveW3C: async () => {} });
+  const result = await prepareConfiguredStickerLayout(job(), p);
+  assert.equal(p.events.filter(e => e.event === 'STICKER_MOVE_ATTEMPT').length, 2);
+  assert.equal(result.layout_confirmed, false);
+  assert.equal(result.position_ok, false);
+});

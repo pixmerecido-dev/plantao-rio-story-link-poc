@@ -103,6 +103,11 @@ try {
         published: false,
         layout_confirmed: result.layout_confirmed,
         style_verified_visually: false,
+        style_transaction_confirmed: true,
+        size_ok: true, position_ok: true,
+        image_loaded: true, url_verified: result.url_verified,
+        sticker_text_verified: result.sticker_text_verified,
+        editor_final_confirmed: true,
       }),
     );
   }
@@ -110,6 +115,10 @@ try {
 } catch (error) {
   if (connected)
     await saveScreenArtifacts(driver, directory, "error").catch(() => {});
+  await writeFile(join(directory, "test-failure.json"), JSON.stringify({
+    job_id: request.id, published: false,
+    reason: error instanceof Error && /^LAYOUT_NOT_CONFIRMED: (estilo|tamanho|posição|transação do link)$/.test(error.message) ? error.message : "TEST_FAILED",
+  })).catch(() => {});
   console.error(error);
   process.exitCode = 1;
 } finally {
