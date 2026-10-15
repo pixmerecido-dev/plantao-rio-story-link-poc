@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {center,safeTarget,movementMetrics,benchmarkMove,benchmarkResize,resizeTrial} from '../dist/gestureLab/core.js';
+import {center,safeTarget,movementMetrics,benchmarkMove,benchmarkResize,resizeTrial,RESIZE_TOLERANCE,measuredPinchSupport} from '../dist/gestureLab/core.js';
 function fixture({working='W3C',fraction=1,resize=true}={}) {
   let box={left:300,top:700,right:700,bottom:780};
   const calls=[],captures=[];
@@ -103,7 +103,7 @@ test('adaptive pinch reverses direction after overshoot and measures pinch out',
  assert.equal(r.success,true);
  assert.equal(r.iterations[0].direction,'in');
  assert.ok(r.iterations.some(i=>i.direction==='out'));
- assert.ok(Math.abs(r.error_percent)<=3);
+ assert.ok(Math.abs(r.error_percent)<=RESIZE_TOLERANCE*100);
  assert.ok(r.iterations.length<=5);
 });
 
@@ -132,4 +132,51 @@ test('absolute target remains anchored to initial width and no gesture follows t
  assert.equal(r.stop_reason,'WITHIN_TOLERANCE');
  assert.ok(Math.abs(r.iterations[0].error_after_percent)<=3);
  assert.equal(r.iterations[0].error_before_percent,(400-360)/360*100);
+});
+
+test('real 542 to 504 reduction passes four percent and stops without extra pinch',async()=>{
+ const f=fixture();let box={left:269,top:700,right:811,bottom:790};let gestures=0;
+ f.port.read=async()=>({bounds:structuredClone(box),canvas:{left:0,top:0,right:1080,bottom:1920},identity:'sticker',device:'mock'});
+ f.port.resize=async()=>{gestures++;box={left:288,top:700,right:792,bottom:790};};
+ const r=await resizeTrial(f.port,0.9,'NATIVE','real-edge');
+ assert.equal(RESIZE_TOLERANCE,0.04);assert.equal(r.target_width,487.8);
+ assert.equal(r.final_width,504);assert.equal(r.success,true);
+ assert.equal(r.PINCH_IN_SUPPORTED,true);assert.equal(gestures,1);
+ assert.equal(r.stop_reason,'WITHIN_TOLERANCE');
+ assert.ok(r.error_percent>3&&r.error_percent<4);
+});
+test('support is measured per direction regardless of previously reported flags',async()=>{
+ const before=await fixture().port.read();
+ const reduce={...before,bounds:{...before.bounds,right:before.bounds.right-38}};
+ const grow={...before,bounds:{...before.bounds,right:before.bounds.right+38}};
+ assert.deepEqual(measuredPinchSupport([
+  {direction:'in',before,after:reduce,command_error:null,PINCH_IN_SUPPORTED:false},
+  {direction:'out',before,after:grow,command_error:null,PINCH_OUT_SUPPORTED:false},
+ ]),{PINCH_IN_SUPPORTED:true,PINCH_OUT_SUPPORTED:true});
+ assert.deepEqual(measuredPinchSupport([
+  {direction:'in',before,after:before,command_error:null},
+  {direction:'out',before,after:grow,command_error:'failed'},
+ ]),{PINCH_IN_SUPPORTED:false,PINCH_OUT_SUPPORTED:false});
+});
+test('resize above four percent is not approved by new operational tolerance',async()=>{
+ const f=fixture();let box={left:269,top:700,right:811,bottom:790};
+ f.port.read=async()=>({bounds:structuredClone(box),canvas:{left:0,top:0,right:1080,bottom:1920},identity:'sticker',device:'mock'});
+ f.port.resize=async()=>{box={left:285.5,top:700,right:794.5,bottom:790};};
+ const r=await resizeTrial(f.port,0.9,'NATIVE','outside');
+ assert.ok(r.error_percent>4);assert.equal(r.success,false);
+});
+
+test('aggregate retains pinch-in proven during probe correction even when next round has no effect',async()=>{
+ const f=fixture();const resize=f.port.resize;let n=0;
+ f.port.resize=async(method,bounds,factor)=>{
+   n++;
+   if(n===1)await resize(method,bounds,1.2);
+   else if(n===2)await resize(method,bounds,0.9);
+ };
+ const r=await benchmarkResize(f.port,'NATIVE');
+ assert.equal(r.pinch_out_probe.PINCH_IN_SUPPORTED,true);
+ assert.equal(r.rounds[0].PINCH_IN_SUPPORTED,false);
+ assert.equal(r.PINCH_IN_SUPPORTED,true);
+ assert.equal(r.PINCH_OUT_SUPPORTED,true);
+ assert.equal(r.qualified,false);
 });

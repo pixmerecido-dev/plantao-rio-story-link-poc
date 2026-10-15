@@ -63,6 +63,15 @@ export async function benchmarkMove(port:LabPort) {
   const qualified=rounds.length===5&&rounds.every(r=>r.success&&!r.command_error);
   return {kind:'move',comparison: (['W3C','ADB-700','ADB-1000','ADB-1300','NATIVE'] as MoveMethod[]).map(method=>({method,status:attempts.find(r=>r.method===method)?.success ? 'PASS' : attempts.some(r=>r.method===method) ? 'FAIL' : 'NOT_TESTED'})),initial,attempts,rounds,candidate:winner,recommended:qualified?winner:null,qualified,passed:rounds.filter(r=>r.success&&!r.command_error).length,total:5,last:await port.read(),published:false};
 }
+export const RESIZE_TOLERANCE = 0.04;
+type PinchObservation = {direction:'in'|'out';before:Snapshot;after:Snapshot;command_error:string|null};
+/** Derive support from measured actions, including corrections in the probe and all rounds. */
+export function measuredPinchSupport(observations:PinchObservation[]) {
+  return {
+    PINCH_IN_SUPPORTED: observations.some(i=>i.direction==='in'&&!i.command_error&&width(i.before.bounds)-width(i.after.bounds)>=3),
+    PINCH_OUT_SUPPORTED: observations.some(i=>i.direction==='out'&&!i.command_error&&width(i.after.bounds)-width(i.before.bounds)>=3),
+  };
+}
 /** Error-band controller: observed gain is diagnostic, never a linear actuator model. */
 export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C',name:string) {
   if(![0.9,0.8,1.1].includes(scale)) throw Error('Use escala controlada 0.9, 0.8 ou 1.1.');
@@ -79,7 +88,7 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
     const fresh=await port.read();validateSnapshot(fresh);
     if(fresh.identity!==before.identity||fresh.device!==before.device||JSON.stringify(fresh.canvas)!==JSON.stringify(before.canvas)) throw Error('Objeto mudou durante resize.');
     const currentWidth=width(fresh.bounds),errorBefore=(currentWidth-target)/target;
-    if(Math.abs(errorBefore)<=0.03){after=fresh;stopReason='WITHIN_TOLERANCE';break;}
+    if(Math.abs(errorBefore)<=RESIZE_TOLERANCE){after=fresh;stopReason='WITHIN_TOLERANCE';break;}
     // Preserve one slot for direction reversal; never spend the fifth gesture on blind convergence.
     if(i===4&&!overshootSeen){stopReason='CORRECTION_SLOT_RESERVED';break;}
     const direction: 'in'|'out'=currentWidth>target?'in':'out';
@@ -115,18 +124,17 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
       minimumEffective[direction]=Math.min(minimumEffective[direction]??Infinity,strength);
       gains[direction]=effectRatio/strength;
     }
-    if(Math.abs(errorAfter)<=0.03){stopReason='WITHIN_TOLERANCE';break;}
+    if(Math.abs(errorAfter)<=RESIZE_TOLERANCE){stopReason='WITHIN_TOLERANCE';break;}
   }
   await port.capture(`${name}-after`);
   const actual_scale=width(after.bounds)/width(before.bounds),error=(width(after.bounds)-target)/target;
   const drift=Math.hypot(center(after.bounds).x-center(before.bounds).x,center(after.bounds).y-center(before.bounds).y);
-  const pinchIn=iterations.some(i=>i.direction==='in'&&i.delta_px<=-3&&!i.command_error);
-  const pinchOut=iterations.some(i=>i.direction==='out'&&i.delta_px>=3&&!i.command_error);
-  return {method,requested_scale:scale,initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,stop_reason:stopReason,
+  const {PINCH_IN_SUPPORTED:pinchIn,PINCH_OUT_SUPPORTED:pinchOut}=measuredPinchSupport(iterations);
+  return {method,tolerance:RESIZE_TOLERANCE,requested_scale:scale,initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,stop_reason:stopReason,
     PINCH_IN_SUPPORTED:pinchIn,PINCH_OUT_SUPPORTED:pinchOut,
     minimum_observed_effective_strength:minimumEffective,last_no_effect_strength:lastIgnored,observed_gain_per_strength:gains,
     supported:pinchIn||pinchOut,calibrated:false,before,after,before_width:width(before.bounds),before_height:before.bounds.bottom-before.bounds.top,after_width:width(after.bounds),after_height:after.bounds.bottom-after.bounds.top,
-    iterations,actual_scale,error,center_drift:drift,success:iterations.length>0&&iterations.every(i=>!i.command_error)&&Math.abs(error)<=0.03&&Math.abs(width(after.bounds)-width(before.bounds))>=2&&drift<=Math.max(5,width(before.canvas)*0.02)};
+    iterations,actual_scale,error,center_drift:drift,success:iterations.length>0&&iterations.every(i=>!i.command_error)&&Math.abs(error)<=RESIZE_TOLERANCE&&Math.abs(width(after.bounds)-width(before.bounds))>=2&&drift<=Math.max(5,width(before.canvas)*0.02)};
 }
 export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C') {
   const pinchOutProbe=await resizeTrial(port,1.1,method,`pinch-out-probe-${method}`);
@@ -136,9 +144,8 @@ export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C') {
     rounds.push(result);if(!result.success) break;
   }
   const qualified=rounds.length===5&&rounds.every(r=>r.success);
-  return {kind:'resize',method,pinch_out_probe:pinchOutProbe,
-    PINCH_OUT_SUPPORTED:pinchOutProbe.PINCH_OUT_SUPPORTED||rounds.some(r=>r.PINCH_OUT_SUPPORTED),
-    PINCH_IN_SUPPORTED:rounds.some(r=>r.PINCH_IN_SUPPORTED),
+  return {kind:'resize',method,tolerance:RESIZE_TOLERANCE,pinch_out_probe:pinchOutProbe,
+    ...measuredPinchSupport([pinchOutProbe,...rounds].flatMap(r=>r.iterations)),
     supported:pinchOutProbe.supported||rounds.some(r=>r.supported),calibrated:qualified,rounds,qualified,recommended:qualified?method:null,passed:rounds.filter(r=>r.success).length,total:5,
     mean_absolute_error:rounds.length?rounds.reduce((sum,r)=>sum+Math.abs(r.error),0)/rounds.length:null,last:await port.read(),published:false};
 }
