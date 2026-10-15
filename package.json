@@ -45,7 +45,11 @@
     "smoke:ingestion": "tsx src/ingestion/ingestionPanelSmokeTest.ts",
     "smoke:ingestion-isolated": "tsx src/ingestion/ingestionSmokeTest.ts ingestion",
     "inspect:instagram-account": "tsx src/instagram/inspectInstagramAccount.ts",
-    "smoke:instagram-account": "tsx src/instagram/instagramAccountSmokeTest.ts"
+    "smoke:instagram-account": "tsx src/instagram/instagramAccountSmokeTest.ts",
+    "smoke:gesture-move": "tsx src/gestureLab/cli.ts move",
+    "smoke:gesture-resize": "tsx src/gestureLab/cli.ts resize",
+    "smoke:gesture-benchmark": "tsx src/gestureLab/cli.ts benchmark",
+    "smoke:gesture-manual": "tsx src/gestureLab/cli.ts manual"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",
