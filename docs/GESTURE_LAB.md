@@ -63,3 +63,34 @@ Isso refaz o MOVE existente para obter evidência no editor atual e só então e
 `RESIZE_TOLERANCE = 0.04` vale para a parada antes/depois de cada gesto e para a aprovação final. O caso relatado 542 → 504 px, alvo 487,8 px, erro +3,321%, passa e para sem outro pinch (se identidade, centro e execução estiverem válidos). A calibração física não foi alterada por essa mudança de critério.
 
 `PINCH_IN_SUPPORTED` e `PINCH_OUT_SUPPORTED` são derivados diretamente das larguras antes/depois de ações na direção correspondente, com efeito mínimo de 3 px e sem erro de comando. O agregado inclui o probe e todas as rodadas: uma redução durante correção de overshoot no probe também comprova suporte. Isso não altera a exigência de cinco rodadas aprovadas para qualified=true. O relatório inclui tolerance=0.04; mean_absolute_error continua em fração (multiplicar por 100 para percentual), enquanto error_percent de cada rodada já está em pontos percentuais.
+
+## Investigação isolada do mínimo próximo de 504 px
+
+Com Instagram já no editor e apenas o Link Sticker visível, execute no CMD:
+
+```cmd
+set DRY_RUN=true
+npm run smoke:gesture-min-size
+```
+
+Não executa MOVE, não recria o Story, não altera estilo/texto/URL nem o controlador de resize. É uma experiência **W3C explícita de dois pointers**. O comando nativo pinchCloseGesture esconde as coordenadas internas dos dedos, portanto não é usado para alegar coordenadas físicas conhecidas nesta investigação. O relatório registra as coordenadas **solicitadas**; elas não são telemetria de contato físico do Android.
+
+A/B/C começam respectivamente a 15%, 35%, 45% da largura de cada lado do centro, dentro dos bounds atuais do sticker. Ambos os dedos convergem simetricamente na mesma horizontal. O controle varia geometria e intensidade: 0,25 nas primeiras três tentativas, depois 0,35, 0,45 e 0,50. Para após três tentativas consecutivas com alteração inferior a 3 px; máximo absoluto 12 gestos. Não utiliza a tolerância do resize para decidir efeito. Erro de comando, mudança de objeto/canvas ou aumento inesperado abortam a experiência. Antes de cada gesto os bounds são relidos e precisam corresponder aos usados no plano.
+
+Arquivos em `artifacts/gesture-min-size-<tempo>/`:
+
+- `min-size-report.json`: initial_width, observed_min_width, cada geometria, intensidade, quatro coordenadas dos dedos, delta e no_effect;
+- `attempts.jsonl`: plano enviado antes do gesto e resultado após leitura;
+- XML/PNG/JSON antes/depois de cada tentativa.
+
+Não rode novamente o teste automático antes do controle manual, para manter uma comparação útil. Execute:
+
+```cmd
+npm run smoke:gesture-min-size-manual
+```
+
+O comando captura a largura atual e aguarda **Enter**. Faça você mesmo um pinch-in no emulador, sem tocar em Your story; depois volte ao terminal e pressione Enter. Não há gesto automático nesse modo. A sessão faz somente uma consulta de pacote a cada 15 segundos para continuar disponível enquanto espera. Capturas e `min-size-manual-report.json` ficam em uma nova pasta `artifacts/gesture-min-size-manual-<tempo>/`.
+
+Compare e envie os dois relatórios e as imagens before/after. `MIN_SIZE_LIMIT_OBSERVED=true` significa apenas que houve estagnação próxima da referência (504 ±12 px), em três geometrias, sem reduzir abaixo de 501 px. **Não prova limite físico do Instagram**: os pointers W3C podem não ter sido aceitos. Se alguma geometria reduzir abaixo de 501, `GESTURE_GEOMETRY_LIMIT=true` registra que a automação explícita ultrapassou a referência; ainda não identifica sozinho qual aspecto do gesto nativo antigo era responsável. Se manualmente também não reduzir, isso reforça a hipótese de mínimo real, mas não exclui falha da tentativa manual. Se manualmente reduzir além do mínimo automático, há evidência de limitação da automação. O relatório sempre mantém `physical_limit_proven=false` até análise conjunta das evidências.
+
+Não há acesso ao emulador Windows no desenvolvimento cloud. Os testes unitários validam planos e critérios com mocks; nenhuma menor largura real ou conclusão definitiva é inventada. MOVE e a tolerância operacional de resize de ±4% permanecem congelados.
