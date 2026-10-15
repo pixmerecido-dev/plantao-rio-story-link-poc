@@ -5,7 +5,7 @@ export interface LabPort {
   read():Promise<Snapshot>;
   capture(name:string):Promise<void>;
   move(method:MoveMethod,start:Point,target:Point):Promise<void>;
-  resize(method:'NATIVE'|'W3C',bounds:Box,factor:number):Promise<void>;
+  resize(method:'NATIVE'|'W3C',bounds:Box,factor:number,strength?:number):Promise<void>;
 }
 export type Point={x:number;y:number};
 export const center=(b:Box):Point=>({x:(b.left+b.right)/2,y:(b.top+b.bottom)/2});
@@ -69,21 +69,48 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
   const target=width(before.bounds)*scale,iterations=[];
   await port.capture(`${name}-before`);
   let after=before;
-  for(let i=0;i<4&&Math.abs(width(after.bounds)-target)>target*0.03;i++) {
+  let strength=0.10;
+  let previousDirection: 'in'|'out'|undefined;
+  const gains: Partial<Record<'in'|'out',number>> = {};
+  const minimumEffective: Partial<Record<'in'|'out',number>> = {};
+  const lastIgnored: Partial<Record<'in'|'out',number>> = {};
+  for(let i=0;i<5&&Math.abs(width(after.bounds)-target)>target*0.03;i++) {
     const fresh=await port.read();validateSnapshot(fresh);
-    const factor=Math.max(0.90,Math.min(1.10,target/width(fresh.bounds)));
+    const currentWidth=width(fresh.bounds);
+    const direction: 'in'|'out'=currentWidth>target?'in':'out';
+    if(previousDirection && previousDirection!==direction) strength=Math.max(0.10,strength/2);
+    const factor=direction==='in'?1-strength:1+strength;
     let command_error:string|null=null;
-    try{await port.resize(method,fresh.bounds,factor);}catch(e){command_error=String(e);}
+    try{await port.resize(method,fresh.bounds,factor,strength);}catch(e){command_error=String(e);}
     after=await port.read();validateSnapshot(after);
     if(after.identity!==before.identity||after.device!==before.device||JSON.stringify(after.canvas)!==JSON.stringify(before.canvas)) throw Error('Objeto mudou durante resize.');
     await port.capture(`${name}-iteration-${i+1}`);
-    iterations.push({before:fresh,after,factor,command_error});
+    const deltaPx=width(after.bounds)-currentWidth;
+    const noEffect=Math.abs(deltaPx)<3;
+    const effectRatio=Math.abs(deltaPx)/currentWidth;
+    const correctDirection=direction==='in'?deltaPx<0:deltaPx>0;
+    iterations.push({attempt:i+1,direction,strength,before:fresh,after,factor,command_error,
+      before_width:currentWidth,after_width:width(after.bounds),delta_px:deltaPx,effect_ratio:effectRatio,
+      no_effect:noEffect,GESTURE_BELOW_THRESHOLD:noEffect,status:noEffect?'NO_EFFECT':correctDirection?'EFFECT':'WRONG_DIRECTION'});
+    previousDirection=direction;
+    if(noEffect) {
+      lastIgnored[direction]=strength;
+      strength=Math.min(0.40,strength+0.10);
+    } else if(correctDirection) {
+      minimumEffective[direction]=Math.min(minimumEffective[direction]??Infinity,strength);
+      gains[direction]=effectRatio/strength;
+      const remaining=Math.abs(target-width(after.bounds))/width(after.bounds);
+      const estimated=remaining/gains[direction]!;
+      // Never return to a physically ignored gesture size. Feedback is directional and session-local.
+      const floor=Math.max(0.10,(lastIgnored[direction]??0)+0.02);
+      strength=Math.min(0.40,Math.max(floor,estimated));
+    } else break;
     if(command_error) break;
   }
   await port.capture(`${name}-after`);
   const actual_scale=width(after.bounds)/width(before.bounds),error=(width(after.bounds)-target)/target;
   const drift=Math.hypot(center(after.bounds).x-center(before.bounds).x,center(after.bounds).y-center(before.bounds).y);
-  return {method,requested_scale:scale,before,after,before_width:width(before.bounds),before_height:before.bounds.bottom-before.bounds.top,after_width:width(after.bounds),after_height:after.bounds.bottom-after.bounds.top,iterations,actual_scale,error,center_drift:drift,success:iterations.length>0&&iterations.every(i=>!i.command_error)&&Math.abs(error)<=0.03&&Math.abs(width(after.bounds)-width(before.bounds))>=2&&drift<=Math.max(5,width(before.canvas)*0.02)};
+  return {method,requested_scale:scale,initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,minimum_observed_effective_strength:minimumEffective,last_no_effect_strength:lastIgnored,observed_gain_per_strength:gains,supported:iterations.some(i=>!i.no_effect&&i.status==='EFFECT'),calibrated:false,before,after,before_width:width(before.bounds),before_height:before.bounds.bottom-before.bounds.top,after_width:width(after.bounds),after_height:after.bounds.bottom-after.bounds.top,iterations,actual_scale,error,center_drift:drift,success:iterations.length>0&&iterations.every(i=>!i.command_error)&&Math.abs(error)<=0.03&&Math.abs(width(after.bounds)-width(before.bounds))>=2&&drift<=Math.max(5,width(before.canvas)*0.02)};
 }
 export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C') {
   const rounds=[];
@@ -92,5 +119,5 @@ export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C') {
     rounds.push(result);if(!result.success) break;
   }
   const qualified=rounds.length===5&&rounds.every(r=>r.success);
-  return {kind:'resize',method,rounds,qualified,recommended:qualified?method:null,passed:rounds.filter(r=>r.success).length,total:5,mean_absolute_error:rounds.reduce((sum,r)=>sum+Math.abs(r.error),0)/rounds.length,last:await port.read(),published:false};
+  return {kind:'resize',method,supported:rounds.some(r=>r.supported),calibrated:qualified,rounds,qualified,recommended:qualified?method:null,passed:rounds.filter(r=>r.success).length,total:5,mean_absolute_error:rounds.reduce((sum,r)=>sum+Math.abs(r.error),0)/rounds.length,last:await port.read(),published:false};
 }

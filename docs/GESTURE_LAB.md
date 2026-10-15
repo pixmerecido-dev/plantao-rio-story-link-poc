@@ -15,7 +15,7 @@ $env:GESTURE_MOVE_REPORT = 'C:\caminho\artifacts\gesture-lab-move-...\move-repor
 npm run smoke:gesture-resize
 ```
 
-O resize verifica se o dispositivo, objeto e bounds atuais correspondem ao final do relatório. Se o editor mudou, refaça MOVE. O relatório é evidência operacional local, não autorização para publicar. Cinco rodadas usam 90%, 110%, 80%, 110%, 90% relativos ao tamanho no início de cada rodada. Até quatro correções pequenas, máximo 10% por iteração, medição após cada gesto; tolerância ±3% de largura e limite de deriva de centro. Não há movimento deliberado durante resize. Native usa pinchCloseGesture/pinchOpenGesture; `GESTURE_RESIZE_METHOD=W3C` permite comparação explícita com dois pointers. Não há fallback automático de pinch. `GESTURE_SCALE=0.8`, `0.9` ou `1.1` executa um alvo isolado; isso não prova 5/5.
+O resize verifica se o dispositivo, objeto e bounds atuais correspondem ao final do relatório. Se o editor mudou, refaça MOVE. O relatório é evidência operacional local, não autorização para publicar. Cinco rodadas usam 90%, 110%, 80%, 110%, 90% relativos ao tamanho no início de cada rodada. Até cinco tentativas adaptativas, intensidade nativa inicial 0,10 e limite 0,40, medição após cada gesto; tolerância ±3% de largura e limite de deriva de centro. Não há movimento deliberado durante resize. Native usa pinchCloseGesture/pinchOpenGesture; `GESTURE_RESIZE_METHOD=W3C` permite comparação explícita com dois pointers. Não há fallback automático de pinch. `GESTURE_SCALE=0.8`, `0.9` ou `1.1` executa um alvo isolado; isso não prova 5/5.
 
 ```text
 npm run smoke:gesture-benchmark
@@ -36,3 +36,21 @@ Um comando sem erro não prova sucesso. Os relatórios contêm bounds, canvas, c
 O Instagram pode expor apenas “Sticker. Touch and hold…”. Nesse caso o operador fornece o Link Sticker, e a leitura confirma o único objeto visual no editor; o laboratório **não prova o tipo Link nem modifica a proteção de publicação**. Resource-ids, accessibility e geometria podem mudar com versões do Instagram. As distâncias deste experimento são absolutas para testar o emulador atual; os limites do canvas são dinâmicos. Repetições no mesmo emulador não demonstram compatibilidade universal.
 
 Nenhum vencedor nativo está comprovado pelo desenvolvimento cloud. Só recomendar quando os relatórios reais tiverem MOVE 5/5 e RESIZE 5/5 dentro da tolerância, com capturas coerentes. Não reintegrar automaticamente. Commits de estratégias vencedoras ficam pendentes desses resultados reais.
+
+## Resize adaptativo por limiar
+
+Evidência local relatada pelo operador: native reduziu 672 → 636 px com alvo 604,8 px, mas correções posteriores não tiveram efeito. Isso demonstra SUPPORTED=true naquele teste, CALIBRATED=false. O valor mínimo do limiar físico ainda não foi determinado.
+
+O controlador não envia diretamente `target/current` como intensidade. Usa força inicial 0,10, mede o delta e considera NO_EFFECT quando o módulo é menor que 3 px. Nesse caso sobe 0,10 imediatamente (máximo 0,40). Se houve efeito na direção correta, estima o ganho `effect_ratio/strength` e ajusta o próximo gesto, sem retornar a uma força já ignorada. Ao inverter direção por overshoot, reduz a força respeitando o piso inicial. O aprendizado é local à rodada e separado por direção; não é uma calibração global do Instagram.
+
+Cada iteração contém attempt, direction, strength, before_width, after_width, delta_px, effect_ratio e no_effect. O relatório inclui initial_width, target_width, final_width, error_percent (em pontos percentuais), minimum_observed_effective_strength, last_no_effect_strength e observed_gain_per_strength. `minimum_observed` é somente o menor valor que funcionou nas amostras, não prova um limiar mínimo universal. Native percent é parâmetro do UiAutomator2, não uma escala garantida do sticker. O benchmark só marca calibrated=true com cinco rodadas aprovadas. MOVE permanece inalterado.
+
+Para repetir a bateria completa sem configuração residual de alvo único no PowerShell:
+
+```powershell
+$env:GESTURE_RESIZE_METHOD = 'NATIVE'
+Remove-Item Env:GESTURE_SCALE -ErrorAction SilentlyContinue
+npm run smoke:gesture-benchmark
+```
+
+Isso refaz o MOVE existente para obter evidência no editor atual e só então executa as cinco rodadas de RESIZE. Não publica e não reintegra ao painel.

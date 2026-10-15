@@ -39,11 +39,11 @@ export function nativeLabPort(driver:Pick<InstagramDriver,'getSession'>,director
       }
       await session.pause(1000);
     },
-    resize:async(method,bounds,factor)=>{
+    resize:async(method,bounds,factor,strength)=>{
       const fresh=await read();
       if(JSON.stringify(fresh.bounds)!==JSON.stringify(bounds)) throw Error('Bounds mudaram antes do pinch.');
       if(method==='NATIVE') await session.execute(factor<1?'mobile: pinchCloseGesture':'mobile: pinchOpenGesture',{
-        left:bounds.left,top:bounds.top,width:width(bounds),height:bounds.bottom-bounds.top,percent:Math.min(0.1,Math.max(0.02,Math.abs(1-factor))),
+        left:bounds.left,top:bounds.top,width:width(bounds),height:bounds.bottom-bounds.top,percent:strength ?? Math.min(0.1,Math.max(0.02,Math.abs(1-factor))),
       });
       else{
         try{await session.performActions(buildStickerPinchActions(center(bounds),width(bounds),factor));}finally{await session.releaseActions();}
