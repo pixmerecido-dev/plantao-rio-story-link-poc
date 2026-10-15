@@ -49,7 +49,8 @@
     "smoke:gesture-move": "tsx src/gestureLab/cli.ts move",
     "smoke:gesture-resize": "tsx src/gestureLab/cli.ts resize",
     "smoke:gesture-benchmark": "tsx src/gestureLab/cli.ts benchmark",
-    "smoke:gesture-manual": "tsx src/gestureLab/cli.ts manual"
+    "smoke:gesture-manual": "tsx src/gestureLab/cli.ts manual",
+    "smoke:gesture-pinch-out": "tsx src/gestureLab/cli.ts pinch-out"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

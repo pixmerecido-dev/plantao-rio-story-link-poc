@@ -10,7 +10,7 @@ const driver=new InstagramDriver();
 await mkdir(directory,{recursive:true});
 try{
   if(process.env.DRY_RUN!=='true') throw Error('Configure DRY_RUN=true. Laboratório não publica.');
-  if(!['move','resize','benchmark','manual'].includes(mode??'')) throw Error('Modo inválido.');
+  if(!['move','resize','benchmark','manual','pinch-out'].includes(mode??'')) throw Error('Modo inválido.');
   await driver.checkAppium();await driver.connect();
   // Never activateApp, navigate, normalize, create sticker or access a publishing flow.
   const port=nativeLabPort(driver,directory),before=await port.read();
@@ -23,19 +23,19 @@ try{
     console.table([...moveProof.attempts,...moveProof.rounds].map(r=>({method:r.method,success:r.success,requested:JSON.stringify(r.expected_delta),actual:JSON.stringify(r.actual_delta),error:r.movement_error,command_error:r.command_error})));
     if(!moveProof.qualified) throw Error('MOVE não alcançou 5/5. Resize bloqueado; nenhuma reintegração.');
   }
-  if(mode==='resize'){
+  if(mode==='resize'||mode==='pinch-out'){
     const proofPath=process.env.GESTURE_MOVE_REPORT;
     if(!proofPath) throw Error('Exige GESTURE_MOVE_REPORT apontando para move-report.json com 5/5 reais.');
     moveProof=JSON.parse(await readFile(resolve(proofPath),'utf8'));
     if(moveProof.kind!=='move'||moveProof.qualified!==true||moveProof.rounds?.length!==5||!moveProof.rounds.every((r:any)=>r.success&&!r.command_error)||JSON.stringify(moveProof.last)!==JSON.stringify(before)) throw Error('Prova MOVE inválida ou editor/sticker/dispositivo mudou. Execute benchmark MOVE novamente.');
   }
-  if(mode==='resize'||mode==='benchmark'){
+  if(mode==='resize'||mode==='benchmark'||mode==='pinch-out'){
     const method=process.env.GESTURE_RESIZE_METHOD??'NATIVE';
     if(!['NATIVE','W3C'].includes(method)) throw Error('GESTURE_RESIZE_METHOD deve ser NATIVE ou W3C.');
-    const report=process.env.GESTURE_SCALE
+    const report=mode==='pinch-out' ? await resizeTrial(port,1.1,method as 'NATIVE'|'W3C','pinch-out-controlled') : process.env.GESTURE_SCALE
       ?await resizeTrial(port,Number(process.env.GESTURE_SCALE),method as 'NATIVE'|'W3C','resize-controlled')
       :await benchmarkResize(port,method as 'NATIVE'|'W3C');
-    await writeFile(join(directory,'resize-report.json'),JSON.stringify(report,null,2));
+    await writeFile(join(directory,mode==='pinch-out'?'pinch-out-report.json':'resize-report.json'),JSON.stringify(report,null,2));
     console.log('RESIZE',JSON.stringify(report));
     if(('qualified' in report&&!report.qualified)||('success' in report&&!report.success)) throw Error('RESIZE não confirmado. Nenhuma reintegração.');
   }

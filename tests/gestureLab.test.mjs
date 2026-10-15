@@ -53,9 +53,9 @@ test('native resize converges with bounded incremental factors and five measured
  assert.equal(r.qualified,true);assert.equal(r.passed,5);assert.ok(r.mean_absolute_error<=0.03);
  for(const trial of r.rounds)for(const i of trial.iterations)assert.ok(i.strength>=0.1&&i.strength<=0.4);
 });
-test('ineffective pinch stops after five iterations without success',async()=>{
+test('ineffective pinch preserves correction slot and stops without success',async()=>{
  const f=fixture({resize:false}),r=await resizeTrial(f.port,0.8,'NATIVE','mock');
- assert.equal(r.success,false);assert.equal(r.iterations.length,5);assert.equal(r.actual_scale,1);
+ assert.equal(r.success,false);assert.ok(r.iterations.length<=4);assert.equal(r.actual_scale,1);
 });
 test('pinch drifting center cannot pass width-only validation',async()=>{
  const f=fixture();const resize=f.port.resize;
@@ -83,13 +83,13 @@ test('observed native reduction 672 to 636 avoids ineffective tiny remaining-fac
 });
 test('no effect immediately increases physical strength rather than repeating tiny correction',async()=>{
  const f=fixture(); const resize=f.port.resize;
- f.port.resize=async(method,bounds,factor,strength)=>{if(strength>=0.2)await resize(method,bounds,factor);};
- const r=await resizeTrial(f.port,0.8,'NATIVE','threshold');
+ f.port.resize=async(method,bounds,factor,strength)=>{if(strength>=0.125)await resize(method,bounds,factor);};
+ const r=await resizeTrial(f.port,0.9,'NATIVE','threshold');
  assert.equal(r.iterations[0].no_effect,true);
  assert.equal(r.iterations[0].strength,0.1);
- assert.equal(r.iterations[1].strength,0.2);
+ assert.equal(r.iterations[1].strength,0.125);
  assert.equal(r.success,true);
- assert.equal(r.minimum_observed_effective_strength.in,0.2);
+ assert.equal(r.minimum_observed_effective_strength.in,0.125);
  assert.equal(r.last_no_effect_strength.in,0.1);
 });
 
@@ -105,4 +105,31 @@ test('adaptive pinch reverses direction after overshoot and measures pinch out',
  assert.ok(r.iterations.some(i=>i.direction==='out'));
  assert.ok(Math.abs(r.error_percent)<=3);
  assert.ok(r.iterations.length<=5);
+});
+
+test('overshoot on attempt four reserves attempt five for inverse correction',async()=>{
+ const f=fixture(); const resize=f.port.resize; let n=0;
+ f.port.resize=async(method,bounds,factor,strength)=>{
+   n++;
+   if(n===4) await resize(method,bounds,0.85);
+   else if(n===5) await resize(method,bounds,360/(bounds.right-bounds.left));
+ };
+ const r=await resizeTrial(f.port,0.9,'NATIVE','reserved');
+ assert.equal(r.iterations.length,5);
+ assert.equal(r.iterations[3].overshoot,true);
+ assert.equal(r.iterations[4].direction,'out');
+ assert.equal(r.success,true);
+ assert.equal(r.PINCH_OUT_SUPPORTED,true);
+});
+test('resize qualification requires measured pinch-out, no width change blocks rounds',async()=>{
+ const f=fixture({resize:false});const r=await benchmarkResize(f.port,'NATIVE');
+ assert.equal(r.PINCH_OUT_SUPPORTED,false);assert.equal(r.rounds.length,0);
+ assert.equal(r.qualified,false);assert.equal(r.mean_absolute_error,null);
+});
+test('absolute target remains anchored to initial width and no gesture follows tolerance',async()=>{
+ const f=fixture();const r=await resizeTrial(f.port,0.9,'NATIVE','absolute');
+ assert.equal(r.target_width,360);assert.equal(r.iterations.length,1);
+ assert.equal(r.stop_reason,'WITHIN_TOLERANCE');
+ assert.ok(Math.abs(r.iterations[0].error_after_percent)<=3);
+ assert.equal(r.iterations[0].error_before_percent,(400-360)/360*100);
 });
