@@ -152,3 +152,51 @@ faixa inicial, tolerância, alvo, método, identidade visual, dispositivo, canva
 configuração antes de qualquer rodada do benchmark. Também exige essa prova
 para o benchmark de resize sem escala individual. MOVE permanece sem mudanças.
 Mocks não qualificam o gesto Android; envie os dois relatórios reais para análise.
+
+### Investigação da geometria próxima do mínimo
+
+`smoke:gesture-near-min-geometry` assume um único sticker já visível entre
+520 e 535 px. Não prepara Story, não move o sticker e não publica.
+Exige o mesmo contexto explícito de texto/estilo do registro de mínimo.
+Usa W3C com dois pointers touch sincronizados, mantendo o centro do gesto.
+A/B/C começam a 15%/35%/45% da largura para cada lado do centro.
+São três amplitudes físicas: 12, 28 e 44 px de deslocamento por dedo,
+com A/B/C em cada amplitude, no máximo nove tentativas. A intensidade
+normalizada é apenas diagnóstico; a trajetória executada usa as coordenadas.
+O teste não executa novamente a sequência nativa 0.175/0.185/0.195.
+
+Para na primeira redução válida >=3 px, erro de comando, drift inválido
+ou aumento inesperado. Drift por gesto e acumulado devem ficar dentro de
+max(5 px, 2% da largura do canvas), a tolerância de posição existente no Lab.
+O limite automático só é marcado se todas as nove tentativas válidas tiverem
+abs(delta)<3 px. Isso não prova um limite físico do Instagram.
+
+O relatório `near-min-geometry-report.json` contém coordenadas efetivamente
+**enviadas** ao Appium, distâncias inicial/final dos pointers, medidas dos
+bounds antes/depois, drift, validade e efeito. Não é telemetria de contatos
+físicos do Android: aceitar um comando não comprova seu efeito.
+`attempts.jsonl` registra os comandos antes da execução e os resultados depois.
+PNG/XML são capturados para cada tentativa.
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-near-min-geometry
+```
+
+Somente se `near_min_effective=true`, o segundo teste pode usar a candidata
+comprovada. Deixe novamente a largura entre 520 e 535 px para testar a redução
+independentemente (se já estiver na tolerância, termina sem gesto).
+
+```cmd
+set "GESTURE_NEAR_MIN_GEOMETRY_REPORT=C:\caminho\near-min-geometry-report.json"
+npm run smoke:gesture-near-min-geometry-converge
+```
+
+O segundo comando valida a evidência e o contexto, usa somente a geometria e
+amplitude da candidata, relendo os bounds antes de cada gesto. No máximo três
+gestos; para em PASS, NO_EFFECT, drift ou erro. Não repete uma tentativa idêntica
+ignorada. Gera `near-min-geometry-converge-report.json`. Nenhum destes testes
+altera o controlador, MOVE, mínimo persistido, tolerância, clamp ou painel.
+Nenhum benchmark completo é iniciado automaticamente.
