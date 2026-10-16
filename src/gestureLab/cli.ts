@@ -1,3 +1,5 @@
+import {ObservedSizeLimitStore} from './sizeLimitStore.js';
+import {findObservedLimit} from '../admin/stickerSizeLimit.js';
 import 'dotenv/config';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
@@ -32,9 +34,17 @@ try{
   if(mode==='resize'||mode==='benchmark'||mode==='pinch-out'){
     const method=process.env.GESTURE_RESIZE_METHOD??'NATIVE';
     if(!['NATIVE','W3C'].includes(method)) throw Error('GESTURE_RESIZE_METHOD deve ser NATIVE ou W3C.');
-    const report=mode==='pinch-out' ? await resizeTrial(port,1.1,method as 'NATIVE'|'W3C','pinch-out-controlled') : process.env.GESTURE_SCALE
-      ?await resizeTrial(port,Number(process.env.GESTURE_SCALE),method as 'NATIVE'|'W3C','resize-controlled')
-      :await benchmarkResize(port,method as 'NATIVE'|'W3C');
+    const limits=await new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??'data/admin','sticker-size-limits.json')).load();
+    const scope=process.env.GESTURE_STICKER_TEXT!==undefined&&process.env.GESTURE_STYLE_INDEX!==undefined?{
+      text:process.env.GESTURE_STICKER_TEXT,style_index:Number(process.env.GESTURE_STYLE_INDEX),
+      canvas_width:before.canvas.right-before.canvas.left,canvas_height:before.canvas.bottom-before.canvas.top,
+      device:before.device,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null,
+    }:null;
+    const limit=scope?findObservedLimit(limits,scope):undefined;
+    console.log('OBSERVED_MINIMUM',JSON.stringify({scope,limit:limit??null,source:'configuration-scoped registry'}));
+    const report=mode==='pinch-out' ? await resizeTrial(port,1.1,method as 'NATIVE'|'W3C','pinch-out-controlled',limit) : process.env.GESTURE_SCALE
+      ?await resizeTrial(port,Number(process.env.GESTURE_SCALE),method as 'NATIVE'|'W3C','resize-controlled',limit)
+      :await benchmarkResize(port,method as 'NATIVE'|'W3C',limit);
     await writeFile(join(directory,mode==='pinch-out'?'pinch-out-report.json':'resize-report.json'),JSON.stringify(report,null,2));
     console.log('RESIZE',JSON.stringify(report));
     if(('qualified' in report&&!report.qualified)||('success' in report&&!report.success)) throw Error('RESIZE não confirmado. Nenhuma reintegração.');

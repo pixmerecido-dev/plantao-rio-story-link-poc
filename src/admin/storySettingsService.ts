@@ -1,3 +1,5 @@
+import {panelObservedLimit,clampScale,minimumScale} from "./stickerSizeLimit.js";
+import type {ObservedSizeLimitStore} from "../gestureLab/sizeLimitStore.js";
 import {
   defaultSettings,
   validateSettings,
@@ -6,12 +8,17 @@ import {
 import type { SettingsRepository } from "./repositories.js";
 /** Interface pronta para o motor futuro; nenhuma chamada Appium nesta fase. */
 export class StorySettingsService {
-  constructor(private readonly repository: SettingsRepository) {}
+  constructor(private readonly repository: SettingsRepository, private readonly limits?:ObservedSizeLimitStore) {}
   getSettings() {
     return this.repository.getSettings();
   }
   async save(value: unknown) {
     const settings = validateSettings(value);
+    if(this.limits){
+      const s=settings.story.sticker;
+      const limit=panelObservedLimit(await this.limits.load(),s.text,s.style_index);
+      if(limit){s.scale=clampScale(s.scale,limit);s.max_scale=Math.max(s.max_scale,minimumScale(limit));}
+    }
     await this.repository.saveSettings(settings);
     return settings;
   }

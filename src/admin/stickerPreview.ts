@@ -1,3 +1,4 @@
+import {clampScale,panelObservedLimit,type ObservedStickerLimit} from "./stickerSizeLimit.js";
 import { REFERENCE, stickerTextLength } from "./domain.js";
 export const PREVIEW_STYLE_LABELS = [
   "Azul",
@@ -20,13 +21,15 @@ function glyphUnits(text: string) {
   );
 }
 /** Illustration only; calibration for the approved default text is not a fixed width rule. */
-export function estimateStickerPreview(text: string, scale: number) {
+export function estimateStickerPreview(text: string, scale: number, limit?:ObservedStickerLimit) {
+  if(limit?.scope.text!==text)limit=undefined;
+  scale=clampScale(scale,limit);
   const icon = 52,
     padding = 48,
     unit =
       (REFERENCE.stickerWidthBefore - icon - padding) /
       glyphUnits("Leia a matéria completa");
-  const natural = icon + padding + glyphUnits(text) * unit,
+  const natural = limit?.reference_initial_width ?? icon + padding + glyphUnits(text) * unit,
     maxWidth = REFERENCE.width * 0.96;
   const width = Math.min(maxWidth, natural * scale),
     height = 116 * scale;
@@ -45,8 +48,11 @@ export function applyStickerPreview(
   text: string,
   scale: number,
   canvasWidth: number,
+  limit?:ObservedStickerLimit,
 ) {
-  const natural = estimateStickerPreview(text, 1);
+  if(limit?.scope.text!==text)limit=undefined;
+  scale=clampScale(scale,limit);
+  const natural = estimateStickerPreview(text, 1,limit);
   const pixels = canvasWidth / REFERENCE.width;
   // Size the unscaled object using the dynamic natural width; transform scales all children once.
   sticker.style.width = `${natural.width_px * pixels}px`;
@@ -81,6 +87,7 @@ export function applyStickerPreview(
 }
 export function refreshDashboardPreview(
   settings: import("./domain.js").StorySettings,
+  limits:ObservedStickerLimit[]=[],
 ) {
   document
     .querySelectorAll<HTMLElement>(".dashboard-bottom .preview-sticker")
@@ -92,14 +99,17 @@ export function refreshDashboardPreview(
           settings.story.sticker.text,
           settings.story.sticker.scale,
           canvas.clientWidth,
+          panelObservedLimit(limits,settings.story.sticker.text,settings.story.sticker.style_index),
         );
     });
 }
 /** Saved configuration only; never claims measured Instagram appearance or a publication. */
 export function dashboardStickerPreview(
   settings: import("./domain.js").StorySettings,
+  limits:ObservedStickerLimit[]=[],
 ) {
   const s = settings.story.sticker;
+  const limit=panelObservedLimit(limits,s.text,s.style_index);
   const escape = (v: string) =>
     v.replace(
       /[&<>"']/g,

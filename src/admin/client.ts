@@ -1,3 +1,5 @@
+import {panelObservedLimit,minimumScale,clampScale,MINIMUM_SIZE_MESSAGE,type ObservedStickerLimit} from "./stickerSizeLimit.js";
+let observedSizeLimits:ObservedStickerLimit[]=[];
 import { renderRuntimeSystem, mountRuntimeTest } from './runtimeClient.js';
 import { UI_ROUTES, canViewRoute, type UiRole } from "./editorialUi.js";
 import { renderEditorialRoute } from "./editorialClient.js";
@@ -240,11 +242,13 @@ async function load() {
         imported: { warnings: string[] };
       }>("/api/dashboard");
       if (version !== viewVersion) return;
-      const [operational, savedStory, queueView] = await Promise.all([
+      const [operational, savedStory, queueView, sizeLimits] = await Promise.all([
         operationBanner(),
         api<StorySettings>("/api/settings"),
         queueOverview(),
+        api<ObservedStickerLimit[]>("/api/sticker-size-limits"),
       ]);
+      observedSizeLimits=sizeLimits;
       if (version !== viewVersion) return;
       const s = data.stats,
         cards: [string, string, string][] = [
@@ -282,9 +286,9 @@ async function load() {
           ],
         ];
       element("content").innerHTML =
-        `${operational.html}${queueView.html}<p class="subtext">Acompanhe os resultados do postador. Horários de Brasília.</p><div class="stats-grid">${cards.map(([label, value, note]) => `<div class="stat-card"><div class="label">${escape(label)}<span>↗</span></div><strong class="${value.length > 9 ? "date" : ""}">${escape(value)}</strong><small>${escape(note)}</small></div>`).join("")}</div><div class="dashboard-bottom"><section class="panel"><div class="panel-heading"><div><h2>Últimas publicações</h2><span class="muted">Registros reais dos resumos locais do motor</span></div><a href="#publications">Ver histórico →</a></div>${jobsTable(data.recent)}</section>${dashboardStickerPreview(savedStory)}</div><p class="muted">${s.inconclusive} resultado(s) inconclusivo(s). Na ausência de horário exato de publicação, as contagens usam o término registrado. ${data.imported.warnings.length ? `${data.imported.warnings.length} resumo(s) não puderam ser importados.` : ""}</p>`;
+        `${operational.html}${queueView.html}<p class="subtext">Acompanhe os resultados do postador. Horários de Brasília.</p><div class="stats-grid">${cards.map(([label, value, note]) => `<div class="stat-card"><div class="label">${escape(label)}<span>↗</span></div><strong class="${value.length > 9 ? "date" : ""}">${escape(value)}</strong><small>${escape(note)}</small></div>`).join("")}</div><div class="dashboard-bottom"><section class="panel"><div class="panel-heading"><div><h2>Últimas publicações</h2><span class="muted">Registros reais dos resumos locais do motor</span></div><a href="#publications">Ver histórico →</a></div>${jobsTable(data.recent)}</section>${dashboardStickerPreview(savedStory,observedSizeLimits)}</div><p class="muted">${s.inconclusive} resultado(s) inconclusivo(s). Na ausência de horário exato de publicação, as contagens usam o término registrado. ${data.imported.warnings.length ? `${data.imported.warnings.length} resumo(s) não puderam ser importados.` : ""}</p>`;
       wireJobs();
-      refreshDashboardPreview(savedStory);
+      refreshDashboardPreview(savedStory,observedSizeLimits);
       operational.wire();
       queueView.wire();
     } else if (current === "publications") {
@@ -337,6 +341,7 @@ async function load() {
     } else {
       if (!model) model = await api<StorySettings>("/api/settings");
       if (version !== viewVersion) return;
+      observedSizeLimits=await api<ObservedStickerLimit[]>("/api/sticker-size-limits");
       renderSettings();
     }
   } catch (error) {
@@ -356,7 +361,7 @@ function renderSettings() {
   const s = model.story.sticker;
   const presets = s.presets;
   element("content").innerHTML =
-    `<div class="settings-grid"><section class="panel"><h2>Aparência padrão do Story</h2><p class="muted">Ajuste o padrão e acompanhe a simulação ao lado.</p><div class="field"><label for="sticker-text">Texto do link</label><input id="sticker-text" type="text" value="${escape(s.text)}"><p class="muted" id="text-counter"></p><p class="muted" id="text-warning" role="status"></p><div class="presets">${presets.map((p) => `<button class="preset" data-preset="${escape(p.name)}" title="${escape(p.text)}">${escape(p.text)}</button>`).join("")}</div></div><div class="field"><label for="sticker-style">Estilo do link</label><select id="sticker-style">${PREVIEW_STYLE_LABELS.map((name, index) => `<option value="${index}" ${s.style_index === index ? "selected" : ""}>${name}</option>`).join("")}</select><p class="muted">Escolha como o link deve aparecer.</p></div><div class="field admin-only"><label for="sticker-max-text">Máximo de caracteres</label><input id="sticker-max-text" placeholder="Automático" type="number" min="1" step="1" value="${s.max_text_length ?? ""}"><p class="muted">Deixe vazio para usar o padrão automático.</p></div><div class="field"><div class="field-row"><label for="sticker-x">Posição horizontal</label><output id="x-value"></output></div><input id="sticker-x" type="range" min="0" max="100" step="any" value="${s.x_pct * 100}"><div class="range-labels"><span>Esquerda</span><span>Direita</span></div></div><div class="field"><div class="field-row"><label for="sticker-y">Posição vertical</label><output id="y-value"></output></div><input id="sticker-y" type="range" min="0" max="100" step="any" value="${s.y_pct * 100}"><div class="range-labels"><span>Cima</span><span>Baixo</span></div></div><div class="field"><div class="field-row"><label for="sticker-scale">Tamanho do link</label><output id="scale-value"></output></div><p class="muted">Altera proporcionalmente texto, ícone e fundo.</p><input id="sticker-scale" type="range" min="${s.min_scale * 100}" max="${s.max_scale * 100}" step="0.1" value="${s.scale * 100}"><div class="range-labels"><span>Menor</span><span>Maior</span></div><div class="fine-buttons"><button data-size="-1">− Diminuir</button><button data-size="1">+ Aumentar</button><button id="reset-size">Restaurar tamanho</button></div><details class="admin-only"><summary class="muted" style="margin-top:16px">Limites de escala</summary><div class="limits"><label>Mínimo (%)<input id="scale-min" type="number" min="25" max="125" value="${s.min_scale * 100}"></label><label>Máximo (%)<input id="scale-max" type="number" min="25" max="125" value="${s.max_scale * 100}"></label></div></details></div><label class="check admin-only"><input id="sticker-enabled" type="checkbox" ${s.enabled ? "checked" : ""}>Mostrar link na prévia</label><div class="field admin-only"><h3>Destinos padrão</h3><label class="check"><input id="instagram-enabled" type="checkbox" ${model.publishing.instagram_enabled ? "checked" : ""}>Instagram</label><label class="check"><input id="facebook-enabled" type="checkbox" ${model.publishing.facebook_enabled ? "checked" : ""}>Facebook Story</label><p class="muted">Preferências para integração futura; não autorizam publicação.</p></div><div class="info">O envio só será permitido quando todas as verificações estiverem concluídas.</div><div class="form-actions"><button id="save-settings" class="button">Salvar configuração</button><button id="reset-settings" class="button secondary">Restaurar padrão</button></div><div class="info">Salve o padrão para os próximos Stories. O envio pelo painel ainda está desativado.</div><div id="runtime-test-widget"></div></section><section class="panel preview-panel"><div class="preview-top"><div><h2>Prévia do Story</h2><span class="muted">Aparência aproximada</span></div><span class="preview-pill">STORY</span></div><div class="preview-shell"><div class="story-preview" id="preview"><div class="preview-placeholder">Imagem de exemplo indisponível</div><img id="preview-image" src="/api/preview" alt="Arte de exemplo do Story"><div class="preview-sticker" id="preview-sticker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14l4-4m-6 7l-1 1a4 4 0 01-6-6l5-5a4 4 0 015.5-.2M16 7l1-1a4 4 0 016 6l-5 5a4 4 0 01-5.5.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span id="preview-text"></span></div></div></div><details class="admin-only"><summary>Informações técnicas</summary><p class="diagnostic" id="preview-diagnostic"></p></details></section></div>`;
+    `<div class="settings-grid"><section class="panel"><h2>Aparência padrão do Story</h2><p class="muted">Ajuste o padrão e acompanhe a simulação ao lado.</p><div class="field"><label for="sticker-text">Texto do link</label><input id="sticker-text" type="text" value="${escape(s.text)}"><p class="muted" id="text-counter"></p><p class="muted" id="text-warning" role="status"></p><div class="presets">${presets.map((p) => `<button class="preset" data-preset="${escape(p.name)}" title="${escape(p.text)}">${escape(p.text)}</button>`).join("")}</div></div><div class="field"><label for="sticker-style">Estilo do link</label><select id="sticker-style">${PREVIEW_STYLE_LABELS.map((name, index) => `<option value="${index}" ${s.style_index === index ? "selected" : ""}>${name}</option>`).join("")}</select><p class="muted">Escolha como o link deve aparecer.</p></div><div class="field admin-only"><label for="sticker-max-text">Máximo de caracteres</label><input id="sticker-max-text" placeholder="Automático" type="number" min="1" step="1" value="${s.max_text_length ?? ""}"><p class="muted">Deixe vazio para usar o padrão automático.</p></div><div class="field"><div class="field-row"><label for="sticker-x">Posição horizontal</label><output id="x-value"></output></div><input id="sticker-x" type="range" min="0" max="100" step="any" value="${s.x_pct * 100}"><div class="range-labels"><span>Esquerda</span><span>Direita</span></div></div><div class="field"><div class="field-row"><label for="sticker-y">Posição vertical</label><output id="y-value"></output></div><input id="sticker-y" type="range" min="0" max="100" step="any" value="${s.y_pct * 100}"><div class="range-labels"><span>Cima</span><span>Baixo</span></div></div><div class="field"><div class="field-row"><label for="sticker-scale">Tamanho do link</label><output id="scale-value"></output></div><p class="muted">Altera proporcionalmente texto, ícone e fundo.</p><input id="sticker-scale" type="range" min="${s.min_scale * 100}" max="${s.max_scale * 100}" step="0.1" value="${s.scale * 100}"><p class="muted" id="minimum-size-warning" role="status"></p><div class="range-labels"><span>Menor</span><span>Maior</span></div><div class="fine-buttons"><button data-size="-1">− Diminuir</button><button data-size="1">+ Aumentar</button><button id="reset-size">Restaurar tamanho</button></div><details class="admin-only"><summary class="muted" style="margin-top:16px">Limites de escala</summary><div class="limits"><label>Mínimo (%)<input id="scale-min" type="number" min="25" max="125" value="${s.min_scale * 100}"></label><label>Máximo (%)<input id="scale-max" type="number" min="25" max="125" value="${s.max_scale * 100}"></label></div></details></div><label class="check admin-only"><input id="sticker-enabled" type="checkbox" ${s.enabled ? "checked" : ""}>Mostrar link na prévia</label><div class="field admin-only"><h3>Destinos padrão</h3><label class="check"><input id="instagram-enabled" type="checkbox" ${model.publishing.instagram_enabled ? "checked" : ""}>Instagram</label><label class="check"><input id="facebook-enabled" type="checkbox" ${model.publishing.facebook_enabled ? "checked" : ""}>Facebook Story</label><p class="muted">Preferências para integração futura; não autorizam publicação.</p></div><div class="info">O envio só será permitido quando todas as verificações estiverem concluídas.</div><div class="form-actions"><button id="save-settings" class="button">Salvar configuração</button><button id="reset-settings" class="button secondary">Restaurar padrão</button></div><div class="info">Salve o padrão para os próximos Stories. O envio pelo painel ainda está desativado.</div><div id="runtime-test-widget"></div></section><section class="panel preview-panel"><div class="preview-top"><div><h2>Prévia do Story</h2><span class="muted">Aparência aproximada</span></div><span class="preview-pill">STORY</span></div><div class="preview-shell"><div class="story-preview" id="preview"><div class="preview-placeholder">Imagem de exemplo indisponível</div><img id="preview-image" src="/api/preview" alt="Arte de exemplo do Story"><div class="preview-sticker" id="preview-sticker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14l4-4m-6 7l-1 1a4 4 0 01-6-6l5-5a4 4 0 015.5-.2M16 7l1-1a4 4 0 016 6l-5 5a4 4 0 01-5.5.2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span id="preview-text"></span></div></div></div><details class="admin-only"><summary>Informações técnicas</summary><p class="diagnostic" id="preview-diagnostic"></p></details></section></div>`;
   void mountRuntimeTest();
   element<HTMLImageElement>("preview-image").onerror = () =>
     (element("preview-image").hidden = true);
@@ -488,6 +493,13 @@ function renderSettings() {
 function updatePreview() {
   if (!model || route() !== "settings") return;
   const s = model.story.sticker;
+  const limit=panelObservedLimit(observedSizeLimits,s.text,s.style_index);
+  const floor=Math.max(s.min_scale,limit?minimumScale(limit):s.min_scale);
+  const requestedScale=s.scale;
+  s.scale=Math.max(floor,s.scale);s.max_scale=Math.max(s.max_scale,floor);
+  const range=element<HTMLInputElement>("sticker-scale");
+  range.min=String(floor*100);range.max=String(Math.max(s.max_scale,floor)*100);range.value=String(s.scale*100);
+  element("minimum-size-warning").textContent=limit && (requestedScale<floor || s.scale<=floor+0.001) ? MINIMUM_SIZE_MESSAGE : "";
   element("x-value").textContent = `${(s.x_pct * 100).toFixed(1)}%`;
   element("y-value").textContent = `${(s.y_pct * 100).toFixed(1)}%`;
   element("scale-value").textContent = `${(s.scale * 100).toFixed(1)}%`;
@@ -496,9 +508,9 @@ function updatePreview() {
   sticker.style.display = s.enabled ? "flex" : "none";
   sticker.style.left = `${s.x_pct * 100}%`;
   sticker.style.top = `${s.y_pct * 100}%`;
-  const estimated = estimateStickerPreview(s.text, s.scale);
+  const estimated = estimateStickerPreview(s.text, s.scale,limit);
   sticker.dataset.style = String(s.style_index);
-  applyStickerPreview(sticker, s.text, s.scale, element("preview").clientWidth);
+  applyStickerPreview(sticker, s.text, s.scale, element("preview").clientWidth,limit);
   element("preview-text").title = s.text;
   element("text-counter").textContent =
     `${estimated.text_length} caracteres${s.max_text_length === null ? "" : ` / ${s.max_text_length}`}`;

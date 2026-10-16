@@ -94,3 +94,24 @@ O comando captura a largura atual e aguarda **Enter**. Faça você mesmo um pinc
 Compare e envie os dois relatórios e as imagens before/after. `MIN_SIZE_LIMIT_OBSERVED=true` significa apenas que houve estagnação próxima da referência (504 ±12 px), em três geometrias, sem reduzir abaixo de 501 px. **Não prova limite físico do Instagram**: os pointers W3C podem não ter sido aceitos. Se alguma geometria reduzir abaixo de 501, `GESTURE_GEOMETRY_LIMIT=true` registra que a automação explícita ultrapassou a referência; ainda não identifica sozinho qual aspecto do gesto nativo antigo era responsável. Se manualmente também não reduzir, isso reforça a hipótese de mínimo real, mas não exclui falha da tentativa manual. Se manualmente reduzir além do mínimo automático, há evidência de limitação da automação. O relatório sempre mantém `physical_limit_proven=false` até análise conjunta das evidências.
 
 Não há acesso ao emulador Windows no desenvolvimento cloud. Os testes unitários validam planos e critérios com mocks; nenhuma menor largura real ou conclusão definitiva é inventada. MOVE e a tolerância operacional de resize de ±4% permanecem congelados.
+
+## Mínimo confirmado por configuração e alvos limitados
+
+O operador confirmou manualmente, depois dos testes automáticos, o mínimo **504 px** a partir da referência **727 px**, para texto exato `Leia a matéria completa`, estilo 0, dispositivo `emulator-5554`, canvas 1080×1920. Essa observação autorizada é o registro inicial local, não um mínimo universal. É persistida no primeiro uso em `data/admin/sticker-size-limits.json` (ou ADMIN_DATA_DIR). O contrato inclui texto, estilo, canvas, dispositivo e versão opcional do Instagram; a versão desconhecida é null. Havendo uma versão explicitamente diferente, o registro não corresponde. O método `ObservedSizeLimitStore.save` permite adicionar uma observação validada de outra configuração ou recalibrar a mesma chave; relatórios sem efeito isolados não escrevem automaticamente um suposto mínimo.
+
+O benchmark só usa esse mínimo se o operador declarar texto e estilo do sticker que já está aberto. O objeto genérico da accessibility não permite ler esses valores de forma confiável; as variáveis abaixo são contexto fornecido pelo operador, não modificam o sticker. Se o contexto não corresponder ou não for fornecido, não há clamp conhecido.
+
+```cmd
+set DRY_RUN=true
+set GESTURE_RESIZE_METHOD=NATIVE
+set GESTURE_SCALE=
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-benchmark
+```
+
+O relatório registra `requested_target_width`, `effective_target_width`, `observed_min_width`, `minimum_limit_scope`, `TARGET_BELOW_MIN`, `clamped`, `reason` e `clamped_count`. Se o alvo solicitado ficar abaixo de 504 para a chave confirmada, o alvo efetivo será 504 e reason será INSTAGRAM_MIN_SIZE. Se o sticker já está dentro de ±4% desse alvo efetivo, a rodada passa sem enviar outro pinch. Clamp não significa sucesso automático: se a largura final estiver fora da tolerância, erro de comando, troca de objeto ou deriva de centro continuarem presentes, o resultado permanece inválido. `error_percent` e `mean_absolute_error` avaliam o alvo efetivo; `requested_error_percent` preserva a diferença frente ao alvo originalmente pedido.
+
+O painel consulta o mesmo registro por `/api/sticker-size-limits`. Para a configuração validada, o mínimo equivalente é **504/727 = 69,326%**, apresentado como 69,3%. Slider, prévia e salvamento respeitam o mesmo piso e exibem “Tamanho mínimo permitido pelo Instagram para este link.”. A referência de largura medida é usada na prévia dessa configuração; outros textos/estilos mantêm a estimativa anterior até terem calibração própria. A versão atual do painel usa o contexto de canvas de referência 1080×1920 e o dispositivo fixo já usado pelo motor. Isso não calibra automaticamente outro dispositivo ou versão.
+
+A sequência continua 90%, 80%, 110%, 90%, 110%. Uma rodada limitada ao mínimo conta como válida somente após medição compatível com o alvo efetivo. A qualificação real continua exigindo os relatórios locais; testes com mocks não demonstram 5/5 no Instagram. O algoritmo de MOVE e os gestos do fluxo principal não foram alterados nem substituídos pelo laboratório. O ajuste do painel nesta etapa limita configuração e prévia; não conecta a fila a publicação real.

@@ -67,3 +67,18 @@ test('preview padrão serve foto local de demonstração sem confundir com mídi
     await new Promise(done => server.close(done));
   }
 });
+
+test('settings API persists scoped minimum and serves browser calibration module',async()=>{
+ const app=await fixture();try{
+  const limits=await(await fetch(`${app.url}/api/sticker-size-limits`)).json();
+  assert.equal(limits[0].observed_min_width,504);assert.equal(limits[0].reference_initial_width,727);
+  const module=await fetch(`${app.url}/assets/stickerSizeLimit.js`);
+  assert.equal(module.status,200);assert.match(await module.text(),/minimumScale/);
+  const settings=defaultSettings();settings.story.sticker.scale=0.6;
+  const response=await fetch(`${app.url}/api/settings`,{method:'PUT',headers:{'Content-Type':'application/json','X-Admin-Request':'local'},body:JSON.stringify(settings)});
+  assert.equal(response.status,200);assert.equal((await response.json()).story.sticker.scale,504/727);
+  assert.equal((await(await fetch(`${app.url}/api/settings`)).json()).story.sticker.scale,504/727);
+  const disk=JSON.parse(await readFile(join(app.root,'data/admin/sticker-size-limits.json'),'utf8'));
+  assert.equal(disk.limits[0].scope.text,'Leia a matéria completa');
+ }finally{await app.close();}
+});

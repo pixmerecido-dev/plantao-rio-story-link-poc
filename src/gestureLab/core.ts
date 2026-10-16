@@ -1,3 +1,4 @@
+import type { ObservedStickerLimit } from '../admin/stickerSizeLimit.js';
 export type Box = {left:number;top:number;right:number;bottom:number};
 export type Snapshot = {bounds:Box;canvas:Box;identity:string;device:string};
 export type MoveMethod = 'W3C'|'ADB-700'|'ADB-1000'|'ADB-1300'|'NATIVE';
@@ -73,10 +74,13 @@ export function measuredPinchSupport(observations:PinchObservation[]) {
   };
 }
 /** Error-band controller: observed gain is diagnostic, never a linear actuator model. */
-export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C',name:string) {
+export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C',name:string,limit?:ObservedStickerLimit) {
   if(![0.9,0.8,1.1].includes(scale)) throw Error('Use escala controlada 0.9, 0.8 ou 1.1.');
   const before=await port.read();validateSnapshot(before);
-  const target=width(before.bounds)*scale,iterations=[];
+  const applicableLimit=limit && limit.scope.canvas_width===width(before.canvas) && limit.scope.canvas_height===before.canvas.bottom-before.canvas.top && limit.scope.device===before.device ? limit : undefined;
+  const requestedTarget=width(before.bounds)*scale;
+  const clamped=Boolean(applicableLimit && requestedTarget<applicableLimit.observed_min_width);
+  const target=clamped?applicableLimit!.observed_min_width:requestedTarget,iterations=[];
   await port.capture(`${name}-before`);
   let after=before,overshootSeen=false,stopReason='ATTEMPT_LIMIT';
   let previousDirection: 'in'|'out'|undefined;
@@ -130,21 +134,24 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
   const actual_scale=width(after.bounds)/width(before.bounds),error=(width(after.bounds)-target)/target;
   const drift=Math.hypot(center(after.bounds).x-center(before.bounds).x,center(after.bounds).y-center(before.bounds).y);
   const {PINCH_IN_SUPPORTED:pinchIn,PINCH_OUT_SUPPORTED:pinchOut}=measuredPinchSupport(iterations);
-  return {method,tolerance:RESIZE_TOLERANCE,requested_scale:scale,initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,stop_reason:stopReason,
+  return {method,tolerance:RESIZE_TOLERANCE,requested_scale:scale,TARGET_BELOW_MIN:clamped,clamped,reason:clamped?'INSTAGRAM_MIN_SIZE':null,
+    requested_target_width:requestedTarget,effective_target_width:target,observed_min_width:applicableLimit?.observed_min_width??null,minimum_limit_scope:applicableLimit?.scope??null,
+    requested_error_percent:(width(after.bounds)-requestedTarget)/requestedTarget*100,
+    initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,stop_reason:stopReason,
     PINCH_IN_SUPPORTED:pinchIn,PINCH_OUT_SUPPORTED:pinchOut,
     minimum_observed_effective_strength:minimumEffective,last_no_effect_strength:lastIgnored,observed_gain_per_strength:gains,
     supported:pinchIn||pinchOut,calibrated:false,before,after,before_width:width(before.bounds),before_height:before.bounds.bottom-before.bounds.top,after_width:width(after.bounds),after_height:after.bounds.bottom-after.bounds.top,
-    iterations,actual_scale,error,center_drift:drift,success:iterations.length>0&&iterations.every(i=>!i.command_error)&&Math.abs(error)<=RESIZE_TOLERANCE&&Math.abs(width(after.bounds)-width(before.bounds))>=2&&drift<=Math.max(5,width(before.canvas)*0.02)};
+    iterations,actual_scale,error,center_drift:drift,success:(clamped||iterations.length>0)&&iterations.every(i=>!i.command_error)&&Math.abs(error)<=RESIZE_TOLERANCE&&(clamped||Math.abs(width(after.bounds)-width(before.bounds))>=2)&&drift<=Math.max(5,width(before.canvas)*0.02)};
 }
-export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C') {
-  const pinchOutProbe=await resizeTrial(port,1.1,method,`pinch-out-probe-${method}`);
+export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C',limit?:ObservedStickerLimit) {
+  const pinchOutProbe=await resizeTrial(port,1.1,method,`pinch-out-probe-${method}`,limit);
   const rounds=[];
   if(pinchOutProbe.PINCH_OUT_SUPPORTED) for(let i=0;i<5;i++) {
-    const result=await resizeTrial(port,[0.9,0.8,1.1,0.9,1.1][i]!,method,`resize-${method}-${i+1}`);
+    const result=await resizeTrial(port,[0.9,0.8,1.1,0.9,1.1][i]!,method,`resize-${method}-${i+1}`,limit);
     rounds.push(result);if(!result.success) break;
   }
   const qualified=rounds.length===5&&rounds.every(r=>r.success);
-  return {kind:'resize',method,tolerance:RESIZE_TOLERANCE,pinch_out_probe:pinchOutProbe,
+  return {kind:'resize',clamped_count:rounds.filter(r=>r.clamped).length,method,tolerance:RESIZE_TOLERANCE,pinch_out_probe:pinchOutProbe,
     ...measuredPinchSupport([pinchOutProbe,...rounds].flatMap(r=>r.iterations)),
     supported:pinchOutProbe.supported||rounds.some(r=>r.supported),calibrated:qualified,rounds,qualified,recommended:qualified?method:null,passed:rounds.filter(r=>r.success).length,total:5,
     mean_absolute_error:rounds.length?rounds.reduce((sum,r)=>sum+Math.abs(r.error),0)/rounds.length:null,last:await port.read(),published:false};

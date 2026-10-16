@@ -1,3 +1,4 @@
+import {ObservedSizeLimitStore} from "../gestureLab/sizeLimitStore.js";
 import { runtimeHttp } from '../local/runtimeHttp.js';
 import { fileURLToPath } from "node:url";
 import { FeedPollingService } from "../ingestion/feedPollingService.js";
@@ -111,6 +112,7 @@ export function createAdminServer(options: {
         )
       : null);
   const feedApi = feed ? createFeedApi(feed) : null;
+  const sizeLimits = new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??join(options.root,"data/admin"),"sticker-size-limits.json"));
   const settings = new StorySettingsService(
     operations && options.operationsStore
       ? {
@@ -129,6 +131,7 @@ export function createAdminServer(options: {
           },
         }
       : options.repository,
+    sizeLimits,
   );
   const safeJob = (job: any) => {
     const { media_path, ...safe } = job;
@@ -211,13 +214,14 @@ export function createAdminServer(options: {
         );
         return;
       }
+      if(method === "GET" && url.pathname === "/api/sticker-size-limits") {send(res,await sizeLimits.load());return;}
       if (runtimeApi && (await runtimeApi(req, res, url, () => body(req), send))) return;
       if (feedApi && (await feedApi(req, res, url, body, send))) return;
       if (operations && (await operations.handle(req, res, url, body, send)))
         return;
       if (
         method === "GET" &&
-        ["/assets/editorialClient.js", "/assets/editorialUi.js", "/assets/runtimeClient.js"].includes(
+        ["/assets/editorialClient.js", "/assets/editorialUi.js", "/assets/runtimeClient.js", "/assets/stickerSizeLimit.js"].includes(
           url.pathname,
         )
       ) {
