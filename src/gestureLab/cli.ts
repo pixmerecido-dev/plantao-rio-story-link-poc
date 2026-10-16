@@ -5,21 +5,21 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {InstagramDriver} from '../instagram/InstagramDriver.js';
 import {nativeLabPort} from './runtime.js';
-import {benchmarkMove,benchmarkResize,resizeTrial,center} from './core.js';
+import {benchmarkMove,benchmarkResize,resizeTrial,nearMinTrial,validateNearMinProof,center} from './core.js';
 const mode=process.argv[2];
 const directory=resolve('artifacts',`gesture-lab-${mode}-${Date.now()}`);
 const driver=new InstagramDriver();
 await mkdir(directory,{recursive:true});
 try{
   if(process.env.DRY_RUN!=='true') throw Error('Configure DRY_RUN=true. Laboratório não publica.');
-  if(!['move','resize','benchmark','manual','pinch-out'].includes(mode??'')) throw Error('Modo inválido.');
+  if(!['move','resize','benchmark','manual','pinch-out','near-min'].includes(mode??'')) throw Error('Modo inválido.');
   await driver.checkAppium();await driver.connect();
   // Never activateApp, navigate, normalize, create sticker or access a publishing flow.
   const port=nativeLabPort(driver,directory),before=await port.read();
   console.log('GESTURE_STICKER_FOUND=true',JSON.stringify({before_bounds:before.bounds,before_center:center(before.bounds),before_width:before.bounds.right-before.bounds.left,before_height:before.bounds.bottom-before.bounds.top}));
   await port.capture('initial');
   let moveProof;
-  if(mode==='move'||mode==='benchmark'){
+  if(mode==='move'){
     moveProof=await benchmarkMove(port);
     await writeFile(join(directory,'move-report.json'),JSON.stringify(moveProof,null,2));
     console.table([...moveProof.attempts,...moveProof.rounds].map(r=>({method:r.method,success:r.success,requested:JSON.stringify(r.expected_delta),actual:JSON.stringify(r.actual_delta),error:r.movement_error,command_error:r.command_error})));
@@ -31,7 +31,7 @@ try{
     moveProof=JSON.parse(await readFile(resolve(proofPath),'utf8'));
     if(moveProof.kind!=='move'||moveProof.qualified!==true||moveProof.rounds?.length!==5||!moveProof.rounds.every((r:any)=>r.success&&!r.command_error)||JSON.stringify(moveProof.last)!==JSON.stringify(before)) throw Error('Prova MOVE inválida ou editor/sticker/dispositivo mudou. Execute benchmark MOVE novamente.');
   }
-  if(mode==='resize'||mode==='benchmark'||mode==='pinch-out'){
+  if(mode==='resize'||mode==='benchmark'||mode==='pinch-out'||mode==='near-min'){
     const method=process.env.GESTURE_RESIZE_METHOD??'NATIVE';
     if(!['NATIVE','W3C'].includes(method)) throw Error('GESTURE_RESIZE_METHOD deve ser NATIVE ou W3C.');
     const limits=await new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??'data/admin','sticker-size-limits.json')).load();
@@ -42,10 +42,20 @@ try{
     }:null;
     const limit=scope?findObservedLimit(limits,scope):undefined;
     console.log('OBSERVED_MINIMUM',JSON.stringify({scope,limit:limit??null,source:'configuration-scoped registry'}));
-    const report=mode==='pinch-out' ? await resizeTrial(port,1.1,method as 'NATIVE'|'W3C','pinch-out-controlled',limit) : process.env.GESTURE_SCALE
+    if(mode==='benchmark'||(mode==='resize'&&!process.env.GESTURE_SCALE)){
+      if(!limit||!process.env.GESTURE_NEAR_MIN_REPORT) throw Error('Exige GESTURE_NEAR_MIN_REPORT com PASS antes do benchmark.');
+      validateNearMinProof(JSON.parse(await readFile(resolve(process.env.GESTURE_NEAR_MIN_REPORT),'utf8')),before,method,limit);
+    }
+    if(mode==='benchmark'){
+      moveProof=await benchmarkMove(port);
+      await writeFile(join(directory,'move-report.json'),JSON.stringify(moveProof,null,2));
+      if(!moveProof.qualified) throw Error('MOVE não alcançou 5/5. Resize bloqueado.');
+    }
+    if(mode==='near-min'&&!limit) throw Error('NEAR_MIN exige texto/estilo e limite conhecido.');
+    const report=mode==='near-min'?await nearMinTrial(port,method as 'NATIVE'|'W3C',limit!):mode==='pinch-out' ? await resizeTrial(port,1.1,method as 'NATIVE'|'W3C','pinch-out-controlled',limit) : process.env.GESTURE_SCALE
       ?await resizeTrial(port,Number(process.env.GESTURE_SCALE),method as 'NATIVE'|'W3C','resize-controlled',limit)
       :await benchmarkResize(port,method as 'NATIVE'|'W3C',limit);
-    await writeFile(join(directory,mode==='pinch-out'?'pinch-out-report.json':'resize-report.json'),JSON.stringify(report,null,2));
+    await writeFile(join(directory,mode==='near-min'?'near-min-report.json':mode==='pinch-out'?'pinch-out-report.json':'resize-report.json'),JSON.stringify(report,null,2));
     console.log('RESIZE',JSON.stringify(report));
     if(('qualified' in report&&!report.qualified)||('success' in report&&!report.success)) throw Error('RESIZE não confirmado. Nenhuma reintegração.');
   }

@@ -115,3 +115,40 @@ O relatório registra `requested_target_width`, `effective_target_width`, `obser
 O painel consulta o mesmo registro por `/api/sticker-size-limits`. Para a configuração validada, o mínimo equivalente é **504/727 = 69,326%**, apresentado como 69,3%. Slider, prévia e salvamento respeitam o mesmo piso e exibem “Tamanho mínimo permitido pelo Instagram para este link.”. A referência de largura medida é usada na prévia dessa configuração; outros textos/estilos mantêm a estimativa anterior até terem calibração própria. A versão atual do painel usa o contexto de canvas de referência 1080×1920 e o dispositivo fixo já usado pelo motor. Isso não calibra automaticamente outro dispositivo ou versão.
 
 A sequência continua 90%, 80%, 110%, 90%, 110%. Uma rodada limitada ao mínimo conta como válida somente após medição compatível com o alvo efetivo. A qualificação real continua exigindo os relatórios locais; testes com mocks não demonstram 5/5 no Instagram. O algoritmo de MOVE e os gestos do fluxo principal não foram alterados nem substituídos pelo laboratório. O ajuste do painel nesta etapa limita configuração e prévia; não conecta a fila a publicação real.
+
+### Convergência NEAR_MIN
+
+O controlador isolado entra em NEAR_MIN quando a largura está acima do mínimo
+conhecido e a distância até ele é no máximo 8% desse mínimo. A tolerância segue
+0.04 e o registro observado segue 504 px para a configuração validada.
+O primeiro gesto usa intensidade 0.175 (limiar nativo observado anteriormente);
+após NO_EFFECT (<3 px) aumenta 0.01, sem repetir a tentativa ignorada. No máximo
+três gestos NEAR_MIN. Para imediatamente ao entrar na tolerância: 524 passa,
+526 falha. Uma medida abaixo do mínimo é registrada em
+`lower_minimum_candidate`, sem alterar automaticamente o mínimo persistido.
+
+Com um único sticker da configuração conhecida visível entre 525 e 535 px,
+execute no CMD, dentro do projeto:
+
+```cmd
+set DRY_RUN=true
+set GESTURE_RESIZE_METHOD=NATIVE
+set GESTURE_SCALE=
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-near-min
+```
+
+O teste apenas mede e redimensiona o sticker existente: não o prepara/navega.
+Confira `near-min-report.json` no diretório indicado. Somente após `success=true`:
+
+```cmd
+set "GESTURE_NEAR_MIN_REPORT=C:\caminho\completo\near-min-report.json"
+npm run smoke:gesture-benchmark
+```
+
+O caminho deve apontar para o relatório real recém-gerado. O CLI valida PASS,
+faixa inicial, tolerância, alvo, método, identidade visual, dispositivo, canvas e
+configuração antes de qualquer rodada do benchmark. Também exige essa prova
+para o benchmark de resize sem escala individual. MOVE permanece sem mudanças.
+Mocks não qualificam o gesto Android; envie os dois relatórios reais para análise.

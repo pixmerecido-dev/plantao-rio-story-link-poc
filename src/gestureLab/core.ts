@@ -74,11 +74,12 @@ export function measuredPinchSupport(observations:PinchObservation[]) {
   };
 }
 /** Error-band controller: observed gain is diagnostic, never a linear actuator model. */
-export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C',name:string,limit?:ObservedStickerLimit) {
+export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C',name:string,limit?:ObservedStickerLimit,nearMinOnly=false) {
   if(![0.9,0.8,1.1].includes(scale)) throw Error('Use escala controlada 0.9, 0.8 ou 1.1.');
   const before=await port.read();validateSnapshot(before);
   const applicableLimit=limit && limit.scope.canvas_width===width(before.canvas) && limit.scope.canvas_height===before.canvas.bottom-before.canvas.top && limit.scope.device===before.device ? limit : undefined;
-  const requestedTarget=width(before.bounds)*scale;
+  if(nearMinOnly&&(!applicableLimit||width(before.bounds)<525||width(before.bounds)>535)) throw Error('NEAR_MIN exige limite conhecido e largura inicial entre 525 e 535 px.');
+  const requestedTarget=nearMinOnly?applicableLimit!.observed_min_width:width(before.bounds)*scale;
   const clamped=Boolean(applicableLimit && requestedTarget<applicableLimit.observed_min_width);
   const target=clamped?applicableLimit!.observed_min_width:requestedTarget,iterations=[];
   await port.capture(`${name}-before`);
@@ -88,22 +89,27 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
   const gains: Partial<Record<'in'|'out',number>> = {};
   const minimumEffective: Partial<Record<'in'|'out',number>> = {};
   const lastIgnored: Partial<Record<'in'|'out',number>> = {};
-  for(let i=0;i<5;i++) {
+  let nearMinGestures=0;
+  for(let i=0;i<(nearMinOnly?3:5);i++) {
     const fresh=await port.read();validateSnapshot(fresh);
     if(fresh.identity!==before.identity||fresh.device!==before.device||JSON.stringify(fresh.canvas)!==JSON.stringify(before.canvas)) throw Error('Objeto mudou durante resize.');
     const currentWidth=width(fresh.bounds),errorBefore=(currentWidth-target)/target;
     if(Math.abs(errorBefore)<=RESIZE_TOLERANCE){after=fresh;stopReason='WITHIN_TOLERANCE';break;}
     // Preserve one slot for direction reversal; never spend the fifth gesture on blind convergence.
-    if(i===4&&!overshootSeen){stopReason='CORRECTION_SLOT_RESERVED';break;}
+    if(!nearMinOnly&&i===4&&!overshootSeen){stopReason='CORRECTION_SLOT_RESERVED';break;}
     const direction: 'in'|'out'=currentWidth>target?'in':'out';
     const absError=Math.abs(errorBefore);
     const band=absError>0.15?'FAR':absError>0.08?'SMALL':'NEAR';
-    const cap=band==='FAR'?0.30:band==='SMALL'?0.20:0.15;
-    const base=band==='FAR'?0.20:0.10;
-    let strength=Math.min(cap,base,minimumEffective[direction]??base);
+    const nearMin=Boolean(applicableLimit&&direction==='in'&&currentWidth>applicableLimit.observed_min_width&&(currentWidth-applicableLimit.observed_min_width)/applicableLimit.observed_min_width<=0.08);
+    if(nearMin&&nearMinGestures>=3){stopReason='NEAR_MIN_ATTEMPT_LIMIT';break;}
+    const cap=nearMin?0.205:band==='FAR'?0.30:band==='SMALL'?0.20:0.15;
+    // 0.175 is the previously measured native threshold; it remains a trial, not a success claim.
+    const base=nearMin?0.175:band==='FAR'?0.20:0.10;
+    let strength=nearMin?base:Math.min(cap,base,minimumEffective[direction]??base);
     if(previousDirection&&previousDirection!==direction) strength=Math.min(strength,Math.max(0.10,previousStrength/2));
-    if(lastIgnored[direction]!==undefined) strength=Math.max(strength,lastIgnored[direction]!+0.025);
+    if(lastIgnored[direction]!==undefined) strength=Math.max(strength,lastIgnored[direction]!+(nearMin?0.01:0.025));
     if(strength>cap+1e-9){stopReason='NO_EFFECT_BAND_LIMIT';break;}
+    if(nearMin) nearMinGestures++;
     const factor=direction==='in'?1-strength:1+strength;
     let command_error:string|null=null;
     try{await port.resize(method,fresh.bounds,factor,strength);}catch(e){command_error=String(e);}
@@ -116,7 +122,7 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
     const errorAfter=(width(after.bounds)-target)/target;
     const overshoot=errorBefore*errorAfter<0;
     overshootSeen ||= overshoot;
-    iterations.push({attempt:i+1,direction,strength,error_band:band,before:fresh,after,factor,command_error,
+    iterations.push({attempt:i+1,RESIZE_MODE:nearMin?'NEAR_MIN':'NORMAL',target_width:target,success:!command_error&&Math.abs(errorAfter)<=RESIZE_TOLERANCE,direction,strength,error_band:band,before:fresh,after,factor,command_error,
       before_width:currentWidth,after_width:width(after.bounds),delta_px:deltaPx,effect_ratio:effectRatio,
       error_before_percent:errorBefore*100,error_after_percent:errorAfter*100,
       no_effect:noEffect,overshoot,GESTURE_BELOW_THRESHOLD:noEffect,status:noEffect?'NO_EFFECT':correctDirection?'EFFECT':'WRONG_DIRECTION'});
@@ -134,7 +140,8 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
   const actual_scale=width(after.bounds)/width(before.bounds),error=(width(after.bounds)-target)/target;
   const drift=Math.hypot(center(after.bounds).x-center(before.bounds).x,center(after.bounds).y-center(before.bounds).y);
   const {PINCH_IN_SUPPORTED:pinchIn,PINCH_OUT_SUPPORTED:pinchOut}=measuredPinchSupport(iterations);
-  return {method,tolerance:RESIZE_TOLERANCE,requested_scale:scale,TARGET_BELOW_MIN:clamped,clamped,reason:clamped?'INSTAGRAM_MIN_SIZE':null,
+  return {kind:nearMinOnly?'near-min':'resize-trial',RESIZE_MODE:nearMinOnly?'NEAR_MIN':'AUTO',method,tolerance:RESIZE_TOLERANCE,requested_scale:scale,
+    lower_minimum_candidate:applicableLimit&&width(after.bounds)<applicableLimit.observed_min_width-2?width(after.bounds):null,TARGET_BELOW_MIN:clamped,clamped,reason:clamped?'INSTAGRAM_MIN_SIZE':null,
     requested_target_width:requestedTarget,effective_target_width:target,observed_min_width:applicableLimit?.observed_min_width??null,minimum_limit_scope:applicableLimit?.scope??null,
     requested_error_percent:(width(after.bounds)-requestedTarget)/requestedTarget*100,
     initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,stop_reason:stopReason,
@@ -155,4 +162,11 @@ export async function benchmarkResize(port:LabPort,method:'NATIVE'|'W3C',limit?:
     ...measuredPinchSupport([pinchOutProbe,...rounds].flatMap(r=>r.iterations)),
     supported:pinchOutProbe.supported||rounds.some(r=>r.supported),calibrated:qualified,rounds,qualified,recommended:qualified?method:null,passed:rounds.filter(r=>r.success).length,total:5,
     mean_absolute_error:rounds.length?rounds.reduce((sum,r)=>sum+Math.abs(r.error),0)/rounds.length:null,last:await port.read(),published:false};
+}
+
+export async function nearMinTrial(port:LabPort,method:'NATIVE'|'W3C',limit:ObservedStickerLimit) {
+  return resizeTrial(port,0.9,method,'near-min',limit,true);
+}
+export function validateNearMinProof(proof:any,current:Snapshot,method:string,limit:ObservedStickerLimit) {
+  if(proof?.kind!=='near-min'||proof.success!==true||proof.method!==method||proof.tolerance!==RESIZE_TOLERANCE||proof.initial_width<525||proof.initial_width>535||proof.target_width!==limit.observed_min_width||Math.abs(proof.final_width-limit.observed_min_width)/limit.observed_min_width>RESIZE_TOLERANCE||!Array.isArray(proof.iterations)||proof.iterations.length<1||proof.iterations.length>3||proof.iterations.some((i:any)=>i.command_error)||proof.before?.identity!==current.identity||proof.before?.device!==current.device||JSON.stringify(proof.before?.canvas)!==JSON.stringify(current.canvas)||JSON.stringify(proof.minimum_limit_scope)!==JSON.stringify(limit.scope)) throw Error('Execute smoke:gesture-near-min com PASS nesta configuração antes do benchmark.');
 }
