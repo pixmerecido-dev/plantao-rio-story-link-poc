@@ -222,3 +222,79 @@ gestos; para em PASS, NO_EFFECT, drift ou erro. Não repete uma tentativa idênt
 ignorada. Gera `near-min-geometry-converge-report.json`. Nenhum destes testes
 altera o controlador, MOVE, mínimo persistido, tolerância, clamp ou painel.
 Nenhum benchmark completo é iniciado automaticamente.
+
+### Âncoras diagonais proporcionais — calibração isolada
+
+Os pontos vermelho/verde da referência foram desenhados pelo operador.
+**Não existem como controles do Instagram e não são detectados por cor.**
+As posições iniciais são hipóteses, não calibração aprovada:
+
+- vermelho: left + width*0.95; top + height*0.29;
+- verde: left + width*0.04; top + height*0.70.
+
+Todos os pontos são recalculados e arredondados a partir dos bounds atuais.
+Pinch-in inicia nessas âncoras e aproxima ambos os dedos ao ponto médio da
+diagonal. Pinch-out percorre a trajetória inversa, de posições internas até
+as âncoras. Contração inicial35%, hold150ms e cinco passos150ms; são parâmetros
+experimentais registrados pelo plano, não uma escala prevista do sticker.
+Apenas coordenadas enviadas são conhecidas: não se afirma posição real dos
+contatos físicos sem observação independente.
+
+A busca local começa em95/29 e4/70. Se não houver efeito, modifica **uma**
+coordenada por vez: red x93/97, red y27/31, green x2/6, green y68/72.
+Máximo9 candidatos por direção, nunca todas as combinações. Para no primeiro
+efeito direcional>=3px com drift válido. Aumento começa na candidata de redução,
+se encontrada, e então usa os vizinhos restantes se necessário. Erro de comando,
+drift>max(5px,2% da largura do canvas), mudança do objeto/canvas/dispositivo ou
+efeito na direção contrária interrompe. A posição acumulada é verificada por
+fase. Não há MOVE nem reposicionamento automático, reconstrução, publicação,
+benchmark completo ou alteração de limites/slider/controlador principal.
+
+Prepare manualmente um único Link Sticker visível, preferencialmente maior que
+o mínimo para que a redução possa ser observada. Declare seu texto/estilo real:
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-anchor-calibration
+```
+
+Saída em `artifacts/gesture-anchor-calibration-<timestamp>/`:
+
+- `anchor-calibration-report.json`: todas as tentativas, percentuais normalizados
+  0..1, pontos px, distâncias, bounds, larguras, delta, drift e efeito por direção;
+- `attempts.jsonl`: comando antes da execução, resultado após medição;
+- `anchor-in-1-before.png` e equivalentes: screenshot original;
+- `anchor-in-1-before-anchors.svg` e equivalentes: screenshot embutido em SVG
+  com bounds, âncoras e trajetórias **calculadas**, abrível no navegador;
+- XML/JSON e PNG antes/depois de cada tentativa; metadados de viewport separados.
+
+O overlay usa o PNG original e não altera a tela do Instagram. Recusa PNG e
+viewport com tamanhos divergentes para não desenhar uma correspondência falsa.
+Tamanhos iguais ainda não comprovam hit testing; compare a marcação à imagem.
+Suporte significa efeito medido. A primeira candidata válida não é declarada
+ótima/universal; compare efeitos e drift nos relatórios reais antes de adotá-la.
+
+Depois de provar as duas direções, repetir separadamente com texto curto,
+texto de referência e texto longo, preparados manualmente, declarando o texto
+atual em GESTURE_STICKER_TEXT e estilo em GESTURE_STYLE_INDEX. O relatório
+registra estes dados como declaração do operador, não prova semântica do XML.
+Cada execução recalcula os pixels. Nenhuma aprovação entre textos é presumida.
+Os testes mock de diferentes larguras validam o cálculo, não o Instagram.
+
+### Controle Ctrl + mouse separado
+
+```cmd
+set GESTURE_ANCHOR_DIRECTION=in
+npm run smoke:gesture-anchor-ctrl-mouse
+```
+
+Exige terminal interativo. Mede e salva o estado inicial e overlay; mostra a
+referência vermelha calculada. O operador faz Ctrl+mouse manualmente no emulador
+e só então pressiona Enter no CMD. O programa não injeta pointer, tecla nem
+movimento. Gera `anchor-ctrl-mouse-report.json` em pasta própria e captura o
+estado final. Para aumento, repita com GESTURE_ANCHOR_DIRECTION=out.
+O caminho manual não é registrado como se tivesse sido observado; apenas
+largura e drift antes/depois são medidos. Esta evidência permanece separada
+do multi-touch automatizado.

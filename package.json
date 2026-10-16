@@ -55,7 +55,9 @@
     "smoke:gesture-min-size-manual": "tsx src/gestureLab/minSizeCli.ts manual",
     "smoke:gesture-near-min": "tsx src/gestureLab/cli.ts near-min",
     "smoke:gesture-near-min-geometry": "tsx src/gestureLab/nearMinGeometryCli.ts",
-    "smoke:gesture-near-min-geometry-converge": "tsx src/gestureLab/nearMinGeometryCli.ts converge"
+    "smoke:gesture-near-min-geometry-converge": "tsx src/gestureLab/nearMinGeometryCli.ts converge",
+    "smoke:gesture-anchor-calibration": "tsx src/gestureLab/anchorCalibrationCli.ts",
+    "smoke:gesture-anchor-ctrl-mouse": "tsx src/gestureLab/anchorCalibrationCli.ts ctrl-mouse"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",
