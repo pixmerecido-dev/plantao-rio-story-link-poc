@@ -66,3 +66,45 @@ test('server settings service clamps saved scale while other text remains unrest
  settings.story.sticker.text='Outro texto';settings.story.sticker.scale=0.6;
  assert.equal((await service.save(settings)).story.sticker.scale,0.6);
 });
+
+test('confirmed minimum and all clamped widths inside four percent pass without any gesture',async()=>{
+ for(const initial of [484,504,520,524]){
+  const p=port(initial);p.resize=async()=>{throw Error('must not touch a clamped sticker already within tolerance');};
+  const r=await resizeTrial(p,0.8,'NATIVE','final-clamp',known);
+  assert.equal(r.requested_target_width,initial*0.8);assert.equal(r.effective_target_width,504);
+  assert.equal(r.clamp_reason,'INSTAGRAM_MIN_SIZE');assert.equal(r.success,true);
+  assert.equal(r.gesture_skipped,true);assert.equal(r.iterations.length,0);assert.equal(r.final_width,initial);
+ }
+});
+test('clamped target still rejects 526 and widths below lower tolerance boundary',async()=>{
+ for(const initial of [483,526]){
+  const p=port(initial);p.resize=async()=>{};
+  const r=await resizeTrial(p,0.8,'NATIVE','outside',known);
+  assert.equal(r.success,false);assert.equal(r.clamped,true);assert.ok(Math.abs(r.error_percent)>4);
+ }
+});
+test('consecutive reductions at minimum do not regress; increase uses fresh current width',async()=>{
+ const p=port(504);
+ const a=await resizeTrial(p,0.9,'NATIVE','reduce-1',known);
+ const b=await resizeTrial(p,0.8,'NATIVE','reduce-2',known);
+ assert.equal(a.success,true);assert.equal(b.success,true);assert.equal(p.count(),0);
+ assert.equal(a.final_width,504);assert.equal(b.initial_width,504);
+ const c=await resizeTrial(p,1.1,'NATIVE','increase',known);
+ assert.equal(c.clamped,false);assert.equal(c.initial_width,504);
+ assert.ok(Math.abs(c.requested_target_width-554.4)<1e-9);assert.ok(p.count()>0);assert.equal(c.success,true);
+});
+test('final five-round simulation uses fresh widths and measures errors against effective targets',async()=>{
+ const p=port(504),r=await benchmarkResize(p,'NATIVE',known);
+ assert.equal(r.total,5);assert.equal(r.rounds.length,5);assert.equal(r.qualified,true);
+ let previous=r.pinch_out_probe.final_width;
+ for(const round of r.rounds){
+  assert.equal(round.initial_width,previous);
+  assert.equal(round.requested_target_width,previous*round.requested_scale);
+  assert.equal(round.effective_target_width,Math.max(round.requested_target_width,504));
+  assert.equal(round.clamped,round.requested_target_width<504);
+  assert.equal(round.clamp_reason,round.clamped?'INSTAGRAM_MIN_SIZE':null);
+  if(round.clamped&&Math.abs(round.initial_width-504)/504<=.04)assert.equal(round.iterations.length,0);
+  previous=round.final_width;
+ }
+ assert.equal(r.mean_absolute_error,r.rounds.reduce((sum,x)=>sum+Math.abs(x.error),0)/5);
+});

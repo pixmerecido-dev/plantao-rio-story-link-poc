@@ -140,18 +140,40 @@ npm run smoke:gesture-near-min
 ```
 
 O teste apenas mede e redimensiona o sticker existente: não o prepara/navega.
-Confira `near-min-report.json` no diretório indicado. Somente após `success=true`:
+O modo near-min permanece apenas como diagnóstico histórico; não é mais
+pré-requisito do benchmark final. Não repetir a investigação nesta fase.
+O mínimo prático da configuração foi confirmado em 504 px. O benchmark usa
+`max(requested_target_width, observed_min_width)` e registra `clamp_reason`.
+Quando o alvo é limitado ao mínimo e a medida atual já está dentro de ±4%,
+a rodada passa sem gesto (`gesture_skipped=true`). Isso inclui a medida 504 px.
+526 px continua fora da tolerância. Valores abaixo da borda inferior também
+não são aprovados apenas por serem menores que o mínimo.
+
+### Benchmark final com mínimo confirmado
+
+Deixe um único Link Sticker da configuração conhecida visível no editor.
+Não precisa restaurar um tamanho fixo antes de cada rodada: a sequência
+90%, 80%, 110%, 90%, 110% usa as larguras reais medidas a cada rodada.
+Há um probe de aumento separado das cinco rodadas. Reduções consecutivas
+no mínimo podem passar sem gesto, sem alegar nova comprovação de pinch-in.
+Os indicadores de suporte continuam derivados dos gestos com efeito medido.
 
 ```cmd
-set "GESTURE_NEAR_MIN_REPORT=C:\caminho\completo\near-min-report.json"
+set DRY_RUN=true
+set GESTURE_RESIZE_METHOD=NATIVE
+set GESTURE_SCALE=
+set GESTURE_NEAR_MIN_REPORT=
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
 npm run smoke:gesture-benchmark
 ```
 
-O caminho deve apontar para o relatório real recém-gerado. O CLI valida PASS,
-faixa inicial, tolerância, alvo, método, identidade visual, dispositivo, canvas e
-configuração antes de qualquer rodada do benchmark. Também exige essa prova
-para o benchmark de resize sem escala individual. MOVE permanece sem mudanças.
-Mocks não qualificam o gesto Android; envie os dois relatórios reais para análise.
+O benchmark mantém a validação MOVE existente, não exige relatório near-min e
+não executa testes de geometria. `resize-report.json` registra cinco resultados
+se todos passarem; uma falha interrompe a bateria e mantém `qualified=false`.
+O erro médio considera apenas rodadas executadas, em fração (multiplique por
+100 para percentual). Uma simulação 5/5 não substitui o resultado Android.
+Reintegração depende de 5/5 reais; estes comandos não reintegram nem publicam.
 
 ### Investigação da geometria próxima do mínimo
 

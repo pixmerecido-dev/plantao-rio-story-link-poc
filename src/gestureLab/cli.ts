@@ -5,7 +5,7 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {InstagramDriver} from '../instagram/InstagramDriver.js';
 import {nativeLabPort} from './runtime.js';
-import {benchmarkMove,benchmarkResize,resizeTrial,nearMinTrial,validateNearMinProof,center} from './core.js';
+import {benchmarkMove,benchmarkResize,resizeTrial,nearMinTrial,center} from './core.js';
 const mode=process.argv[2];
 const directory=resolve('artifacts',`gesture-lab-${mode}-${Date.now()}`);
 const driver=new InstagramDriver();
@@ -42,10 +42,7 @@ try{
     }:null;
     const limit=scope?findObservedLimit(limits,scope):undefined;
     console.log('OBSERVED_MINIMUM',JSON.stringify({scope,limit:limit??null,source:'configuration-scoped registry'}));
-    if(mode==='benchmark'||(mode==='resize'&&!process.env.GESTURE_SCALE)){
-      if(!limit||!process.env.GESTURE_NEAR_MIN_REPORT) throw Error('Exige GESTURE_NEAR_MIN_REPORT com PASS antes do benchmark.');
-      validateNearMinProof(JSON.parse(await readFile(resolve(process.env.GESTURE_NEAR_MIN_REPORT),'utf8')),before,method,limit);
-    }
+    // Final minimum-aware benchmark no longer requires the diagnostic near-min proof.
     if(mode==='benchmark'){
       moveProof=await benchmarkMove(port);
       await writeFile(join(directory,'move-report.json'),JSON.stringify(moveProof,null,2));

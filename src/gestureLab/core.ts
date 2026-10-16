@@ -81,7 +81,7 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
   if(nearMinOnly&&(!applicableLimit||width(before.bounds)<525||width(before.bounds)>535)) throw Error('NEAR_MIN exige limite conhecido e largura inicial entre 525 e 535 px.');
   const requestedTarget=nearMinOnly?applicableLimit!.observed_min_width:width(before.bounds)*scale;
   const clamped=Boolean(applicableLimit && requestedTarget<applicableLimit.observed_min_width);
-  const target=clamped?applicableLimit!.observed_min_width:requestedTarget,iterations=[];
+  const target=applicableLimit?Math.max(requestedTarget,applicableLimit.observed_min_width):requestedTarget,iterations=[];
   await port.capture(`${name}-before`);
   let after=before,overshootSeen=false,stopReason='ATTEMPT_LIMIT';
   let previousDirection: 'in'|'out'|undefined;
@@ -103,7 +103,7 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
     const nearMin=Boolean(applicableLimit&&direction==='in'&&currentWidth>applicableLimit.observed_min_width&&(currentWidth-applicableLimit.observed_min_width)/applicableLimit.observed_min_width<=0.08);
     if(nearMin&&nearMinGestures>=3){stopReason='NEAR_MIN_ATTEMPT_LIMIT';break;}
     const cap=nearMin?0.205:band==='FAR'?0.30:band==='SMALL'?0.20:0.15;
-    // 0.175 is the previously measured native threshold; it remains a trial, not a success claim.
+    // 0.175 was observed on pinch-out; near-min pinch-in remains experimental outside tolerance.
     const base=nearMin?0.175:band==='FAR'?0.20:0.10;
     let strength=nearMin?base:Math.min(cap,base,minimumEffective[direction]??base);
     if(previousDirection&&previousDirection!==direction) strength=Math.min(strength,Math.max(0.10,previousStrength/2));
@@ -141,7 +141,8 @@ export async function resizeTrial(port:LabPort,scale:number,method:'NATIVE'|'W3C
   const drift=Math.hypot(center(after.bounds).x-center(before.bounds).x,center(after.bounds).y-center(before.bounds).y);
   const {PINCH_IN_SUPPORTED:pinchIn,PINCH_OUT_SUPPORTED:pinchOut}=measuredPinchSupport(iterations);
   return {kind:nearMinOnly?'near-min':'resize-trial',RESIZE_MODE:nearMinOnly?'NEAR_MIN':'AUTO',method,tolerance:RESIZE_TOLERANCE,requested_scale:scale,
-    lower_minimum_candidate:applicableLimit&&width(after.bounds)<applicableLimit.observed_min_width-2?width(after.bounds):null,TARGET_BELOW_MIN:clamped,clamped,reason:clamped?'INSTAGRAM_MIN_SIZE':null,
+    lower_minimum_candidate:applicableLimit&&width(after.bounds)<applicableLimit.observed_min_width-2?width(after.bounds):null,TARGET_BELOW_MIN:clamped,clamped,clamp_reason:clamped?'INSTAGRAM_MIN_SIZE':null,reason:clamped?'INSTAGRAM_MIN_SIZE':null,
+    gesture_skipped:iterations.length===0,
     requested_target_width:requestedTarget,effective_target_width:target,observed_min_width:applicableLimit?.observed_min_width??null,minimum_limit_scope:applicableLimit?.scope??null,
     requested_error_percent:(width(after.bounds)-requestedTarget)/requestedTarget*100,
     initial_width:width(before.bounds),target_width:target,final_width:width(after.bounds),error_percent:error*100,stop_reason:stopReason,
