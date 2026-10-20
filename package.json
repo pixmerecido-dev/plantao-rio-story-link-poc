@@ -68,7 +68,8 @@
     "smoke:gesture-short-emulator-precision": "tsx src/gestureLab/emulatorMirrorPinchCli.ts precision",
     "smoke:gesture-text-emulator-precision": "tsx src/gestureLab/emulatorMirrorPinchCli.ts precision",
     "smoke:gesture-emulator-final": "tsx src/gestureLab/emulatorMirrorPinchCli.ts final",
-    "smoke:gesture-mirror-convergence": "tsx src/gestureLab/emulatorMirrorPinchCli.ts converge"
+    "smoke:gesture-mirror-convergence": "tsx src/gestureLab/emulatorMirrorPinchCli.ts converge",
+    "smoke:gesture-session-final": "tsx src/gestureLab/emulatorMirrorPinchCli.ts final-session"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

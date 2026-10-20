@@ -14,13 +14,15 @@ import {findObservedLimit} from '../admin/stickerSizeLimit.js';
 import {repeatEmulatorMirrorCycles} from './emulatorMirrorCycles.js';
 import {testEmulatorMirrorPinch,emulatorMirrorActions} from './emulatorMirrorPinch.js';
 import {investigateMirrorConvergence} from './mirrorConvergence.js';
+import {loadSessionMinimum} from './sessionMinimum.js';
+const sessionMinimum=process.argv[2]==='final-session';
 const convergence=process.argv[2]==='converge';
-const finalBattery=process.argv[2]==='final';
+const finalBattery=process.argv[2]==='final'||sessionMinimum;
 const cycles=process.argv[2]==='cycles',precision=process.argv[2]==='precision'||finalBattery||convergence;
 const text=process.env.GESTURE_STICKER_TEXT??'Veja';
-const textPrecision=precision&&text!=='Veja',reportName=convergence?'mirror-convergence-report.json':finalBattery?'final-emulator-resize-report.json':textPrecision?'text-emulator-precision-report.json':'short-emulator-precision-report.json';
+const textPrecision=precision&&text!=='Veja',reportName=sessionMinimum?'session-final-resize-report.json':convergence?'mirror-convergence-report.json':finalBattery?'final-emulator-resize-report.json':textPrecision?'text-emulator-precision-report.json':'short-emulator-precision-report.json';
 const direction=process.argv[2]==='in'?'in':'out';
-const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-${textPrecision?'text':'short'}-emulator-pinch${convergence?'-converge':finalBattery?'-final':precision?'-precision':cycles?'-cycles':direction==='in'?'-in':''}-${Date.now()}`);
+const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-${textPrecision?'text':'short'}-emulator-pinch${sessionMinimum?'-session-final':convergence?'-converge':finalBattery?'-final':precision?'-precision':cycles?'-cycles':direction==='in'?'-in':''}-${Date.now()}`);
 let activePrefix='';
 let logCapture:Awaited<ReturnType<typeof startTouchLog>>|undefined;
 await mkdir(directory,{recursive:true});
@@ -31,7 +33,7 @@ try{
  if(!stdin.isTTY||!stdout.isTTY)throw Error('Use CMD interativo.');
  await driver.checkAppium();await driver.connect();const session=driver.getSession(),live=nativeLabPort(driver,directory);
  const terminal=createInterface({input:stdin,output:stdout}),keepAlive=setInterval(()=>{void session.getCurrentPackage().catch(()=>{});},15000);
- try{console.log(convergence?'Mantenha Leia a matéria completa branco/azul no estado de 575 px deixado pela falha. Não ajuste manualmente. Até 3 amplitudes distintas, alvo 548 px. Solte Ctrl/mouse e não toque até terminar.':finalBattery?'Mantenha somente Leia a matéria completa branco/azul central, em tamanho intermediário, com espaço para crescer. Serão 5 alvos: 90%, 80%, 110%, 90%, 110%. Mínimo conhecido 504 px e tolerância 4%. Solte Ctrl/mouse; não toque durante a execução.':precision?`Mantenha somente “${text}” branco/azul e central, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Serão5 alvos alternados +10%/-10%, tolerância4%; não toque até terminar.`:cycles?'Mantenha somente Veja branco/azul, pequeno e central, no estado deixado pela redução aprovada. Solte Ctrl/mouse e aguarde os botões. Serão até5 ciclos automáticos de aumento/redução; não toque até terminar.':direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
+ try{console.log(sessionMinimum?'Mantenha o mesmo sticker padrão branco/azul de 575 px. Ao pressionar Enter, confirme que tentou reduzir manualmente e ele permaneceu no mínimo. O registro anterior de 504 será preservado. Serão 5 rodadas com mínimo de sessão 575, sem publicar. Não toque durante a execução.':convergence?'Mantenha Leia a matéria completa branco/azul no estado de 575 px deixado pela falha. Não ajuste manualmente. Até 3 amplitudes distintas, alvo 548 px. Solte Ctrl/mouse e não toque até terminar.':finalBattery?'Mantenha somente Leia a matéria completa branco/azul central, em tamanho intermediário, com espaço para crescer. Serão 5 alvos: 90%, 80%, 110%, 90%, 110%. Mínimo conhecido 504 px e tolerância 4%. Solte Ctrl/mouse; não toque durante a execução.':precision?`Mantenha somente “${text}” branco/azul e central, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Serão5 alvos alternados +10%/-10%, tolerância4%; não toque até terminar.`:cycles?'Mantenha somente Veja branco/azul, pequeno e central, no estado deixado pela redução aprovada. Solte Ctrl/mouse e aguarde os botões. Serão até5 ciclos automáticos de aumento/redução; não toque até terminar.':direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
  const viewport=await session.getWindowRect();
  const readStable=async()=>{
   let previous:string|undefined;
@@ -71,7 +73,10 @@ try{
  }else if(precision){
   const initial=await readStable(),scope={text,style_index:0,canvas_width:initial.canvas.right-initial.canvas.left,canvas_height:initial.canvas.bottom-initial.canvas.top,device:initial.device,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null};
   const limits=await new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??'data/admin','sticker-size-limits.json')).load(),limit=findObservedLimit(limits,scope);
-  const report=await benchmarkMirrorPrecision(readStable,run,limit,async report=>{await writeFile(join(directory,reportName),JSON.stringify(report,null,2));},text as MirrorPrecisionText,finalBattery);
+  const observation=sessionMinimum?await loadSessionMinimum(resolve('artifacts'),initial,scope):undefined;
+  if(observation)await writeFile(join(directory,'session-minimum-observation.json'),JSON.stringify(observation,null,2));
+  const enrich=(report:Record<string,unknown>)=>({...report,session_minimum_observation:observation??null,qualification_scope:observation?'CURRENT_MANUALLY_CONFIRMED_SESSION_ONLY':report.qualification_scope});
+  const report=await benchmarkMirrorPrecision(readStable,run,limit,async report=>{await writeFile(join(directory,reportName),JSON.stringify(enrich(report),null,2));},text as MirrorPrecisionText,finalBattery,observation);
   console.table(report.rounds.map(r=>({round:r.round,scale:r.requested_scale,before:r.initial_width,target:r.effective_target_width,final:r.final_width,error_percent:r.error_percent,clamped:r.clamped,success:r.success})));
   console.log(`PRECISION_QUALIFIED=${report.qualified}`);if(!report.qualified)process.exitCode=1;
  }else if(cycles){

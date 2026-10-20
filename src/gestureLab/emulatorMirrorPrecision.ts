@@ -2,6 +2,7 @@ import {anchorMetrics,sameAnchorObject} from './anchorCalibration.js';
 import {RESIZE_TOLERANCE,validateSnapshot,width,type Snapshot} from './core.js';
 import type {MirrorCycleRun,VerifiedMirrorTrial} from './emulatorMirrorCycles.js';
 import type {ObservedStickerLimit} from '../admin/stickerSizeLimit.js';
+import {sessionPrecisionLimit,type SessionMinimumObservation} from './sessionMinimum.js';
 export type MirrorPrecisionText='Veja'|'Leia a matéria completa'|'veja a materia complata no jornal';
 export const MIRROR_FINAL_TARGETS=[.9,.8,1.1,.9,1.1] as const;
 export const MIRROR_PRECISION_TARGETS=[1.1,.9,1.1,.9,1.1] as const;
@@ -39,8 +40,12 @@ function report(rounds:PrecisionRound[],text:MirrorPrecisionText='Veja',finalBat
   clamped_count:rounds.filter(r=>r.clamped).length,mean_absolute_error_percent:rounds.length?rounds.reduce((s,r)=>s+Math.abs(r.error_percent),0)/rounds.length:null,
   qualification_scope:finalBattery?'CURRENT_STANDARD_TEXT_FINAL_SEQUENCE':text==='Veja'?'CURRENT_VEJA_PROFILE_ONLY_PLUS_MINUS_TEN_PERCENT_TARGETS':'CURRENT_DECLARED_TEXT_PROFILE_ONLY_PLUS_MINUS_TEN_PERCENT_TARGETS',panel_integration:false,published:false};
 }
-export async function benchmarkMirrorPrecision(read:()=>Promise<Snapshot>,run:MirrorCycleRun,limit?:ObservedStickerLimit,progress:(result:ReturnType<typeof report>)=>Promise<void>=async()=>{},text:MirrorPrecisionText='Veja',finalBattery=false){
- if(finalBattery&&(text!=='Leia a matéria completa'||limit?.scope.text!==text||limit.observed_min_width!==504))throw Error('Bateria final exige texto padrão e mínimo confirmado de 504 px para esta configuração.');
+export async function benchmarkMirrorPrecision(read:()=>Promise<Snapshot>,run:MirrorCycleRun,limit?:ObservedStickerLimit,progress:(result:ReturnType<typeof report>)=>Promise<void>=async()=>{},text:MirrorPrecisionText='Veja',finalBattery=false,sessionObservation?:SessionMinimumObservation){
+ if(sessionObservation){
+  if(!finalBattery)throw Error('Observação de sessão exige bateria final isolada.');
+  limit=sessionPrecisionLimit(sessionObservation,await read(),text);
+ }
+ if(finalBattery&&(text!=='Leia a matéria completa'||limit?.scope.text!==text||(limit.observed_min_width!==504&&!sessionObservation)))throw Error('Bateria final exige texto padrão e mínimo confirmado de 504 px para esta configuração.');
  const rounds:PrecisionRound[]=[];let expected:Snapshot|undefined;
  for(const [index,scale] of (finalBattery?MIRROR_FINAL_TARGETS:MIRROR_PRECISION_TARGETS).entries()){
   if(expected&&JSON.stringify(await read())!==JSON.stringify(expected))throw Error('Estado mudou entre rodadas.');

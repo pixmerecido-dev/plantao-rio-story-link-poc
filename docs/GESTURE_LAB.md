@@ -648,3 +648,28 @@ de 548, para; também para em overshoot, direção errada ou evidência inválid
 Não persiste mínimo, não troca o controlador dos ensaios aprovados, não executa
 a bateria final nem integra/publica. Amplitudes são experimentais, dependem do
 resultado real; testes de unidade não comprovam reconhecimento pelo Instagram.
+
+### Mínimo confirmado apenas na sessão atual
+
+Após o controle manual informar que o mesmo sticker de 575 px não reduz mais,
+`npm run smoke:gesture-session-final` pode executar uma nova bateria com essa
+observação explícita de sessão. Requer texto padrão, estilo 0, `DRY_RUN=true`
+e um Enter de confirmação manual. Não executa novos testes de redução do mínimo.
+
+O comando lê o relatório de convergência mais recente de `artifacts`, exige três
+amplitudes distintas sem efeito com injeção válida, e confere texto declarado,
+estilo, versão, identidade, dispositivo, canvas e bounds exatos contra o estado
+atual. Evidência incompatível bloqueia o teste; não procura relatório antigo para
+contornar a rejeição. A observação é salva junto aos novos artefatos em
+`session-minimum-observation.json`, com origem, SHA256, data, snapshot e indicação
+`session_only=true`. O operador confirma o controle manual; não há verificação
+semântica automática do texto ou reconhecimento visual do estilo.
+
+O registro global anterior de 504 px permanece intocado. A diferença entre os
+mínimos continua sem causa identificada: não inferir equivalência completa de
+configuração apenas dos metadados disponíveis. A observação de 575 vale apenas
+para esta execução, não para outros textos, futuras sessões ou o painel.
+`session-final-resize-report.json` usa a sequência 90/80/110/90/110 e ±4%, com
+alvos solicitados e efetivos explícitos e sem gestos quando já dentro da faixa.
+Uma aprovação vale apenas para a sessão declarada. Não altera resultados antigos,
+não publica nem integra ao painel.
