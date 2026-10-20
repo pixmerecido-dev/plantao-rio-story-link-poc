@@ -8,11 +8,14 @@ import {nativeLabPort} from './runtime.js';
 import {connectedAndroidDevice} from '../instagram/addStoryAndroidDiagnostics.js';
 import {startTouchLog} from './touchLogCapture.js';
 import {analyzeTouchInjectionLog} from './touchInjectionLog.js';
+import {benchmarkMirrorPrecision} from './emulatorMirrorPrecision.js';
+import {ObservedSizeLimitStore} from './sizeLimitStore.js';
+import {findObservedLimit} from '../admin/stickerSizeLimit.js';
 import {repeatEmulatorMirrorCycles} from './emulatorMirrorCycles.js';
 import {testEmulatorMirrorPinch,emulatorMirrorActions} from './emulatorMirrorPinch.js';
-const cycles=process.argv[2]==='cycles';
+const cycles=process.argv[2]==='cycles',precision=process.argv[2]==='precision';
 const direction=process.argv[2]==='in'?'in':'out';
-const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-short-emulator-pinch${cycles?'-cycles':direction==='in'?'-in':''}-${Date.now()}`);
+const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-short-emulator-pinch${precision?'-precision':cycles?'-cycles':direction==='in'?'-in':''}-${Date.now()}`);
 let activePrefix='';
 let logCapture:Awaited<ReturnType<typeof startTouchLog>>|undefined;
 await mkdir(directory,{recursive:true});
@@ -22,7 +25,7 @@ try{
  if(!stdin.isTTY||!stdout.isTTY)throw Error('Use CMD interativo.');
  await driver.checkAppium();await driver.connect();const session=driver.getSession(),live=nativeLabPort(driver,directory);
  const terminal=createInterface({input:stdin,output:stdout}),keepAlive=setInterval(()=>{void session.getCurrentPackage().catch(()=>{});},15000);
- try{console.log(cycles?'Mantenha somente Veja branco/azul, pequeno e central, no estado deixado pela redução aprovada. Solte Ctrl/mouse e aguarde os botões. Serão até5 ciclos automáticos de aumento/redução; não toque até terminar.':direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
+ try{console.log(precision?'Mantenha somente Veja branco/azul, pequeno e central, no estado aprovado nos ciclos. Solte Ctrl/mouse e aguarde os botões. Serão5 alvos alternados +10%/-10%, tolerância4%; não toque até terminar.':cycles?'Mantenha somente Veja branco/azul, pequeno e central, no estado deixado pela redução aprovada. Solte Ctrl/mouse e aguarde os botões. Serão até5 ciclos automáticos de aumento/redução; não toque até terminar.':direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
  const viewport=await session.getWindowRect();
  const readStable=async()=>{
   let previous:string|undefined;
@@ -34,7 +37,7 @@ try{
   throw Error('Editor/sticker não estabilizou.');
  };
  const run=async(direction:'in'|'out',cycle=0,expected?:Awaited<ReturnType<typeof live.read>>)=>{
- activePrefix=cycle?`cycle-${cycle}-${direction}-`:'';
+ activePrefix=precision?`round-${Math.floor(cycle/10)}-attempt-${cycle%10}-${direction}-`:cycle?`cycle-${cycle}-${direction}-`:'';
  if(expected&&JSON.stringify(await readStable())!==JSON.stringify(expected))throw Error('Estado mudou entre gestos; ciclo interrompido antes de novo toque.');
  logCapture=await startTouchLog(connectedAndroidDevice(session));
  const result=await testEmulatorMirrorPinch({read:readStable,
@@ -56,7 +59,13 @@ try{
  console.table([{before:result.before_width,after:result.after_width,delta:result.delta_width,drift:result.center_drift,injection:evidence.injection_sequence_observed,success}]);
  return report;
  };
- if(cycles){
+ if(precision){
+  const initial=await readStable(),scope={text:'Veja',style_index:0,canvas_width:initial.canvas.right-initial.canvas.left,canvas_height:initial.canvas.bottom-initial.canvas.top,device:initial.device,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null};
+  const limits=await new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??'data/admin','sticker-size-limits.json')).load(),limit=findObservedLimit(limits,scope);
+  const report=await benchmarkMirrorPrecision(readStable,run,limit,async report=>{await writeFile(join(directory,'short-emulator-precision-report.json'),JSON.stringify(report,null,2));});
+  console.table(report.rounds.map(r=>({round:r.round,scale:r.requested_scale,before:r.initial_width,target:r.effective_target_width,final:r.final_width,error_percent:r.error_percent,clamped:r.clamped,success:r.success})));
+  console.log(`PRECISION_QUALIFIED=${report.qualified}`);if(!report.qualified)process.exitCode=1;
+ }else if(cycles){
   const report=await repeatEmulatorMirrorCycles(run,async report=>{await writeFile(join(directory,'short-emulator-cycles-report.json'),JSON.stringify(report,null,2));});
   console.table(report.rounds.map(r=>({cycle:r.cycle,before:r.increase.before_width,increased:r.increase.after_width,reduced:r.decrease?.after_width,success:r.success})));
   console.log(`CYCLES_QUALIFIED=${report.qualified}`);if(!report.qualified)process.exitCode=1;

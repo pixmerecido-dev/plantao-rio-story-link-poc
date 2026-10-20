@@ -64,7 +64,8 @@
     "smoke:gesture-short-touch-execution": "tsx src/gestureLab/shortTouchExecutionCli.ts",
     "smoke:gesture-short-emulator-pinch": "tsx src/gestureLab/emulatorMirrorPinchCli.ts",
     "smoke:gesture-short-emulator-pinch-in": "tsx src/gestureLab/emulatorMirrorPinchCli.ts in",
-    "smoke:gesture-short-emulator-cycles": "tsx src/gestureLab/emulatorMirrorPinchCli.ts cycles"
+    "smoke:gesture-short-emulator-cycles": "tsx src/gestureLab/emulatorMirrorPinchCli.ts cycles",
+    "smoke:gesture-short-emulator-precision": "tsx src/gestureLab/emulatorMirrorPinchCli.ts precision"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

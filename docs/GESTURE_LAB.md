@@ -557,3 +557,42 @@ de publicação. `mean_absolute_return_error_percent` é diagnóstico da distân
 entre largura final e inicial de cada ciclo; não é erro contra um alvo de
 layout e não altera a tolerância4%. Não executa o benchmark final de alvos,
 reintegração, MOVE ou gestos dos textos padrão/longo. Nenhum mínimo é alterado.
+
+### Precisão de alvos pequenos — somente Veja
+
+Após repetibilidade real5/5 dos ciclos, o controlador isolado pode avaliar
+alvos de aumento/redução10% com o mesmo gesto espelhado já validado:
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Veja"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-short-emulator-precision
+```
+
+Mantenha Veja branco/azul pequeno e central, no estado aprovado nos ciclos,
+com espaço para crescer. Confirme Enter uma vez e não interfira. São5rodadas:
+110%,90%,110%,90%,110%, sempre a partir da largura real medida no início de
+cada rodada. Não é a bateria90%/80% nem valida mudanças grandes/posições novas.
+O alvo é absoluto durante uma rodada e a tolerância continua RESIZE_TOLERANCE=.04.
+
+O atuador permanece o mesmo: separação1.20 para aumentar e1/1.20 para reduzir,
+sem converter isso numa previsão linear de escala do sticker. O controlador
+escolhe a direção pelo erro medido, aplica no máximo3gestos e para imediatamente
+em ±4%. Para também em NO_EFFECT, erro de comando/injeção, drift ou overshoot
+fora de tolerância, sem oscilar e sem recalibração. A primeira rodada reprovada
+interrompe a bateria. Cada gesto tem artefatos e logcat individuais.
+
+Só usa mínimo persistido se o perfil exato Veja/texto/estilo/canvas/dispositivo/
+versão corresponder ao registro. O mínimo504px do texto padrão nunca é usado
+para Veja. Sem registro de Veja, observed_min_width=null e não se inventa um
+limite a partir dos ciclos; um alvo que não puder ser atingido deve reprovar,
+não mascarar a falha. Nenhum mínimo ou slider é modificado.
+
+Salva `short-emulator-precision-report.json`: requested/effective_target_width,
+final_width, error_percent, iterations, clamped, stop_reason e success por
+rodada; passed/total/qualified e mean_absolute_error_percent no agregado.
+O erro médio é contra os alvos de layout desta bateria, distinto do erro de
+retorno dos ciclos anteriores. `qualified=true` qualifica somente este perfil
+Veja e os alvos pequenos testados. O controlador continua isolado do painel,
+sem alterar MOVE, os gestos dos outros textos, RSS/fila ou publicação.
