@@ -9,7 +9,8 @@ import {connectedAndroidDevice} from '../instagram/addStoryAndroidDiagnostics.js
 import {startTouchLog} from './touchLogCapture.js';
 import {analyzeTouchInjectionLog} from './touchInjectionLog.js';
 import {testEmulatorMirrorPinch,emulatorMirrorActions} from './emulatorMirrorPinch.js';
-const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-short-emulator-pinch-${Date.now()}`);
+const direction=process.argv[2]==='in'?'in':'out';
+const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-short-emulator-pinch${direction==='in'?'-in':''}-${Date.now()}`);
 let logCapture:Awaited<ReturnType<typeof startTouchLog>>|undefined;
 await mkdir(directory,{recursive:true});
 try{
@@ -18,7 +19,7 @@ try{
  if(!stdin.isTTY||!stdout.isTTY)throw Error('Use CMD interativo.');
  await driver.checkAppium();await driver.connect();const session=driver.getSession(),live=nativeLabPort(driver,directory);
  const terminal=createInterface({input:stdin,output:stdout}),keepAlive=setInterval(()=>{void session.getCurrentPackage().catch(()=>{});},15000);
- try{console.log('Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
+ try{console.log(direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
  const viewport=await session.getWindowRect();
  const readStable=async()=>{
   let previous:string|undefined;
@@ -41,10 +42,10 @@ try{
    if(JSON.stringify(await session.getWindowRect())!==JSON.stringify(viewport))throw Error('Viewport mudou antes do gesto.');
    try{await session.performActions(emulatorMirrorActions(plan));}finally{await session.releaseActions();}
    await session.pause(1200);
-  }},viewport);
+  }},viewport,direction);
  const log=await logCapture.stop();logCapture=undefined;const logFile=join(directory,'touch-injection-logcat.txt');await writeFile(logFile,log.text);
  const evidence=analyzeTouchInjectionLog(log.text),success=result.measured_resize_success&&evidence.injection_sequence_observed&&!log.truncated;
- await writeFile(join(directory,'short-emulator-pinch-report.json'),JSON.stringify({...result,success,touch_injection:{...evidence,truncated:log.truncated,stderr:log.stderr,log_file:logFile},context:{text_declared_by_operator:'Veja',style_index:0,text_semantically_verified:false,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null}},null,2));
+ await writeFile(join(directory,direction==='in'?'short-emulator-pinch-in-report.json':'short-emulator-pinch-report.json'),JSON.stringify({...result,success,touch_injection:{...evidence,truncated:log.truncated,stderr:log.stderr,log_file:logFile},context:{text_declared_by_operator:'Veja',style_index:0,text_semantically_verified:false,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null}},null,2));
  console.table([{before:result.before_width,after:result.after_width,delta:result.delta_width,drift:result.center_drift,injection:evidence.injection_sequence_observed,success}]);
  if(!success)process.exitCode=1;
 }catch(error){console.error('[FAIL]',error);process.exitCode=1;await writeFile(join(directory,'error.json'),JSON.stringify({error:String(error),published:false}));

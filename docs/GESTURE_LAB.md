@@ -495,3 +495,30 @@ crescimento mensurável>=3px, drift válido, comando sem erro e evidência da
 injeção com dois contatos aceita pelo Android. Qualificação dos três textos e
 benchmark5/5 continuam pendentes; nenhum resultado deste ensaio reintegra ao
 painel ou autoriza publicação. MOVE e os outros gestos permanecem intactos.
+
+### Redução única no modelo externo espelhado
+
+Após aumento real de Veja213→237px, drift0 e33 eventos aceitos sem falhas,
+a próxima direção tem comando próprio:
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Veja"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-short-emulator-pinch-in
+```
+
+Mantenha o sticker branco/azul na região central e no tamanho deixado pelo
+pinch-out. Não reduza manualmente antes. Confirme Enter com Ctrl/mouse soltos.
+O comando calcula os pontos dos bounds atuais e aproxima ambos os contatos
+em torno do centro do viewport com fator de distância1/1.20. Não reutiliza
+coordenadas antigas nem muda a orientação intencionalmente. Aumentar20% ou
+reduzir a separação por1/1.20 não prevê uma escala exata do sticker.
+
+Só1gesto de redução, sem retry, reversão, benchmark ou publicação. Se estiver
+no mínimo e não houver efeito, apenas registra falha desta direção. Não altera
+mínimo, tolerância, MOVE ou os outros perfis. O comando original de aumento
+continua com o comportamento anterior. PNG/XML/JSON e logcat são coletados.
+Envie `short-emulator-pinch-in-report.json` e `touch-injection-logcat.txt` da
+pasta `gesture-short-emulator-pinch-in-*`. Sucesso exige redução>=3px, drift
+válido e injeção de dois contatos aceita, não a simples conclusão do comando.

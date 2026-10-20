@@ -62,7 +62,8 @@
     "smoke:gesture-anchor-manual-range": "tsx src/gestureLab/manualRangeCli.ts",
     "smoke:gesture-anchor-short": "tsx src/gestureLab/anchorTextValidationCli.ts short",
     "smoke:gesture-short-touch-execution": "tsx src/gestureLab/shortTouchExecutionCli.ts",
-    "smoke:gesture-short-emulator-pinch": "tsx src/gestureLab/emulatorMirrorPinchCli.ts"
+    "smoke:gesture-short-emulator-pinch": "tsx src/gestureLab/emulatorMirrorPinchCli.ts",
+    "smoke:gesture-short-emulator-pinch-in": "tsx src/gestureLab/emulatorMirrorPinchCli.ts in"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

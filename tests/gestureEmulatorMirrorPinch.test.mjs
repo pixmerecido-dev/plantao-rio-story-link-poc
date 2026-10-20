@@ -28,3 +28,18 @@ test('unsafe reflected point or viewport is rejected before any touch',async()=>
  assert.throws(()=>emulatorMirrorPlan(snapshot(),{...viewport,width:NaN}));
  const p=port(s=>s);p.read=async()=>bad;await assert.rejects(testEmulatorMirrorPinch(p,viewport));assert.equal(p.calls.length,0);
 });
+
+test('inward plan converges both contacts along same axis without changing outward behavior',()=>{
+ const s=snapshot(),out=emulatorMirrorPlan(s,viewport),inward=emulatorMirrorPlan(s,viewport,'in');
+ assert.deepEqual(inward.finger1_start,out.finger1_start);assert.deepEqual(inward.finger2_start,out.finger2_start);
+ const distance=p=>Math.hypot(p.finger1_end.x-p.finger2_end.x,p.finger1_end.y-p.finger2_end.y);
+ const start=Math.hypot(inward.finger1_start.x-inward.finger2_start.x,inward.finger1_start.y-inward.finger2_start.y);
+ assert.ok(distance(inward)<start);assert.ok(distance(out)>start);assert.equal(inward.direction,'in');assert.equal(inward.distance_factor,1/1.2);
+ assert.equal(inward.finger1_end.x+inward.finger2_end.x,1080);assert.equal(inward.finger1_end.y+inward.finger2_end.y,2400);assert.ok(Math.abs(inward.planned_angle_delta_degrees)<1);
+});
+test('single inward trial accepts only measured reduction and never retries at a minimum',async()=>{
+ const p=port(s=>{s.bounds.left+=10;s.bounds.right-=10;return s;}),r=await testEmulatorMirrorPinch(p,viewport,'in');
+ assert.equal(p.calls.length,1);assert.equal(p.calls[0].direction,'in');assert.equal(r.direction,'in');assert.equal(r.before_width,265);assert.equal(r.after_width,245);assert.equal(r.measured_resize_success,true);
+ const q=port(s=>s),noEffect=await testEmulatorMirrorPinch(q,viewport,'in');assert.equal(q.calls.length,1);assert.equal(noEffect.measured_resize_success,false);
+ const wrong=port(s=>{s.bounds.left-=10;s.bounds.right+=10;return s;}),bad=await testEmulatorMirrorPinch(wrong,viewport,'in');assert.equal(bad.measured_resize_success,false);
+});
