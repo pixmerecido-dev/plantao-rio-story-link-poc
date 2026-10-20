@@ -596,3 +596,24 @@ O erro médio é contra os alvos de layout desta bateria, distinto do erro de
 retorno dos ciclos anteriores. `qualified=true` qualifica somente este perfil
 Veja e os alvos pequenos testados. O controlador continua isolado do painel,
 sem alterar MOVE, os gestos dos outros textos, RSS/fila ou publicação.
+
+### Precisão do modelo espelhado por texto
+
+O ensaio de Veja permanece separado. Para avaliar o mesmo atuador no texto padrão,
+use CMD com um único Link Sticker branco/azul central e espaço para crescer:
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-text-emulator-precision
+```
+
+Pressione Enter uma vez quando pronto e não toque até terminar. O relatório
+`text-emulator-precision-report.json` registra cinco alvos alternados +10%/-10%,
+tolerância de 4%, coordenadas e evidência de injeção por gesto. A primeira falha
+interrompe a bateria. O mínimo persistido só se aplica à configuração correspondente;
+504 px não se aplica automaticamente a Veja nem ao texto longo. O texto longo
+previsto é exatamente `veja a materia complata no jornal`, em execução separada.
+A qualificação vale apenas para o texto declarado, configuração e alvos testados.
+Este comando não integra o painel, não altera MOVE e não publica.

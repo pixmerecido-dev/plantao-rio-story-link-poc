@@ -2,11 +2,12 @@ import {anchorMetrics,sameAnchorObject} from './anchorCalibration.js';
 import {RESIZE_TOLERANCE,validateSnapshot,width,type Snapshot} from './core.js';
 import type {MirrorCycleRun,VerifiedMirrorTrial} from './emulatorMirrorCycles.js';
 import type {ObservedStickerLimit} from '../admin/stickerSizeLimit.js';
+export type MirrorPrecisionText='Veja'|'Leia a matéria completa'|'veja a materia complata no jornal';
 export const MIRROR_PRECISION_TARGETS=[1.1,.9,1.1,.9,1.1] as const;
-export async function mirrorPrecisionTrial(read:()=>Promise<Snapshot>,run:MirrorCycleRun,scale:1.1|.9,round:number,limit?:ObservedStickerLimit){
+export async function mirrorPrecisionTrial(read:()=>Promise<Snapshot>,run:MirrorCycleRun,scale:1.1|.9,round:number,limit?:ObservedStickerLimit,text:MirrorPrecisionText='Veja'){
  if(![1.1,.9].includes(scale))throw Error('Este ensaio permite apenas alvos de ±10%.');
  const before=await read();validateSnapshot(before);
- const known=limit?.scope.text==='Veja'&&limit.scope.style_index===0&&limit.scope.device===before.device&&limit.scope.canvas_width===width(before.canvas)&&limit.scope.canvas_height===before.canvas.bottom-before.canvas.top?limit:undefined;
+ const known=limit?.scope.text===text&&limit.scope.style_index===0&&limit.scope.device===before.device&&limit.scope.canvas_width===width(before.canvas)&&limit.scope.canvas_height===before.canvas.bottom-before.canvas.top?limit:undefined;
  const requested=width(before.bounds)*scale,target=Math.max(requested,known?.observed_min_width??0),clamped=requested<target;
  const iterations:VerifiedMirrorTrial[]=[];let after=before,stop_reason='ATTEMPT_LIMIT',valid=true;
  for(let i=0;i<3;i++){
@@ -31,18 +32,18 @@ export async function mirrorPrecisionTrial(read:()=>Promise<Snapshot>,run:Mirror
  return {round,requested_scale:scale,before,after,initial_width:width(before.bounds),requested_target_width:requested,effective_target_width:target,observed_min_width:known?.observed_min_width??null,clamped,clamp_reason:clamped?'INSTAGRAM_MIN_SIZE':null,tolerance:RESIZE_TOLERANCE,final_width:width(after.bounds),error,error_percent:error*100,iterations,gesture_skipped:iterations.length===0,stop_reason,success:valid&&Math.abs(error)<=RESIZE_TOLERANCE,published:false};
 }
 type PrecisionRound=Awaited<ReturnType<typeof mirrorPrecisionTrial>>;
-function report(rounds:PrecisionRound[]){
+function report(rounds:PrecisionRound[],text:MirrorPrecisionText='Veja'){
  const passed=rounds.filter(r=>r.success).length;
- return {kind:'short-emulator-mirror-precision',method:'W3C_EMULATOR_MIRROR',targets:MIRROR_PRECISION_TARGETS,tolerance:RESIZE_TOLERANCE,rounds:[...rounds],passed,total:5,qualified:rounds.length===5&&passed===5,
+ return {kind:text==='Veja'?'short-emulator-mirror-precision':'text-emulator-mirror-precision',text_declared_by_operator:text,method:'W3C_EMULATOR_MIRROR',targets:MIRROR_PRECISION_TARGETS,tolerance:RESIZE_TOLERANCE,rounds:[...rounds],passed,total:5,qualified:rounds.length===5&&passed===5,
   clamped_count:rounds.filter(r=>r.clamped).length,mean_absolute_error_percent:rounds.length?rounds.reduce((s,r)=>s+Math.abs(r.error_percent),0)/rounds.length:null,
-  qualification_scope:'CURRENT_VEJA_PROFILE_ONLY_PLUS_MINUS_TEN_PERCENT_TARGETS',panel_integration:false,published:false};
+  qualification_scope:text==='Veja'?'CURRENT_VEJA_PROFILE_ONLY_PLUS_MINUS_TEN_PERCENT_TARGETS':'CURRENT_DECLARED_TEXT_PROFILE_ONLY_PLUS_MINUS_TEN_PERCENT_TARGETS',panel_integration:false,published:false};
 }
-export async function benchmarkMirrorPrecision(read:()=>Promise<Snapshot>,run:MirrorCycleRun,limit?:ObservedStickerLimit,progress:(result:ReturnType<typeof report>)=>Promise<void>=async()=>{}){
+export async function benchmarkMirrorPrecision(read:()=>Promise<Snapshot>,run:MirrorCycleRun,limit?:ObservedStickerLimit,progress:(result:ReturnType<typeof report>)=>Promise<void>=async()=>{},text:MirrorPrecisionText='Veja'){
  const rounds:PrecisionRound[]=[];let expected:Snapshot|undefined;
  for(const [index,scale] of MIRROR_PRECISION_TARGETS.entries()){
   if(expected&&JSON.stringify(await read())!==JSON.stringify(expected))throw Error('Estado mudou entre rodadas.');
-  const result=await mirrorPrecisionTrial(read,run,scale,index+1,limit);rounds.push(result);expected=result.after;
-  await progress(report(rounds));if(!result.success)break;
+  const result=await mirrorPrecisionTrial(read,run,scale,index+1,limit,text);rounds.push(result);expected=result.after;
+  await progress(report(rounds,text));if(!result.success)break;
  }
- return report(rounds);
+ return report(rounds,text);
 }

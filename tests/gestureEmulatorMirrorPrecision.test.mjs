@@ -27,3 +27,12 @@ test('known minimum is scoped to Veja; standard 504 never leaks into this profil
 test('unexpected input changes stop before a gesture and invalid scales are rejected',async()=>{
  const p=fixture();let reads=0;const changing=async()=>{const s=await p.read();if(++reads>1)s.bounds.left++;return s;};await assert.rejects(mirrorPrecisionTrial(changing,p.run,1.1,1),/Estado mudou/);assert.equal(p.calls.length,0);await assert.rejects(mirrorPrecisionTrial(p.read,p.run,.8,1),/±10%/);
 });
+test('standard precision uses its own known minimum and labels the declared text',async()=>{
+ const p=fixture(504,(w,d)=>w+(d==='out'?50:-50));
+ const r=await benchmarkMirrorPrecision(p.read,p.run,CURRENT_OBSERVED_LIMIT,async()=>{},'Leia a matéria completa');
+ assert.equal(r.qualified,true);assert.equal(r.text_declared_by_operator,'Leia a matéria completa');
+ assert.equal(r.rounds[1].observed_min_width,504);assert.equal(r.rounds[1].clamped,true);
+ assert.equal(r.qualification_scope,'CURRENT_DECLARED_TEXT_PROFILE_ONLY_PLUS_MINUS_TEN_PERCENT_TARGETS');
+ const q=fixture(504),long=await mirrorPrecisionTrial(q.read,q.run,.9,1,CURRENT_OBSERVED_LIMIT,'veja a materia complata no jornal');
+ assert.equal(long.observed_min_width,null);assert.equal(long.clamped,false);
+});
