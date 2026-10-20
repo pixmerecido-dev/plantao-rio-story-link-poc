@@ -298,3 +298,63 @@ estado final. Para aumento, repita com GESTURE_ANCHOR_DIRECTION=out.
 O caminho manual não é registrado como se tivesse sido observado; apenas
 largura e drift antes/depois são medidos. Esta evidência permanece separada
 do multi-touch automatizado.
+
+### Validação das âncoras congeladas entre textos
+
+O operador informou evidência real de redução575→537 (-38px) e aumento537→589
+(+52px), ambos com drift0, usando red95/29 e green4/70. Nesta etapa a geometria
+fica congelada nesses percentuais: não executar nova busca. O comando abaixo
+é um teste isolado de proporcionalidade, sem controlador de tamanho exato,
+reintegração ou benchmark5/5.
+
+```cmd
+set DRY_RUN=true
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-anchor-text-validation
+```
+
+Exige terminal interativo. O programa guia três casos em sequência:
+
+1. Prepare manualmente um único Link Sticker com texto exato `Veja` e o estilo
+   declarado. Deixe-o acima do mínimo próprio desse texto para permitir reduzir.
+   Retorne ao editor e pressione Enter no CMD.
+2. Prepare manualmente o texto exato `Leia a matéria completa`, no mesmo estilo,
+   também acima do mínimo, e pressione Enter quando estiver no editor.
+3. Para o caso longo, escolha um texto próximo do maior comprimento visualmente
+   aceito pelo Instagram (sem truncamento), maior que o padrão. Cole o texto
+   exato no prompt e confirme Enter somente depois de preparar o sticker no
+   editor. Não presumimos nem definimos um limite universal de caracteres.
+
+A troca/criação/edição dos três textos é feita pelo operador; o comando não
+navega, não cria Story nem sticker, não modifica a conta e não publica. Cada caso
+faz exatamente um pinch-in e, estando o objeto válido, um pinch-out. Releitura
+dos bounds antes de cada gesto produz novas coordenadas. Nenhum NO_EFFECT gera
+retry, mudança das âncoras ou busca. Um erro de comando ou drift inválido aborta
+os gestos restantes. NO_EFFECT apenas reprova a direção e permite registrar a
+outra direção e os outros textos, sem insistência.
+
+Mantém o critério de efeito mensurável existente (>=3px), sinal correto da
+mudança e drift por gesto/acumulado dentro de max(5px,2%canvasWidth). Erro de
+comando, identidade/canvas/dispositivo alterado ou movimento de posição não
+qualificam o resize. Não há alvo exato nem alteração da tolerância4% ou do
+mínimo504 do perfil conhecido; o mínimo não é aplicado universalmente a `Veja`
+ou ao texto longo.
+
+Gera `artifacts/gesture-anchor-text-validation-<timestamp>/` com:
+
+- `anchor-text-validation-report.json`: relatório agregado, salvo após cada
+  caso; casos incompletos nunca qualificam;
+- bounds iniciais por texto e, para cada direção, bounds medidos, RED/GREEN
+  em pixels, frações fixas, coordenadas dos dedos, delta, drift e sucesso;
+- `text-short-in-before-anchors.svg` e equivalentes: imagens com marcações
+  calculadas sobre o PNG original; XML/JSON/PNG antes/depois de cada gesto;
+- `attempts.jsonl`: comandos e resultados, inclusive se houver interrupção.
+
+Somente curto+padrão+longo completos, com redução E aumento aprovados, mesmo
+estilo/dispositivo/canvas, produzem `ANCHOR_GEOMETRY_QUALIFIED=true`.
+O texto é declaração do operador porque o nó acessível pode ter descrição
+Genérica; capturas acompanham o relatório para conferência visual. A variável
+não significa calibração universal de outros textos ou versões e não autoriza
+publicação. Mocks validam o funcionamento do teste, não os gestos reais Android.
+Depois de aprovado, o próximo trabalho será controlador com essas âncoras e
+benchmark5/5; nenhum deles é executado ou reintegrado por este comando.
