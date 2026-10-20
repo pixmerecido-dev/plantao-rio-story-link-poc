@@ -617,3 +617,20 @@ interrompe a bateria. O mínimo persistido só se aplica à configuração corre
 previsto é exatamente `veja a materia complata no jornal`, em execução separada.
 A qualificação vale apenas para o texto declarado, configuração e alvos testados.
 Este comando não integra o painel, não altera MOVE e não publica.
+
+### Bateria final espelhada do texto padrão
+
+Após os três ensaios separados de ±10%, use `npm run smoke:gesture-emulator-final`
+com `DRY_RUN=true`, `GESTURE_STICKER_TEXT=Leia a matéria completa` e
+`GESTURE_STYLE_INDEX=0`. Deixe um único sticker branco/azul central em tamanho
+intermediário. A sequência é 90%, 80%, 110%, 90%, 110%, sempre da largura real
+no início de cada rodada. Exige registro de mínimo confirmado de 504 px que
+corresponda ao texto, estilo, dispositivo, canvas e versão declarada.
+
+O relatório `final-emulator-resize-report.json` registra alvos solicitados e
+efetivos, clamps, erros, gestos e evidência de injeção. Dentro de ±4% do alvo
+ efetivo, para imediatamente, inclusive sem gesto se já estiver no mínimo.
+Mantém máximo de três gestos por rodada e interrompe na primeira falha,
+NO_EFFECT, drift inválido, erro de injeção ou overshoot fora da tolerância.
+Não aumenta tolerância nem procura outro mínimo. Não reintegra nem publica;
+o resultado real precisa ser revisado antes de qualquer integração.

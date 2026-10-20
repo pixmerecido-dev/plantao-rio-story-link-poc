@@ -36,3 +36,14 @@ test('standard precision uses its own known minimum and labels the declared text
  const q=fixture(504),long=await mirrorPrecisionTrial(q.read,q.run,.9,1,CURRENT_OBSERVED_LIMIT,'veja a materia complata no jornal');
  assert.equal(long.observed_min_width,null);assert.equal(long.clamped,false);
 });
+test('final sequence measures live state, clamps at scoped 504 and skips a gesture at minimum',async()=>{
+ const p=fixture(560,(w,d)=>d==='out'?w*1.1:Math.max(504,w*.9));
+ const r=await benchmarkMirrorPrecision(p.read,p.run,CURRENT_OBSERVED_LIMIT,async()=>{},'Leia a matéria completa',true);
+ assert.deepEqual(r.targets,[.9,.8,1.1,.9,1.1]);assert.equal(r.qualified,true);assert.equal(r.rounds[1].clamped,true);
+ assert.equal(r.rounds[1].initial_width,504);assert.equal(r.rounds[1].effective_target_width,504);assert.equal(r.rounds[1].gesture_skipped,true);
+ assert.equal(r.rounds[2].initial_width,504);assert.equal(p.calls.length,4);assert.equal(r.tolerance,.04);assert.equal(r.panel_integration,false);
+});
+test('final battery rejects another text or missing confirmed minimum before touch',async()=>{
+ const p=fixture();await assert.rejects(benchmarkMirrorPrecision(p.read,p.run,undefined,async()=>{},'Leia a matéria completa',true),/504/);
+ await assert.rejects(benchmarkMirrorPrecision(p.read,p.run,CURRENT_OBSERVED_LIMIT,async()=>{},'Veja',true),/504/);assert.equal(p.calls.length,0);
+});
