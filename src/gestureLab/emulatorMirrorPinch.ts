@@ -5,14 +5,16 @@ export type ViewportRect={x:number;y:number;width:number;height:number};
 export type MirrorDirection='in'|'out';
 export type MirrorPlan={direction:MirrorDirection;distance_factor:number;model:'EMULATOR_SCREEN_CENTER_HYPOTHESIS';viewport:ViewportRect;center:Point;inside_anchor_percent:{x:number;y:number};growth_factor:number;finger1_start:Point;finger1_end:Point;finger2_start:Point;finger2_end:Point;planned_angle_delta_degrees:number};
 const inside=(p:Point,b:Box,margin=0)=>p.x>b.left+margin&&p.x<b.right-margin&&p.y>b.top+margin&&p.y<b.bottom-margin;
-export function emulatorMirrorPlan(snapshot:Snapshot,viewport:ViewportRect,direction:MirrorDirection='out'):MirrorPlan{
+export function emulatorMirrorPlan(snapshot:Snapshot,viewport:ViewportRect,direction:MirrorDirection='out',distanceFactor?:number):MirrorPlan{
  if(direction!=='in'&&direction!=='out')throw Error('Direção inválida.');
  validateSnapshot(snapshot);
  if(!Object.values(viewport).every(Number.isFinite)||viewport.width<=0||viewport.height<=0)throw Error('Viewport inválido.');
  const center={x:viewport.x+viewport.width/2,y:viewport.y+viewport.height/2},b=snapshot.bounds;
  const first={x:Math.round(b.left+(b.right-b.left)*.95),y:Math.round(b.top+(b.bottom-b.top)*.29)};
  const mirror=(p:Point)=>({x:Math.round(2*center.x-p.x),y:Math.round(2*center.y-p.y)});
- const second=mirror(first),growth_factor=direction==='out'?1.20:1/1.20,end={x:Math.round(center.x+(first.x-center.x)*growth_factor),y:Math.round(center.y+(first.y-center.y)*growth_factor)},secondEnd=mirror(end);
+ const growth_factor=distanceFactor??(direction==='out'?1.20:1/1.20);
+ if(!Number.isFinite(growth_factor)||(direction==='in'?(growth_factor<.7||growth_factor>=1):(growth_factor<=1||growth_factor>1.35)))throw Error('Amplitude fora da faixa segura do ensaio.');
+ const second=mirror(first),end={x:Math.round(center.x+(first.x-center.x)*growth_factor),y:Math.round(center.y+(first.y-center.y)*growth_factor)},secondEnd=mirror(end);
  if(!inside(first,b)||inside(second,b))throw Error('O ensaio exige primeiro contato dentro e segundo fora do sticker.');
  const screen={left:viewport.x,top:viewport.y,right:viewport.x+viewport.width,bottom:viewport.y+viewport.height};
  for(const p of [first,second,end,secondEnd])if(!inside(p,screen,16)||!inside(p,snapshot.canvas,2))throw Error('Trajetória fora do canvas seguro. Coloque o sticker na região central antes do teste; nenhum gesto foi enviado.');
@@ -30,8 +32,8 @@ export function emulatorMirrorActions(p:MirrorPlan){
  validateSynchronizedTouchActions(sources);return sources;
 }
 export interface MirrorPort{read():Promise<Snapshot>;capture(name:string):Promise<void>;record(value:Record<string,unknown>):Promise<void>;pinch(plan:MirrorPlan,before:Snapshot):Promise<void>;}
-export async function testEmulatorMirrorPinch(port:MirrorPort,viewport:ViewportRect,direction:MirrorDirection='out'){
- const before=await port.read(),plan=emulatorMirrorPlan(before,viewport,direction),actions=emulatorMirrorActions(plan);
+export async function testEmulatorMirrorPinch(port:MirrorPort,viewport:ViewportRect,direction:MirrorDirection='out',distanceFactor?:number){
+ const before=await port.read(),plan=emulatorMirrorPlan(before,viewport,direction,distanceFactor),actions=emulatorMirrorActions(plan);
  await port.capture(`mirror-${direction}-before`);await port.record({phase:'COMMAND',before,plan,actions});
  let command_error:string|null=null;
  try{await port.pinch(plan,before);}catch(error){command_error=String(error);}

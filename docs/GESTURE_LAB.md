@@ -634,3 +634,17 @@ Mantém máximo de três gestos por rodada e interrompe na primeira falha,
 NO_EFFECT, drift inválido, erro de injeção ou overshoot fora da tolerância.
 Não aumenta tolerância nem procura outro mínimo. Não reintegra nem publica;
 o resultado real precisa ser revisado antes de qualquer integração.
+
+### Investigação isolada 575 → 548
+
+`smoke:gesture-mirror-convergence` exige texto padrão branco/azul e largura
+570–580 px, preservada da falha da bateria final. Um Enter inicia até três
+pinch-ins com fatores de distância 1/1.25, 1/1.30 e 1/1.35, diferentes do
+fator anterior 1/1.20. Contatos continuam espelhados no centro da tela, com
+mesmos tempos, trajetória segura e sem MOVE. Coordenadas completas, deslocamento,
+bounds e injeção constam de `mirror-convergence-report.json` e capturas por gesto.
+NO_EFFECT avança para outra amplitude, nunca repete a mesma. Dentro de ±4%
+de 548, para; também para em overshoot, direção errada ou evidência inválida.
+Não persiste mínimo, não troca o controlador dos ensaios aprovados, não executa
+a bateria final nem integra/publica. Amplitudes são experimentais, dependem do
+resultado real; testes de unidade não comprovam reconhecimento pelo Instagram.

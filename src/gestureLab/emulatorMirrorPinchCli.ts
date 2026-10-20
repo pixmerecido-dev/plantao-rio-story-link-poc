@@ -13,23 +13,25 @@ import {ObservedSizeLimitStore} from './sizeLimitStore.js';
 import {findObservedLimit} from '../admin/stickerSizeLimit.js';
 import {repeatEmulatorMirrorCycles} from './emulatorMirrorCycles.js';
 import {testEmulatorMirrorPinch,emulatorMirrorActions} from './emulatorMirrorPinch.js';
+import {investigateMirrorConvergence} from './mirrorConvergence.js';
+const convergence=process.argv[2]==='converge';
 const finalBattery=process.argv[2]==='final';
-const cycles=process.argv[2]==='cycles',precision=process.argv[2]==='precision'||finalBattery;
+const cycles=process.argv[2]==='cycles',precision=process.argv[2]==='precision'||finalBattery||convergence;
 const text=process.env.GESTURE_STICKER_TEXT??'Veja';
-const textPrecision=precision&&text!=='Veja',reportName=finalBattery?'final-emulator-resize-report.json':textPrecision?'text-emulator-precision-report.json':'short-emulator-precision-report.json';
+const textPrecision=precision&&text!=='Veja',reportName=convergence?'mirror-convergence-report.json':finalBattery?'final-emulator-resize-report.json':textPrecision?'text-emulator-precision-report.json':'short-emulator-precision-report.json';
 const direction=process.argv[2]==='in'?'in':'out';
-const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-${textPrecision?'text':'short'}-emulator-pinch${finalBattery?'-final':precision?'-precision':cycles?'-cycles':direction==='in'?'-in':''}-${Date.now()}`);
+const driver=new InstagramDriver(),directory=resolve('artifacts',`gesture-${textPrecision?'text':'short'}-emulator-pinch${convergence?'-converge':finalBattery?'-final':precision?'-precision':cycles?'-cycles':direction==='in'?'-in':''}-${Date.now()}`);
 let activePrefix='';
 let logCapture:Awaited<ReturnType<typeof startTouchLog>>|undefined;
 await mkdir(directory,{recursive:true});
 try{
  if(process.env.DRY_RUN!=='true')throw Error('Configure DRY_RUN=true.');
  if((precision?!['Veja','Leia a matéria completa','veja a materia complata no jornal'].includes(text):text!=='Veja')||Number(process.env.GESTURE_STYLE_INDEX??0)!==0)throw Error('Use um texto previsto neste ensaio, branco/azul, estilo declarado 0.');
- if(finalBattery&&text!=='Leia a matéria completa')throw Error('Bateria final exclusiva do texto padrão.');
+ if((finalBattery||convergence)&&text!=='Leia a matéria completa')throw Error('Bateria final exclusiva do texto padrão.');
  if(!stdin.isTTY||!stdout.isTTY)throw Error('Use CMD interativo.');
  await driver.checkAppium();await driver.connect();const session=driver.getSession(),live=nativeLabPort(driver,directory);
  const terminal=createInterface({input:stdin,output:stdout}),keepAlive=setInterval(()=>{void session.getCurrentPackage().catch(()=>{});},15000);
- try{console.log(finalBattery?'Mantenha somente Leia a matéria completa branco/azul central, em tamanho intermediário, com espaço para crescer. Serão 5 alvos: 90%, 80%, 110%, 90%, 110%. Mínimo conhecido 504 px e tolerância 4%. Solte Ctrl/mouse; não toque durante a execução.':precision?`Mantenha somente “${text}” branco/azul e central, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Serão5 alvos alternados +10%/-10%, tolerância4%; não toque até terminar.`:cycles?'Mantenha somente Veja branco/azul, pequeno e central, no estado deixado pela redução aprovada. Solte Ctrl/mouse e aguarde os botões. Serão até5 ciclos automáticos de aumento/redução; não toque até terminar.':direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
+ try{console.log(convergence?'Mantenha Leia a matéria completa branco/azul no estado de 575 px deixado pela falha. Não ajuste manualmente. Até 3 amplitudes distintas, alvo 548 px. Solte Ctrl/mouse e não toque até terminar.':finalBattery?'Mantenha somente Leia a matéria completa branco/azul central, em tamanho intermediário, com espaço para crescer. Serão 5 alvos: 90%, 80%, 110%, 90%, 110%. Mínimo conhecido 504 px e tolerância 4%. Solte Ctrl/mouse; não toque durante a execução.':precision?`Mantenha somente “${text}” branco/azul e central, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Serão5 alvos alternados +10%/-10%, tolerância4%; não toque até terminar.`:cycles?'Mantenha somente Veja branco/azul, pequeno e central, no estado deixado pela redução aprovada. Solte Ctrl/mouse e aguarde os botões. Serão até5 ciclos automáticos de aumento/redução; não toque até terminar.':direction==='in'?'Mantenha Veja branco/azul no tamanho deixado pelo aumento aprovado, na região central do Story. Não diminua manualmente. Solte Ctrl/mouse e aguarde os botões. Será enviada UMA redução; depois não toque até terminar.':'Deixe somente Veja branco/azul, pequeno, na região central do Story, com espaço para crescer. Solte Ctrl/mouse e aguarde os botões. Será enviado UM aumento; depois não toque até terminar.');await terminal.question('Quando pronto, pressione Enter aqui: ');}finally{clearInterval(keepAlive);terminal.close();}
  const viewport=await session.getWindowRect();
  const readStable=async()=>{
   let previous:string|undefined;
@@ -40,7 +42,7 @@ try{
   }
   throw Error('Editor/sticker não estabilizou.');
  };
- const run=async(direction:'in'|'out',cycle=0,expected?:Awaited<ReturnType<typeof live.read>>)=>{
+ const run=async(direction:'in'|'out',cycle=0,expected?:Awaited<ReturnType<typeof live.read>>,distanceFactor?:number)=>{
  activePrefix=precision?`round-${Math.floor(cycle/10)}-attempt-${cycle%10}-${direction}-`:cycle?`cycle-${cycle}-${direction}-`:'';
  if(expected&&JSON.stringify(await readStable())!==JSON.stringify(expected))throw Error('Estado mudou entre gestos; ciclo interrompido antes de novo toque.');
  logCapture=await startTouchLog(connectedAndroidDevice(session));
@@ -55,7 +57,7 @@ try{
    if(JSON.stringify(await session.getWindowRect())!==JSON.stringify(viewport))throw Error('Viewport mudou antes do gesto.');
    try{await session.performActions(emulatorMirrorActions(plan));}finally{await session.releaseActions();}
    await session.pause(1200);
-  }},viewport,direction);
+  }},viewport,direction,distanceFactor);
  const log=await logCapture.stop();logCapture=undefined;const logFile=join(directory,`${activePrefix}touch-injection-logcat.txt`);await writeFile(logFile,log.text);
  const evidence=analyzeTouchInjectionLog(log.text),success=result.measured_resize_success&&evidence.injection_sequence_observed&&!log.truncated;
  const report={...result,success,touch_injection:{...evidence,truncated:log.truncated,stderr:log.stderr,log_file:logFile},context:{text_declared_by_operator:text,style_index:0,text_semantically_verified:false,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null}};
@@ -63,7 +65,10 @@ try{
  console.table([{before:result.before_width,after:result.after_width,delta:result.delta_width,drift:result.center_drift,injection:evidence.injection_sequence_observed,success}]);
  return report;
  };
- if(precision){
+ if(convergence){
+  const report=await investigateMirrorConvergence(readStable,(factor,attempt,expected)=>run('in',attempt,expected,factor),async report=>{await writeFile(join(directory,reportName),JSON.stringify(report,null,2));});
+  console.log(JSON.stringify(report));if(!report.success)process.exitCode=1;
+ }else if(precision){
   const initial=await readStable(),scope={text,style_index:0,canvas_width:initial.canvas.right-initial.canvas.left,canvas_height:initial.canvas.bottom-initial.canvas.top,device:initial.device,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null};
   const limits=await new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??'data/admin','sticker-size-limits.json')).load(),limit=findObservedLimit(limits,scope);
   const report=await benchmarkMirrorPrecision(readStable,run,limit,async report=>{await writeFile(join(directory,reportName),JSON.stringify(report,null,2));},text as MirrorPrecisionText,finalBattery);
