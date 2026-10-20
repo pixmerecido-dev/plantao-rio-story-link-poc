@@ -406,3 +406,36 @@ somente este caso. O campo agregado `ANCHOR_GEOMETRY_QUALIFIED` permanece falso
 porque uma execução isolada não contém os outros dois textos; os relatórios
 reais anteriores devem ser confrontados antes de uma qualificação conjunta.
 Não repete o caso padrão/longo, controle manual, MOVE ou benchmark final.
+
+### Execução multi-touch no texto curto
+
+O controle manual confirmou Veja265→335→251px, enquanto o W3C diagonal padrão
+não alterou265px. O próximo ensaio muda apenas entrada/tempo, preservando
+âncoras95/29 e4/70 e contração35%:
+
+- FAST_SIMULTANEOUS: ambos down juntos, hold30ms e5 passos60ms;
+- RED_FIRST: vermelho down,80ms, verde down, hold150ms e5 passos150ms;
+- GREEN_FIRST: verde down,80ms, vermelho down, hold150ms e5 passos150ms.
+
+Não repete a execução padrão já sem efeito. Máximo3 tentativas de aumento,
+parando na primeira redução inesperada, erro de comando ou drift inválido.
+Na primeira receita que aumentar>=3px com drift válido, faz somente1 redução
+com a mesma receita e bounds relidos. Somente efeito medido nas duas direções
+produz SHORT_AUTOMATED_SUCCESS=true; um único ensaio ainda não qualifica os
+três textos nem reintegra o controlador. Os outros textos/MOVE permanecem iguais.
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Veja"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-short-touch-execution
+```
+
+Deixe Veja no tamanho menor do controle manual, solte Ctrl/mouse, aguarde os
+botões e confirme Enter. Depois não toque até terminar. O comando salva
+`short-touch-execution-report.json`, PNG/XML/JSON e SVGs com as âncoras, além de
+`attempts.jsonl` com ações W3C completas antes da execução. As ações registradas
+são solicitadas ao Appium, não rastros de contatos observados no Android.
+Nenhuma inferência de causa/qualificação decorre apenas de retorno sem erro.
+O relatório inclui a receita, ordem, tempos, coordenadas, efeitos e drift.
+Sem benchmark completo, publicação, navegação ou alteração do mínimo/tolerância.
