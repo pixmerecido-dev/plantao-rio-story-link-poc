@@ -43,3 +43,16 @@ test('context mismatch disqualifies aggregate and invalid labels prevent any ges
  assert.throws(()=>validateCaseText('short','Outro'));assert.throws(()=>validateCaseText('standard','Veja'));assert.throws(()=>validateCaseText('long','Curto'));
  const p=fixture();await assert.rejects(validateAnchorText(p,'short','Outro',0));assert.equal(p.calls.length,0);
 });
+
+test('short-only automated retry uses out then in and never prepares standard or long',async()=>{
+ const p=fixture(265,(w,d)=>w+(d==='out'?50:-40)),prepared=[];
+ const r=await validateAnchorTexts(async id=>{prepared.push(id);return {text:'Veja',style_index:0,port:p};},async()=>{},true);
+ assert.deepEqual(prepared,['short']);assert.deepEqual(p.calls.map(p=>p.direction),['out','in']);
+ assert.equal(r.cases[0].initial_width,265);assert.equal(r.cases[0].pinch_in.before_width,315);assert.equal(r.cases[0].success,true);
+ assert.equal(r.complete,false);assert.equal(r.ANCHOR_GEOMETRY_QUALIFIED,false);assert.equal(p.calls.length,2);
+ for(const plan of p.calls)assert.deepEqual(plan.percent,FROZEN_RESIZE_ANCHORS);
+});
+test('short-only no-effect increase stops without a pointless reduction or retries',async()=>{
+ const p=fixture(251,w=>w),r=await validateAnchorTexts(async()=>({text:'Veja',style_index:0,port:p}),async()=>{},true);
+ assert.equal(p.calls.length,1);assert.equal(r.cases[0].stop_reason,'OUT_NO_EFFECT');assert.equal(r.cases[0].success,false);assert.equal(r.cases[0].pinch_in,null);assert.equal(r.ANCHOR_GEOMETRY_QUALIFIED,false);
+});

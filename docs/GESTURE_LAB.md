@@ -383,3 +383,26 @@ os observados pelo operador nesta execução, não um limite universal; nenhuma
 observação altera o registro de mínimos. O texto é declarado pelo operador.
 Este controle manual não qualifica a trajetória W3C nem atualiza o resultado
 2/3 da validação automatizada. Não executa benchmark ou publicação.
+
+### Somente Veja: comparação automatizada após controle manual
+
+```cmd
+set DRY_RUN=true
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-anchor-short
+```
+
+Deixe um único sticker `Veja` no tamanho menor observado manualmente (cerca de
+251–265px nesta configuração). Confirme Enter apenas com Ctrl/mouse soltos e
+os controles do editor visíveis. O programa envia um pinch-out diagonal com
+âncoras congeladas95/29 e4/70 e, somente se houver aumento mensurável válido,
+um pinch-in. Não há gestos manuais durante a execução. Sem retries ou nova
+busca, máximo dois gestos. Se o aumento não produzir efeito, interrompe e
+registra `OUT_NO_EFFECT` sem insistência.
+
+Salva `anchor-short-report.json` em `artifacts/gesture-anchor-short-*` com
+`isolated_case_success` e medidas das duas direções. O código de saída descreve
+somente este caso. O campo agregado `ANCHOR_GEOMETRY_QUALIFIED` permanece falso
+porque uma execução isolada não contém os outros dois textos; os relatórios
+reais anteriores devem ser confrontados antes de uma qualificação conjunta.
+Não repete o caso padrão/longo, controle manual, MOVE ou benchmark final.
