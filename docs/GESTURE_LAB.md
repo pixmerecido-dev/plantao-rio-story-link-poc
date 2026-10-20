@@ -454,3 +454,44 @@ observação física dos dedos nem reconhecimento de escala pelo Instagram.
 `SHORT_AUTOMATED_SUCCESS=true` exige efeito nas duas direções e a evidência de
 injeção. `measured_resize_success` preserva o resultado geométrico separado.
 Sem benchmark completo, publicação ou qualificação universal dos três textos.
+
+### Hipótese do vídeo: contato externo espelhado no viewport
+
+O vídeo manual mostrou um contato dentro/próximo de Veja e outro fora, abaixo
+do sticker. O operador controla apenas o primeiro com mouse; o emulador gera o
+segundo. Isso difere da diagonal interna usada nas âncoras dos textos maiores.
+Não mudar o perfil aprovado desses textos. O comando isolado abaixo testa uma
+hipótese explícita de simetria em torno do centro do viewport, inferida do vídeo,
+sem afirmar que essa transformação já está calibrada.
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Veja"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-short-emulator-pinch
+```
+
+Prepare Veja pequeno, branco/azul e na região central do Story. Confirme Enter
+com Ctrl/mouse soltos e os botões visíveis; depois não interfira. O teste envia
+**um único pinch-out**, sem repetição e sem redução automática. Não é um comando
+Ctrl/mouse do Windows: Appium recebe dois pointers touch simultâneos.
+
+Primeiro contato: bounds.left+width*.95, bounds.top+height*.29. Segundo contato:
+reflexo do primeiro em torno do centro de getWindowRect(). Os dois endpoints
+expandem1.20x a separação em torno desse mesmo centro. Não se aplica a antiga
+GREEN4/70 a este ensaio externo. Mantém o eixo, com até1grau de diferença
+planejada por arredondamento; não afirma medir a rotação visual final.
+Todos os pontos devem ficar no viewport e canvas do Story, longe dos controles
+inferiores de publicação; caso contrário bloqueia antes da injeção. Não move o
+sticker automaticamente. Viewport/screenshot divergentes também bloqueiam.
+
+Exemplo calculado, não hardcoded: bounds[407,901][672,1017] e viewport1080x2400
+produzem inside(659,935), outside(421,1465), endpoints(683,882)/(397,1518).
+Esses pixels são recalculados a cada execução. Sem mínimo/tolerância novos.
+
+Salva `short-emulator-pinch-report.json`, plano, ações, PNG/XML/JSON antes/depois
+e `touch-injection-logcat.txt` coletado durante o teste. `success=true` exige
+crescimento mensurável>=3px, drift válido, comando sem erro e evidência da
+injeção com dois contatos aceita pelo Android. Qualificação dos três textos e
+benchmark5/5 continuam pendentes; nenhum resultado deste ensaio reintegra ao
+painel ou autoriza publicação. MOVE e os outros gestos permanecem intactos.
