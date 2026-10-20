@@ -522,3 +522,38 @@ continua com o comportamento anterior. PNG/XML/JSON e logcat são coletados.
 Envie `short-emulator-pinch-in-report.json` e `touch-injection-logcat.txt` da
 pasta `gesture-short-emulator-pinch-in-*`. Sucesso exige redução>=3px, drift
 válido e injeção de dois contatos aceita, não a simples conclusão do comando.
+
+### Cinco ciclos de repetibilidade de Veja — modelo externo
+
+Após efeito real nas duas direções213→237→213px com drift0 e injeção aceita,
+a geometria externa permanece fixa e pode ser repetida sem busca:
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Veja"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-short-emulator-cycles
+```
+
+Mantenha Veja pequeno branco/azul e central, no estado deixado pela redução
+aprovada, com espaço para crescer. Confirme Enter uma vez, depois não interfira.
+Máximo5ciclos, cada um com1aumento e1redução (10gestos). Todos recalculam os
+pontos a partir dos bounds atuais, sem reset/reconstrução entre ciclos.
+A primeira ausência de efeito, erro de comando, drift inválido ou falha de
+injeção interrompe a bateria; não existe retry para obter artificialmente5/5.
+O estado antes de cada gesto deve corresponder ao depois do gesto anterior.
+Drift acumulado na bateria também respeita a tolerância de posição existente.
+
+Cada gesto tem logcat marcado e artefatos próprios com prefixo de ciclo/direção,
+para não sobrescrever os resultados anteriores. Logs válidos não substituem
+transformação medida; as duas condições são exigidas para cada direção.
+`short-emulator-cycles-report.json` é atualizado após cada ciclo e contém
+`passed`, `total=5`, `qualified`, medidas e evidência por gesto. Erros abortados
+preservam o progresso já salvo. A tabela resume aumento/redução de cada ciclo.
+
+`qualified=true` neste relatório significa apenas cinco ciclos de Veja nesta
+configuração, não a aprovação do controlador de precisão, dos três textos ou
+de publicação. `mean_absolute_return_error_percent` é diagnóstico da distância
+entre largura final e inicial de cada ciclo; não é erro contra um alvo de
+layout e não altera a tolerância4%. Não executa o benchmark final de alvos,
+reintegração, MOVE ou gestos dos textos padrão/longo. Nenhum mínimo é alterado.
