@@ -680,3 +680,30 @@ no centro vertical, com bordas horizontais exatamente iguais. A observação gua
 `source_snapshot`, `reference_snapshot` e `vertical_bounds_changed`; não afirma
 que o estilo ou a rotação foram verificados automaticamente. Os gestos continuam
 exigindo estado estável e correspondência exata com o novo snapshot inicial.
+
+### Integração ao teste do painel (sem publicação)
+
+O botão existente **Configurações → Testar no Instagram** usa agora o modelo
+`W3C_EMULATOR_MIRROR` para resize medido, seguido pelo MOVE W3C já existente.
+Não confundir com o antigo pinch nativo: não há fallback nativo neste adaptador.
+Mantém criação e transação de link do job atual; não aceita sticker manual antigo
+como link criado pelo painel. Somente os três textos calibrados, estilo 0 e o
+ambiente validado (emulator-5554, tela 1080×2400, canvas 1080×1920) são aceitos.
+Outros estilos/textos exigem validação futura, sem tentativa silenciosa.
+
+O resize mede alvo absoluto, aplica apenas o mínimo persistido da configuração
+correspondente, usa ±4%, no máximo três gestos e para em NO_EFFECT, overshoot,
+injeção inválida ou drift. Não transforma stall em mínimo. Registra as coordenadas,
+as capturas e `panel-resize-report.json`, além de `test-layout.json` com alvo
+solicitado/efetivo e clamp. Falha de resize impede MOVE e confirmação do layout.
+O mínimo manual de 575 px, confirmado para outra sessão, NÃO é herdado pelo novo
+Story. O histórico de 504 px continua separado; se o novo estado não atingir o
+alvo, o teste falha honestamente para revisão. Slider e prévia continuam usando
+apenas o registro conhecido por configuração, sem importar observações de sessão.
+
+Para o primeiro teste integrado, iniciar/reiniciar o painel (`npm run admin`),
+selecionar texto padrão branco/azul, tamanho 90%, posição horizontal 50% e
+vertical 70%, salvar e usar **Testar no Instagram** com sistema preparado e conta
+confirmada. Esse fluxo cria um Story de teste e termina no editor. O teste real
+integrado ainda precisa ser executado localmente; mocks não substituem essa etapa.
+Botões de publicação permanecem desativados. Não altera fila, RSS nem publicação.

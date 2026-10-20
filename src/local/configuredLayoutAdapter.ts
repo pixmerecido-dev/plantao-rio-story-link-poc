@@ -1,6 +1,6 @@
 import { detectInstagramState } from "../instagram/instagramStateMachine.js";
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join,resolve } from "node:path";
 import type { InstagramDriver } from "../instagram/InstagramDriver.js";
 import {
   beginLinkLayoutTransform,
@@ -14,12 +14,20 @@ import {
 import { stickerBox } from "../instagram/linkStickerLayout.js";
 import { buildSteppedStickerMoveActions } from "../instagram/stickerTouchActions.js";
 import { saveScreenArtifacts } from "../instagram/diagnostics.js";
-/** Test-only adapter; native resize and validated stepped move retained. No publication dependency. */
+import {resizePanelMirror} from './panelMirrorResize.js';
+import {testEmulatorMirrorPinch,emulatorMirrorActions} from '../gestureLab/emulatorMirrorPinch.js';
+import {connectedAndroidDevice} from '../instagram/addStoryAndroidDiagnostics.js';
+import {startTouchLog} from '../gestureLab/touchLogCapture.js';
+import {analyzeTouchInjectionLog} from '../gestureLab/touchInjectionLog.js';
+import {ObservedSizeLimitStore} from '../gestureLab/sizeLimitStore.js';
+import {findObservedLimit} from '../admin/stickerSizeLimit.js';
+/** Test-only adapter: measured mirror resize and frozen stepped move. No publication dependency. */
 export async function applyPanelLayout(
   driver: Pick<InstagramDriver, "getSession">,
   job: ConfiguredStickerJob,
   directory: string,
 ) {
+  if(job.sticker_style_index!==0||!['Veja','Leia a matéria completa','veja a materia complata no jornal'].includes(job.sticker_text))throw Error('Teste de layout validado somente para os três textos calibrados no estilo branco/azul.');
   const session = driver.getSession();
   const read = async () => {
     await requireCurrentLinkTransaction(session, job.job_id);
@@ -57,21 +65,35 @@ export async function applyPanelLayout(
           y: Math.round(center.y),
         });
       }),
-    resizeNative: async (_id, scale, bounds) => {
-      const current = await read();
-      if (JSON.stringify(current.bounds) !== JSON.stringify(bounds))
-        throw Error("Bounds mudaram antes do resize.");
-      if (scale !== 1)
-        await transform(async () => {
-          // Small native corrections; always measure the effect before the next gesture.
-          const percent = Math.min(0.15, Math.max(0.02, Math.abs(1 - scale)));
-          console.log(`[RESIZE] native=${scale > 1 ? 'open' : 'close'} percent=${percent} bounds=${JSON.stringify(bounds)}`);
-          await session.execute(scale > 1 ? "mobile: pinchOpenGesture" : "mobile: pinchCloseGesture", {
-            left: bounds.left, top: bounds.top,
-            width: bounds.right - bounds.left, height: bounds.bottom - bounds.top,
-            percent,
-          });
-        });
+    resizeNative: async () => {throw Error('Fallback nativo desativado neste teste.');},
+    resizeMeasured: async (_id,requested,bounds) => {
+      const initial=await read();
+      if(JSON.stringify(initial.bounds)!==JSON.stringify(bounds))throw Error('Bounds mudaram antes do resize.');
+      const device=connectedAndroidDevice(session),viewport=await session.getWindowRect();
+      if(device!=='emulator-5554'||viewport.x!==0||viewport.y!==0||viewport.width!==1080||viewport.height!==2400||initial.canvas.right-initial.canvas.left!==1080||initial.canvas.bottom-initial.canvas.top!==1920)throw Error('Configuração fora do ambiente validado para resize.');
+      const snapshot=async()=>{const live=await read();return {bounds:live.bounds,canvas:live.canvas,identity:job.job_id,device};};
+      const scope={text:job.sticker_text,style_index:job.sticker_style_index,canvas_width:1080,canvas_height:1920,device,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null};
+      const limits=await new ObservedSizeLimitStore(resolve(process.env.ADMIN_DATA_DIR??'data/admin','sticker-size-limits.json')).load();
+      const known=findObservedLimit(limits,scope);
+      // Never import a previous Story's session-only minimum (including 575).
+      const result=await resizePanelMirror(snapshot,async(direction,attempt,expected)=>{
+        const log=await startTouchLog(device);let evidence;
+        try{
+          const trial=await testEmulatorMirrorPinch({read:snapshot,
+            capture:async name=>{await saveScreenArtifacts(driver,directory,`panel-resize-${attempt}-${name}`);},
+            record:async value=>{console.log('[PANEL-RESIZE]',JSON.stringify(value));},
+            pinch:async(plan,before)=>{
+              if(JSON.stringify(before)!==JSON.stringify(expected)||JSON.stringify(await snapshot())!==JSON.stringify(before))throw Error('Objeto mudou antes do toque.');
+              if(JSON.stringify(await session.getWindowRect())!==JSON.stringify(viewport))throw Error('Viewport mudou antes do toque.');
+              await transform(async()=>{try{await session.performActions(emulatorMirrorActions(plan));}finally{await session.releaseActions();}});
+            }},viewport,direction);
+          const captured=await log.stop();await writeFile(join(directory,`panel-resize-${attempt}-touch-injection-logcat.txt`),captured.text);
+          evidence=analyzeTouchInjectionLog(captured.text);
+          return {...trial,success:trial.measured_resize_success&&evidence.injection_sequence_observed&&!captured.truncated,touch_injection:{...evidence,truncated:captured.truncated}};
+        }catch(error){await log.stop().catch(()=>{});throw error;}
+      },requested,known?.observed_min_width);
+      await writeFile(join(directory,'panel-resize-report.json'),JSON.stringify({...result,scope,minimum_source:known?'CONFIGURATION_REGISTRY':'UNKNOWN',session_minimum_reused:false},null,2));
+      return result;
     },
     moveW3C: async (_id, target, bounds) => {
       const current = await read();

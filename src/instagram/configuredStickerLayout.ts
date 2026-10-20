@@ -28,6 +28,8 @@ export interface ConfiguredStickerLayoutPort {
   readSticker(jobId: string): Promise<LiveConfiguredSticker>;
   /** One short tap on the fresh center; implementation will use existing native/W3C infrastructure. */
   tapStyle(jobId: string, center: { x: number; y: number }): Promise<void>;
+  /** Test adapter may supply the measured mirror controller; legacy consumers remain unchanged. */
+  resizeMeasured?(jobId:string,targetWidth:number,bounds:StickerBounds):Promise<{effective_target_width:number;success:boolean;clamped:boolean;clamp_reason:string|null;observed_min_width:number|null;gesture_skipped?:boolean}>;
   /** Delegate to the validated native pinch implementation; do not introduce a replacement strategy. */
   resizeNative(
     jobId: string,
@@ -51,6 +53,11 @@ export interface ConfiguredLayoutDiagnostic {
   text: string;
   style_index: 0 | 1 | 2 | 3;
   requested_scale: number;
+  requested_target_width:number;
+  effective_target_width:number;
+  clamped:boolean;
+  clamp_reason:string|null;
+  observed_min_width:number|null;
   bounds_before_resize: StickerBounds;
   bounds_after_resize: StickerBounds;
   bounds_final: StickerBounds;
@@ -229,12 +236,23 @@ export async function prepareConfiguredStickerLayout(
   const styleResult = assumedInitial ? "PASS" : await port.verifyStyle?.(job) ?? "UNKNOWN";
   await port.recordEvent(job.job_id, "STYLE_ASSUMED_INITIAL", { STYLE_ASSUMED_INITIAL: assumedInitial, visual_verified: false });
   const before = await read(),
-    targetWidth = width(before.bounds) * job.sticker_scale,
+    requestedTargetWidth = width(before.bounds) * job.sticker_scale,
     targetHeight = height(before.bounds) * job.sticker_scale;
-  const sizeOK = (b: StickerBounds) => Math.abs(width(b) - targetWidth) <= targetWidth * 0.03 + 1;
-  const resizeRequired = !sizeOK(before.bounds);
+  let targetWidth=requestedTargetWidth,measuredValid=true,measuredCommandSent=false;
+  let minimum:{clamped:boolean;clamp_reason:string|null;observed_min_width:number|null}={clamped:false,clamp_reason:null,observed_min_width:null};
+  const sizeOK = (b: StickerBounds) => measuredValid && (port.resizeMeasured?Math.abs(width(b)-targetWidth)<=targetWidth*.04:Math.abs(width(b)-targetWidth)<=targetWidth*.03+1);
   let afterResize = before;
-  for (let attempt = 1; !sizeOK(afterResize.bounds) && attempt <= 3; attempt++) {
+  if(port.resizeMeasured){
+    if(!(await port.assertOwnsFreshLink(job)))throw Error('Transação mudou antes do resize.');
+    state.invalidate('resize');
+    const measured=await port.resizeMeasured(job.job_id,requestedTargetWidth,before.bounds);
+    if(!Number.isFinite(measured.effective_target_width)||measured.effective_target_width<requestedTargetWidth)throw Error('Alvo efetivo inválido.');
+    targetWidth=measured.effective_target_width;measuredValid=measured.success;measuredCommandSent=measured.gesture_skipped===false||width((await port.readSticker(job.job_id)).bounds)!==width(before.bounds);minimum={clamped:measured.clamped,clamp_reason:measured.clamp_reason,observed_min_width:measured.observed_min_width};
+    afterResize=await read();
+    await port.recordEvent(job.job_id,'STICKER_RESIZE_MEASURED',{...measured,requested_target_width:requestedTargetWidth,tolerance:.04});
+  }
+  const resizeRequired = port.resizeMeasured ? measuredCommandSent : !sizeOK(before.bounds);
+  for (let attempt = 1; !port.resizeMeasured && !sizeOK(afterResize.bounds) && attempt <= 3; attempt++) {
     const fresh = await read();
     const correction = targetWidth / width(fresh.bounds);
     state.invalidate("resize");
@@ -329,6 +347,7 @@ export async function prepareConfiguredStickerLayout(
     text: job.sticker_text,
     style_index: job.sticker_style_index,
     requested_scale: job.sticker_scale,
+    requested_target_width:requestedTargetWidth,effective_target_width:targetWidth,...minimum,
     bounds_before_resize: before.bounds,
     bounds_after_resize: afterResize.bounds,
     bounds_final: final.bounds,

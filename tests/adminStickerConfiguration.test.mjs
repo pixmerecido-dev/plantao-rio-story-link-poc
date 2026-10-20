@@ -481,3 +481,14 @@ test("fresh style zero is accepted only as expected initial style without taps",
   assert.equal(result.style_verified_visually, false);
   assert.ok(p.events.some(e => e.event === 'STYLE_ASSUMED_INITIAL' && e.meta.STYLE_ASSUMED_INITIAL));
 });
+test('measured panel resize uses effective clamp and never falls back to native',async()=>{
+ const p=port();p.bounds={left:288,top:912,right:792,bottom:1006};
+ p.resizeMeasured=async()=>({effective_target_width:504,success:true,clamped:true,clamp_reason:'INSTAGRAM_MIN_SIZE',observed_min_width:504});
+ const r=await prepareConfiguredStickerLayout(job({sticker_scale:.8,sticker_x_pct:.5,sticker_y_pct:959/1920}),p);
+ assert.equal(r.layout_confirmed,true);assert.equal(r.clamped,true);assert.equal(r.effective_target_width,504);assert.equal(p.calls.includes('resize'),false);assert.equal(p.calls.includes('move'),false);
+});
+test('failed measured resize blocks layout and MOVE even if final width is within target',async()=>{
+ const p=port();p.resizeMeasured=async()=>({effective_target_width:696,success:false,clamped:false,clamp_reason:null,observed_min_width:null});
+ const r=await prepareConfiguredStickerLayout(job({sticker_scale:1}),p);
+ assert.equal(r.layout_confirmed,false);assert.equal(r.size_ok,false);assert.equal(p.calls.includes('move'),false);assert.equal(p.calls.includes('resize'),false);
+});
