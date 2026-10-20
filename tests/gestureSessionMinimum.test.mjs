@@ -26,3 +26,10 @@ test('session battery skips two clamped reductions before increasing, with origi
  const r=await benchmarkMirrorPrecision(read,run,CURRENT_OBSERVED_LIMIT,async()=>{},scope.text,true,observation());
  assert.equal(r.qualified,true);assert.equal(r.rounds[0].clamped,true);assert.equal(r.rounds[1].clamped,true);assert.equal(r.rounds[0].gesture_skipped,true);assert.equal(r.rounds[1].gesture_skipped,true);assert.equal(r.rounds[2].initial_width,575);assert.deepEqual(calls,['out','in','out']);assert.equal(r.tolerance,.04);
 });
+test('manual confirmation accepts only narrow vertical settling with identical horizontal bounds',()=>{
+ const fresh=snapshot();fresh.bounds.top-=4;fresh.bounds.bottom+=3;
+ const o=confirmSessionMinimum(evidence(),fresh,scope,'source','digest');
+ assert.equal(o.vertical_bounds_changed,true);assert.deepEqual(o.source_snapshot,snapshot());assert.deepEqual(o.reference_snapshot,fresh);assert.equal(o.observed_min_width,575);
+ const moved=snapshot();moved.bounds.top-=5;assert.throws(()=>confirmSessionMinimum(evidence(),moved,scope,'source','digest'));
+ const shifted=snapshot();shifted.bounds.left++;shifted.bounds.right++;assert.throws(()=>confirmSessionMinimum(evidence(),shifted,scope,'source','digest'));
+});

@@ -673,3 +673,10 @@ para esta execução, não para outros textos, futuras sessões ou o painel.
 alvos solicitados e efetivos explícitos e sem gestos quando já dentro da faixa.
 Uma aprovação vale apenas para a sessão declarada. Não altera resultados antigos,
 não publica nem integra ao painel.
+
+A liberação do controle manual pode deixar os bounds verticais levemente diferentes.
+Na confirmação de sessão, admite-se somente até 4 px por borda vertical e até 1 px
+no centro vertical, com bordas horizontais exatamente iguais. A observação guarda
+`source_snapshot`, `reference_snapshot` e `vertical_bounds_changed`; não afirma
+que o estilo ou a rotação foram verificados automaticamente. Os gestos continuam
+exigindo estado estável e correspondência exata com o novo snapshot inicial.
