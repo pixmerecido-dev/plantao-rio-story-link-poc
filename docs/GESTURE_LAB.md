@@ -407,22 +407,23 @@ porque uma execução isolada não contém os outros dois textos; os relatórios
 reais anteriores devem ser confrontados antes de uma qualificação conjunta.
 Não repete o caso padrão/longo, controle manual, MOVE ou benchmark final.
 
-### Execução multi-touch no texto curto
+### Correção da injeção multi-touch no texto curto
 
-O controle manual confirmou Veja265→335→251px, enquanto o W3C diagonal padrão
-não alterou265px. O próximo ensaio muda apenas entrada/tempo, preservando
-âncoras95/29 e4/70 e contração35%:
+O logcat real confirmou que a entrada RED_FIRST gerou ACTION_DOWN para o segundo
+dedo enquanto o primeiro já estava pressionado. Android rejeitou com
+`Invalid DOWN event - pointers already down` e `ACTION_MOVE touching pointers
+don't match`. As entradas sequenciais RED_FIRST/GREEN_FIRST foram retiradas;
+não devem ser repetidas nesta combinação Android/UiAutomator2. Isso explica o
+erro de injeção, mas não explica o NO_EFFECT do gesto simultâneo que havia sido
+aceito pelo Android.
 
-- FAST_SIMULTANEOUS: ambos down juntos, hold30ms e5 passos60ms;
-- RED_FIRST: vermelho down,80ms, verde down, hold150ms e5 passos150ms;
-- GREEN_FIRST: verde down,80ms, vermelho down, hold150ms e5 passos150ms.
-
-Não repete a execução padrão já sem efeito. Máximo3 tentativas de aumento,
-parando na primeira redução inesperada, erro de comando ou drift inválido.
-Na primeira receita que aumentar>=3px com drift válido, faz somente1 redução
-com a mesma receita e bounds relidos. Somente efeito medido nas duas direções
-produz SHORT_AUTOMATED_SUCCESS=true; um único ensaio ainda não qualifica os
-três textos nem reintegra o controlador. Os outros textos/MOVE permanecem iguais.
+O novo ensaio é único: SIMULTANEOUS_CONTINUOUS, dois pointerDown no mesmo tick,
+sem pausa inicial e10 passos60ms de movimento. As âncoras95/29 e4/70, a diagonal
+e contração35% permanecem iguais. Validação anterior à execução exige dois
+sources touch distintos, duração/tipos sincronizados, exatamente um DOWN/UP
+por source e ambos ativos em todo MOVE. Sequências incompatíveis são rejeitadas
+antes do envio. Isso verifica a cadeia W3C; a formação Android ainda depende do
+UiAutomator2 e é verificada no log.
 
 ```cmd
 set DRY_RUN=true
@@ -431,11 +432,25 @@ set GESTURE_STYLE_INDEX=0
 npm run smoke:gesture-short-touch-execution
 ```
 
-Deixe Veja no tamanho menor do controle manual, solte Ctrl/mouse, aguarde os
-botões e confirme Enter. Depois não toque até terminar. O comando salva
-`short-touch-execution-report.json`, PNG/XML/JSON e SVGs com as âncoras, além de
-`attempts.jsonl` com ações W3C completas antes da execução. As ações registradas
-são solicitadas ao Appium, não rastros de contatos observados no Android.
-Nenhuma inferência de causa/qualificação decorre apenas de retorno sem erro.
-O relatório inclui a receita, ordem, tempos, coordenadas, efeitos e drift.
-Sem benchmark completo, publicação, navegação ou alteração do mínimo/tolerância.
+Prepare Veja no estilo branco/azul do controle manual e no tamanho menor
+observado (aproximadamente251–265px), sem mudar o estilo durante o teste.
+Solte Ctrl/mouse, aguarde os controles do editor e confirme Enter uma vez.
+O programa tenta1 aumento; somente se medir aumento>=3px e drift válido,
+faz1 redução com a mesma receita. Não há retries nem busca de âncoras.
+Não modifica MOVE, textos padrão/longo, mínimo, tolerância ou painel.
+
+A coleta de logcat inicia antes do gesto com uma marca exclusiva e termina
+junto do ensaio. Não limpa o histórico Android. ADB_PATH pode indicar o
+executável; no Windows há fallback para LOCALAPPDATA/Android/Sdk/platform-tools.
+Falha na inicialização da coleta bloqueia o gesto para evitar outro ensaio sem
+evidência. A coleta tem limite8MiB; truncamento impede qualificação observada.
+
+A pasta de artefatos contém `short-touch-execution-report.json`, imagens e
+`touch-injection-logcat.txt`. O relatório separa erro de comando, ausência de
+efeito e transformação medida. `touch_injection` verifica DOWN aceito,
+POINTER_DOWN do segundo dedo, MOVE aceito com2contatos e UP, sem falhas de
+injeção registradas no período. A evidência é do driver/Android, não uma
+observação física dos dedos nem reconhecimento de escala pelo Instagram.
+`SHORT_AUTOMATED_SUCCESS=true` exige efeito nas duas direções e a evidência de
+injeção. `measured_resize_success` preserva o resultado geométrico separado.
+Sem benchmark completo, publicação ou qualificação universal dos três textos.

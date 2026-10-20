@@ -6,7 +6,11 @@ import {createInterface} from 'node:readline/promises';
 import {InstagramDriver} from '../instagram/InstagramDriver.js';
 import {nativeLabPort} from './runtime.js';
 import {annotatedAnchorScreenshot} from './anchorScreenshot.js';
+import {startTouchLog} from './touchLogCapture.js';
+import {analyzeTouchInjectionLog} from './touchInjectionLog.js';
+import {connectedAndroidDevice} from '../instagram/addStoryAndroidDiagnostics.js';
 import {investigateShortTouch,shortTouchActions} from './shortTouchExecution.js';
+let capture:Awaited<ReturnType<typeof startTouchLog>>|undefined;
 const directory=resolve('artifacts',`gesture-short-touch-execution-${Date.now()}`),driver=new InstagramDriver();
 await mkdir(directory,{recursive:true});
 try{
@@ -16,7 +20,7 @@ try{
  if(text!=='Veja'||![0,1,2,3].includes(style))throw Error('Ensaio exclusivo para Veja; verifique texto/estilo declarados.');
  await driver.checkAppium();await driver.connect();const session=driver.getSession(),live=nativeLabPort(driver,directory);
  const terminal=createInterface({input:stdin,output:stdout}),keepAlive=setInterval(()=>{void session.getCurrentPackage().catch(()=>{});},15000);
- try{console.log(`Deixe somente Veja no estilo ${style}, tamanho menor do controle manual (aproximadamente251–265px). Solte Ctrl/mouse e aguarde os controles do Instagram. Até3 receitas de aumento; na primeira que funcionar, somente1 redução. Não faça gestos durante o teste.`);
+ try{console.log(`Deixe somente Veja no estilo ${style}, tamanho menor do controle manual (aproximadamente251–265px). Solte Ctrl/mouse e aguarde os controles do Instagram. Apenas1 aumento contínuo com dois dedos simultâneos; se funcionar, somente1 redução. Mantenha o mesmo estilo branco/azul do controle manual. Não faça gestos durante o teste.`);
   await terminal.question('Quando pronto, pressione Enter aqui: ');
  }finally{clearInterval(keepAlive);terminal.close();}
  const readStable=async()=>{
@@ -28,6 +32,7 @@ try{
   }
   throw Error('Editor/sticker não estabilizou. Nenhum gesto adicional.');
  };
+ capture=await startTouchLog(connectedAndroidDevice(session));
  const report=await investigateShortTouch({read:readStable,capture:live.capture,
   mark:async(name,before,plan)=>{const viewport=await session.getWindowRect(),file=join(directory,`${name}-anchors.svg`);await writeFile(file,annotatedAnchorScreenshot(await readFile(join(directory,`${name}.png`)),before,plan,viewport));return file;},
   record:async value=>{console.log(JSON.stringify(value));await appendFile(join(directory,'attempts.jsonl'),JSON.stringify(value)+'\n');},
@@ -36,9 +41,14 @@ try{
    try{await session.performActions(shortTouchActions(plan,recipe));}finally{await session.releaseActions();}
    await session.pause(1200);
   }});
- await writeFile(join(directory,'short-touch-execution-report.json'),JSON.stringify({...report,context:{style_index:style,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null,text_semantically_verified:false}},null,2));
+ const log=await capture.stop();capture=undefined;
+ const logFile=join(directory,'touch-injection-logcat.txt');await writeFile(logFile,log.text);
+ const injection=analyzeTouchInjectionLog(log.text);
+ const observed=report.SHORT_AUTOMATED_SUCCESS&&injection.injection_sequence_observed&&!log.truncated;
+ await writeFile(join(directory,'short-touch-execution-report.json'),JSON.stringify({...report,SHORT_AUTOMATED_SUCCESS:observed,measured_resize_success:report.SHORT_AUTOMATED_SUCCESS,touch_injection:{...injection,truncated:log.truncated,stderr:log.stderr,log_file:logFile},context:{style_index:style,instagram_version:process.env.GESTURE_INSTAGRAM_VERSION??null,text_semantically_verified:false}},null,2));
  console.table(report.attempts.map(a=>({recipe:a.recipe.id,direction:a.direction,before:a.before_width,after:a.after_width,delta:a.delta_width,drift:a.center_drift,success:a.success})));
- console.log(`SHORT_AUTOMATED_SUCCESS=${report.SHORT_AUTOMATED_SUCCESS}`);if(!report.SHORT_AUTOMATED_SUCCESS)process.exitCode=1;
+ console.log(`SHORT_AUTOMATED_SUCCESS=${observed}`);if(!observed)process.exitCode=1;
 }catch(error){console.error('[FAIL]',error);process.exitCode=1;await writeFile(join(directory,'error.json'),JSON.stringify({error:String(error),published:false}));
  try{await driver.getSession().saveScreenshot(join(directory,'error.png'));await writeFile(join(directory,'error.xml'),await driver.getSession().getPageSource());}catch{}
-}finally{await driver.disconnect().catch(error=>{console.error(error);process.exitCode=1;});console.log(`[SAFE] Sem publicação / sem benchmark. Artefatos: ${directory}`);}
+}finally{if(capture){const log=await capture.stop().catch(()=>null);if(log)await writeFile(join(directory,'touch-injection-logcat.txt'),log.text);}
+await driver.disconnect().catch(error=>{console.error(error);process.exitCode=1;});console.log(`[SAFE] Sem publicação / sem benchmark. Artefatos: ${directory}`);}
