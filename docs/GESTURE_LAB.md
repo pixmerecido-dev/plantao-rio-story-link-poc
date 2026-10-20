@@ -358,3 +358,28 @@ não significa calibração universal de outros textos ou versões e não autori
 publicação. Mocks validam o funcionamento do teste, não os gestos reais Android.
 Depois de aprovado, o próximo trabalho será controlador com essas âncoras e
 benchmark5/5; nenhum deles é executado ou reintegrado por este comando.
+
+### Três medidas manuais: inicial, máximo e mínimo
+
+```cmd
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Veja"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-anchor-manual-range
+```
+
+O programa não injeta gestos, teclas ou movimentos. Exige um único sticker já
+visível no editor e pede **três confirmações Enter**: estado inicial desejado,
+após aumento manual ao máximo alcançado com Ctrl+mouse e após redução manual ao
+mínimo alcançado. Antes de cada Enter solte Ctrl/mouse e aguarde os controles
+do Instagram voltarem. Há releituras somente de observação para estabilização;
+a presença do editor continua obrigatória. A captura é conferida novamente
+para não aceitar bounds em movimento.
+
+Salva PNG/XML/JSON em cada etapa, progresso parcial e o relatório final
+`anchor-manual-range-report.json` em `artifacts/gesture-anchor-manual-range-*`.
+Registra larguras/alturas/bounds, deltas e drift entre etapas. Os extremos são
+os observados pelo operador nesta execução, não um limite universal; nenhuma
+observação altera o registro de mínimos. O texto é declarado pelo operador.
+Este controle manual não qualifica a trajetória W3C nem atualiza o resultado
+2/3 da validação automatizada. Não executa benchmark ou publicação.
