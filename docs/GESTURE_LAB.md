@@ -818,3 +818,28 @@ Configuração do Story, desligar **Incluir sticker com link**, salvar e usar
 **Testar no Instagram**. O teste cria um Story com a arte de exemplo e termina no
 editor, sem sticker e sem publicar. Depois, ligar/salvar restaura o caminho com
 link. A execução Android dos dois modos deve ser conferida localmente.
+
+### Reparo conservador de operations.json
+
+Se o painel recusar o armazenamento com `Bad control character in string literal`,
+não apague `data/admin` nem substitua por um estado vazio. Com o painel encerrado:
+
+```cmd
+npm run repair:operations
+npm run repair:operations -- --apply
+npm run admin
+```
+
+O primeiro comando só diagnostica. `--apply` faz backup byte a byte e corrige
+somente controles U+0000..U+001F não escapados dentro de strings JSON, usando
+escapes Unicode. Valida JSON e o schema operacional completo antes da troca
+atômica. Não reserializa os objetos, não apaga registros, não altera flags de
+publicação, locks de tarefas, filas ou preferências. Guarda backup `.bak` ao lado
+do original e relatório resumido com SHA256/contagens, sem expor mensagens privadas.
+Respeita ADMIN_DATA_DIR e o lock do backend; não executa com painel ativo.
+
+Se houver truncamento, erro estrutural, encoding inválido, escape ambíguo ou schema
+inválido após essa correção limitada, aborta e preserva o original. Não faz reset
+nem tolerância automática no carregador. O reparo não identifica a causa da
+corrupção; o relatório local deve ser conferido antes de retomar os testes.
+Nenhum comando dessa ferramenta conecta ao Instagram ou publica.
