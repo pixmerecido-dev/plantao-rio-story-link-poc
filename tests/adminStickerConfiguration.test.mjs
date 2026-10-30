@@ -492,3 +492,14 @@ test('failed measured resize blocks layout and MOVE even if final width is withi
  const r=await prepareConfiguredStickerLayout(job({sticker_scale:1}),p);
  assert.equal(r.layout_confirmed,false);assert.equal(r.size_ok,false);assert.equal(p.calls.includes('move'),false);assert.equal(p.calls.includes('resize'),false);
 });
+test('OFF freezes image-only mode without depending on link text limits; toggling later preserves running job',async()=>{
+ const st=await storage(),q=new PublicationQueueService(st);const s=(await st.read()).account_settings[account];
+ s.story.sticker.enabled=false;s.story.sticker.max_text_length=1;await q.saveAccountSettings(account,s);
+ const j=await q.enqueueJob({account_id:account,media_path:resolve('assets/story-test.jpg'),story_url:'https://example.com/image-only',sticker_text:'Metadata retained, not a sticker'});
+ await st.transact(s=>{s.publishing.enabled=true;s.system.status='ONLINE';s.instagram_accounts[0].status='OK';s.instagram_accounts[0].expected_username='plantaorio';s.instagram_accounts[0].detected_username='plantaorio';s.publishing.window_start=s.publishing.window_end='00:00';});
+ const scheduler=new PublishingScheduler(q,new PublishingPolicyService()),claimed=await scheduler.claim(new Date(),health);
+ assert.equal(claimed.id,j.id);assert.equal(claimed.effective_settings.content_mode,'IMAGE_ONLY');assert.equal(claimed.effective_settings.sticker_enabled,false);assert.equal(claimed.effective_settings.require_link_confirmation,false);
+ s.story.sticker.enabled=true;s.story.sticker.max_text_length=null;await q.saveAccountSettings(account,s);
+ assert.equal((await st.read()).queue[0].effective_settings.content_mode,'IMAGE_ONLY');
+ assert.equal((await scheduler.tick(new Date(),health)).reason,'ENGINE_ADAPTER_NOT_CONNECTED');
+});

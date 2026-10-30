@@ -61,7 +61,7 @@ export interface AutomationSettings {
   enabled: boolean;
   max_attempts: number;
 }
-export interface FrozenSettings {
+interface FrozenSettingsBase {
   account_id: string;
   sticker_text: string;
   sticker_style_index: 0 | 1 | 2 | 3;
@@ -71,10 +71,12 @@ export interface FrozenSettings {
   sticker_y_pct: number;
   facebook_enabled: boolean;
   instagram_enabled: boolean;
-  require_link_confirmation: true;
-  require_layout_confirmation: true;
   abort_on_layout_failure: true;
 }
+export type FrozenSettings=FrozenSettingsBase & (
+ {content_mode?:'IMAGE_WITH_LINK';sticker_enabled?:true;require_link_confirmation:true;require_layout_confirmation:true} |
+ {content_mode:'IMAGE_ONLY';sticker_enabled:false;require_link_confirmation:false;require_layout_confirmation:false}
+);
 export interface QueueJob extends Partial<DownloadedMedia> {
   article_title?: string;
   id: string;

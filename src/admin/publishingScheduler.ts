@@ -64,13 +64,12 @@ export class PublishingScheduler {
       if (!j) return null;
       const settings = s.account_settings[j.account_id];
       if (
-        !settings?.publishing.instagram_enabled ||
-        !settings.story.sticker.enabled
+        !settings?.publishing.instagram_enabled
       )
         return null;
       const sticker = settings.story.sticker;
       try {
-        validateStickerText(j.sticker_text, sticker.max_text_length);
+        if(sticker.enabled)validateStickerText(j.sticker_text, sticker.max_text_length);
       } catch (error) {
         j.status = "REQUIRES_REVIEW";
         j.error_code = "STICKER_TEXT_LIMIT";
@@ -88,8 +87,7 @@ export class PublishingScheduler {
         sticker_y_pct: sticker.y_pct,
         facebook_enabled: settings.publishing.facebook_enabled,
         instagram_enabled: true,
-        require_link_confirmation: true,
-        require_layout_confirmation: true,
+        ...(sticker.enabled?{content_mode:'IMAGE_WITH_LINK' as const,sticker_enabled:true as const,require_link_confirmation:true as const,require_layout_confirmation:true as const}:{content_mode:'IMAGE_ONLY' as const,sticker_enabled:false as const,require_link_confirmation:false as const,require_layout_confirmation:false as const}),
         abort_on_layout_failure: true,
       };
       j.status = "PREPARING";

@@ -14,7 +14,7 @@ export class StorySettingsService {
   }
   async save(value: unknown) {
     const settings = validateSettings(value);
-    if(this.limits){
+    if(this.limits&&settings.story.sticker.enabled){
       const s=settings.story.sticker;
       const limit=panelObservedLimit(await this.limits.load(),s.text,s.style_index);
       if(limit){s.scale=clampScale(s.scale,limit);s.max_scale=Math.max(s.max_scale,minimumScale(limit));}

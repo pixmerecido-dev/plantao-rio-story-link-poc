@@ -33,8 +33,7 @@ export class PublicationQueueService {
     if (
       typeof input.account_id !== "string" ||
       typeof input.story_url !== "string" ||
-      typeof input.sticker_text !== "string" ||
-      !input.sticker_text.trim()
+      typeof input.sticker_text !== "string"
     )
       throw new ValidationError("Conta, URL e texto obrigatórios.");
     let url: URL;
@@ -81,7 +80,7 @@ export class PublicationQueueService {
     return this.store.transact((s) => {
       if (!s.instagram_accounts.some((a) => a.id === input.account_id))
         throw new ValidationError("Conta inexistente.");
-      validateStickerText(
+      if(s.account_settings[input.account_id]?.story.sticker.enabled!==false)validateStickerText(
         input.sticker_text,
         s.account_settings[input.account_id]?.story.sticker.max_text_length ??
           null,

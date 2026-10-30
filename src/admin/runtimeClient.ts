@@ -183,7 +183,7 @@ export async function mountRuntimeTest() {
   const widget = document.getElementById("runtime-test-widget");
   if (!widget) return;
   widget.innerHTML =
-    '<h3>Teste seguro no Instagram</h3><p>Salve a configuração primeiro. Usaremos a arte de exemplo e o link https://plantaorio.com.br/. O teste termina no editor sem publicar. Confira o estilo visualmente.</p><p id="runtime-test-status"></p><button id="runtime-test-start" class="button">Testar no Instagram</button> <button id="runtime-test-move" class="button secondary">Testar somente movimento</button> <button id="runtime-test-end" class="button secondary">Encerrar teste</button><p><a href="#system">Preparar sistema</a> · <a href="#accounts">Verificar conta</a></p>';
+    '<h3>Teste seguro no Instagram</h3><p>Salve a configuração primeiro. Usaremos a arte de exemplo. Com a chave ligada, incluiremos o link https://plantaorio.com.br/; desligada, prepararemos somente a imagem. Salve a chave antes de testar. O teste termina no editor sem publicar.</p><p id="runtime-test-status"></p><button id="runtime-test-start" class="button">Testar no Instagram</button> <button id="runtime-test-move" class="button secondary">Testar somente movimento</button> <button id="runtime-test-end" class="button secondary">Encerrar teste</button><p><a href="#system">Preparar sistema</a> · <a href="#accounts">Verificar conta</a></p>';
   const update = async () => {
     const s = await api<Status>();
     if (!document.getElementById("runtime-test-widget")) return;
@@ -199,6 +199,7 @@ export async function mountRuntimeTest() {
       !s.engine_prepared ||
       !s.account_confirmed ||
       s.test?.status === "TEST_READY";
+    (document.getElementById("runtime-test-move") as HTMLButtonElement).hidden=!(document.getElementById("sticker-enabled") as HTMLInputElement|null)?.checked;
     (document.getElementById("runtime-test-move") as HTMLButtonElement).disabled = (document.getElementById("runtime-test-start") as HTMLButtonElement).disabled;
     (
       document.getElementById("runtime-test-end") as HTMLButtonElement

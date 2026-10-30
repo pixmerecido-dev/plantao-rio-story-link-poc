@@ -586,3 +586,16 @@ test('isolated movement mode is forwarded and never presented as complete layout
   assert.match((await f.manager.status()).test.message, /Movimento isolado confirmado/);
   assert.equal((await f.manager.status()).test.published, false);
 });
+test('panel test freezes authoritative account OFF setting and validates image-only worker result',async()=>{
+ const {panelTestPort}=await import('../dist/local/panelTestPort.js');
+ const f=await fixture();await mkdir(join(f.root,'assets'),{recursive:true});
+ await writeFile(join(f.root,'assets/story-preview-demo.jpg'),await readFile(join(process.cwd(),'assets/story-test.jpg')));
+ await f.ops.transact(s=>{s.account_settings['instagram-default'].story.sticker.enabled=false;});
+ let request,environment,fallbackReads=0;
+ const host={start:async(_name,_command,args,env)=>{request=JSON.parse(await readFile(args.at(-1),'utf8'));environment=env;
+  await writeFile(join(request.directory,'test-result.json'),JSON.stringify({job_id:request.id,published:false,layout_confirmed:true,content_mode:'IMAGE_ONLY',image_loaded:true,editor_final_confirmed:true,no_stickers_confirmed:true,link_steps_skipped:true,sticker_added:false,url_verified:false,sticker_text_verified:false,move_command_sent:false,resize_command_sent:false}));},wait:async()=>{}};
+ const repository={getSettings:async()=>{fallbackReads++;return (await import('../dist/admin/domain.js')).defaultSettings();}};
+ const port=panelTestPort(host,f.store,repository,f.root,f.ops),result=await port.prepare('only-image',join(f.root,'image-artifacts'));
+ assert.equal(request.settings.story.sticker.enabled,false);assert.equal(request.content_mode,'IMAGE_ONLY');assert.equal(result.content_mode,'IMAGE_ONLY');assert.equal(fallbackReads,0);assert.equal(environment.DRY_RUN,'true');assert.equal(environment.ALLOW_PUBLISH,'false');
+ await assert.rejects(port.prepare('invalid-move',join(f.root,'move-artifacts'),'move'),/Ative o link/);
+});

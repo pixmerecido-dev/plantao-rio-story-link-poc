@@ -30,7 +30,7 @@ export interface TestPort {
     id: string,
     directory: string,
     mode?: "layout" | "move",
-  ): Promise<{ published: false; layout_confirmed: boolean }>;
+  ): Promise<{ published: false; layout_confirmed: boolean;content_mode?:"IMAGE_WITH_LINK"|"IMAGE_ONLY" }>;
   end(): Promise<void>;
 }
 export class RuntimeManager {
@@ -426,7 +426,7 @@ export class RuntimeManager {
         s.test!.status = "TEST_READY";
         s.test!.finished_at = new Date().toISOString();
         s.test!.message =
-          mode === "move" ? "Movimento isolado confirmado. Sem resize e sem publicação." : "Story preparado com sucesso. Nenhuma publicação foi realizada.";
+          result.content_mode === "IMAGE_ONLY" ? "Story somente com imagem preparado. Sem sticker, sem link e sem publicação." : mode === "move" ? "Movimento isolado confirmado. Sem resize e sem publicação." : "Story preparado com sucesso. Nenhuma publicação foi realizada.";
         runtimeEvent(s, s.test!.message);
       });
     });

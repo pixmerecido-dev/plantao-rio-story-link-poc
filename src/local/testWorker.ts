@@ -5,7 +5,8 @@ import { resolve, join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { InstagramDriver } from "../instagram/InstagramDriver.js";
 import { StoryLinkPublisher } from "../instagram/StoryLinkPublisher.js";
-import { validateStoryJobInput } from "../config/prepareStoryJob.js";
+import {validatePanelContentJob,panelContentMode,type PanelContentMode} from "./panelContentMode.js";
+import {prepareImageOnlyStory} from "../instagram/imageOnlyStory.js";
 import { assertExecutableStoryMedia } from "../media/StoryMedia.js";
 import { verifyPublicationAccount } from "../instagram/publicationAccountGuard.js";
 import { prepareNewStory } from "../instagram/storyPrepare.js";
@@ -25,6 +26,7 @@ if (!requestFile || !["prepare", "end"].includes(action ?? ""))
 const request = JSON.parse(await readFile(requestFile, "utf8")) as {
   id: string;
   mode?: "layout" | "move";
+  content_mode?:PanelContentMode;
   directory: string;
   media: string;
   url: string;
@@ -39,17 +41,17 @@ try {
   await mkdir(directory, { recursive: true });
   if (createHash("sha256").update(JSON.stringify(request.settings)).digest("hex") !== request.settings_sha256) throw Error("Configuração carregada diverge da configuração salva; teste cancelado.");
   const loaded = request.settings.story.sticker;
-  console.log("WORKER_CONFIG_LOADED", JSON.stringify({ style: loaded.style_index, scale: loaded.scale, x: loaded.x_pct, y: loaded.y_pct, text: loaded.text, updated_at: null, loaded_at: new Date().toISOString(), snapshot_sha256: request.settings_sha256 }));
+  if(request.content_mode!==undefined&&request.content_mode!==panelContentMode(loaded.enabled))throw Error("Modo de conteúdo diverge da configuração salva.");
+  if(action==='prepare'&&request.mode==='move'&&!loaded.enabled)throw Error("Somente imagem não executa MOVE.");
+  console.log("WORKER_CONFIG_LOADED", JSON.stringify({ content_mode:panelContentMode(loaded.enabled), style: loaded.style_index, scale: loaded.scale, x: loaded.x_pct, y: loaded.y_pct, text: loaded.text, updated_at: null, loaded_at: new Date().toISOString(), snapshot_sha256: request.settings_sha256 }));
   const job =
     action === "prepare"
-      ? await validateStoryJobInput({
+      ? await validatePanelContentJob({
           job_id: request.id,
           media: request.media,
           story_url: request.url,
           sticker_text: request.settings.story.sticker.text,
-          publish_instagram: false,
-          publish_facebook: false,
-        })
+        },loaded.enabled)
       : null;
   if (job) assertExecutableStoryMedia(job.media);
   await driver.checkAppium();
@@ -69,13 +71,9 @@ try {
     });
     const publisher = new StoryLinkPublisher(driver),
       s = request.settings.story.sticker;
-    if (!s.enabled) throw Error("Ative o link na configuração antes do teste.");
+
     let confirmedLayout: Awaited<ReturnType<typeof applyPanelLayout>> | undefined;
-    const result = await prepareNewStory(
-      driver,
-      job,
-      directory,
-      async () => {
+    const loadImage = async () => {
         const { filename } = await injectMediaAndOpenStory(
           driver,
           publisher,
@@ -87,7 +85,12 @@ try {
           join(directory, "image-flow"),
           { requireNewImage: true, expectedFilename: filename },
         );
-      },
+    };
+    if(!s.enabled){
+      const result=await prepareImageOnlyStory(driver,job,directory,loadImage);
+      await writeFile(join(directory,'test-result.json'),JSON.stringify(result));
+    }else{
+    const result = await prepareNewStory(driver,job,directory,loadImage,
       async () => {
         if (request.mode === "move") return isolatedStickerMove(driver, job.job_id, directory);
         confirmedLayout = await applyPanelLayout(
@@ -116,6 +119,7 @@ try {
       join(directory, "test-result.json"),
       JSON.stringify({
         job_id: job.job_id,
+        content_mode:"IMAGE_WITH_LINK",
         published: false,
         layout_confirmed: result.layout_confirmed,
         style_verified_visually: false,
@@ -127,6 +131,7 @@ try {
         editor_final_confirmed: true,
       }),
     );
+  }
   }
   }
   console.log("[SAFE] Nenhuma publicação foi realizada.");

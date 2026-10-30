@@ -779,3 +779,42 @@ A indisponibilidade do log histórico ou das imagens é registrada, não substit
 por eventos/coordenadas inventados. No cloud sem o emulador local, typecheck,
 build e testes de unidade validam o diagnóstico; causa e variante eficaz dependem
 da execução real e da leitura das novas capturas.
+
+### Chave “Incluir sticker com link”
+
+Em **Configuração do Story**, a chave visível usa `story.sticker.enabled`:
+
+- ligada (padrão): mantém imagem → aplicar link/texto → resize medido → MOVE;
+- desligada: imagem → confirmar editor sem stickers → pronto para conferência.
+
+Desligar oculta o sticker da prévia e desabilita os campos de link/tamanho/posição,
+sem apagar as opções salvas. O teste “somente movimento” fica oculto, e o servidor
+também o rejeita nesse modo. Salve a configuração antes de testar. A URL original
+da matéria pode permanecer como metadado na fila; não é inserida no Story sem link.
+
+O worker congela modo e configuração com SHA256. Carrega a configuração da conta
+usada pelo painel, não uma cópia antiga do armazenamento inicial. Mudar a chave
+não modifica uma execução em curso. O scheduler registra `content_mode` e
+`sticker_enabled` na configuração efetiva quando inicia uma tarefa; imagem-only
+não depende de limite de texto nem exige confirmação de link inexistente. Os jobs
+antigos sem `content_mode` continuam com o contrato de link. RSS, prioridades,
+deduplicação, limites de postagem e verificação da conta não mudam.
+
+O novo caminho de imagem limpa evidências de link/layout da sessão anterior,
+exige Home antes da imagem nova, confirma STATE_EDITOR com zero stickers e salva
+`image-only-prepared.png/.xml/.json` e `test-result.json`. O resultado declara
+IMAGE_ONLY, link_steps_skipped=true, sticker_added=false, url_verified=false,
+move_command_sent=false e resize_command_sent=false. Não usa uma confirmação
+falsa de link e não enfraquece os guards do fluxo com link. Se restar um sticker
+ou o editor estiver incorreto, o teste falha.
+
+**Publicação real permanece desativada em ambos os modos.** O adapter de
+publicação da fila continua desconectado; esta entrega prepara os modos e os
+valida pelo teste local, sem postar. O modo ligado conserva as restrições atuais
+de texto/estilo/ambiente do resize. Nenhum novo ajuste em MOVE ou tolerância.
+
+Teste local: atualizar main, reiniciar painel com `npm run admin`, abrir
+Configuração do Story, desligar **Incluir sticker com link**, salvar e usar
+**Testar no Instagram**. O teste cria um Story com a arte de exemplo e termina no
+editor, sem sticker e sem publicar. Depois, ligar/salvar restaura o caminho com
+link. A execução Android dos dois modos deve ser conferida localmente.

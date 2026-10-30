@@ -205,7 +205,9 @@ export function validateSettings(value: unknown): StorySettings {
     throw new ValidationError(
       "Limite de caracteres deve ser inteiro positivo ou vazio.",
     );
-  const text = validateStickerText(sticker.text, limit as number | null);
+  const enabled=bool(sticker.enabled,'Incluir sticker com link');
+  if(typeof sticker.text!=='string')throw new ValidationError('Texto do sticker inválido.');
+  const text = enabled?validateStickerText(sticker.text, limit as number | null):sticker.text;
   const style = sticker.style_index === undefined ? 0 : sticker.style_index;
   if (
     typeof style !== "number" ||
@@ -264,7 +266,7 @@ export function validateSettings(value: unknown): StorySettings {
         scale: number(sticker.scale, min, max, "Escala"),
         x_pct: number(sticker.x_pct, 0, 1, "Posição horizontal"),
         y_pct: number(sticker.y_pct, 0, 1, "Posição vertical"),
-        enabled: bool(sticker.enabled, "Sticker habilitado"),
+        enabled,
         min_scale: min,
         max_scale: max,
       },
