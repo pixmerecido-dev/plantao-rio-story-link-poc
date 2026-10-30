@@ -707,3 +707,75 @@ vertical 70%, salvar e usar **Testar no Instagram** com sistema preparado e cont
 confirmada. Esse fluxo cria um Story de teste e termina no editor. O teste real
 integrado ainda precisa ser executado localmente; mocks não substituem essa etapa.
 Botões de publicação permanecem desativados. Não altera fila, RSS nem publicação.
+
+### Diagnóstico isolado do estado de 575 px
+
+```cmd
+git pull --ff-only origin main
+set DRY_RUN=true
+set "GESTURE_STICKER_TEXT=Leia a matéria completa"
+set GESTURE_STYLE_INDEX=0
+npm run smoke:gesture-575-diagnostic
+```
+
+Exige um único sticker padrão branco/azul com largura medida de **575 px** no
+editor, no ambiente calibrado (emulator-5554, tela 1080×2400, canvas 1080×1920).
+Um Enter inicia o diagnóstico; solte Ctrl/mouse e não toque até terminar. Não
+navega, recria Story, troca estilo, faz MOVE ou executa qualquer benchmark.
+Se a largura for outra, bloqueia antes de gestos; não restaura o tamanho sozinho.
+
+Comparação automática com artefatos locais reais:
+
+- aprovado: `text-emulator-precision-report.json` do texto padrão, qualified=true,
+  com redução medida e injeção confirmada;
+- travado: `final-emulator-resize-report.json` da bateria que falhou, contendo a
+  tentativa 575→575 no fator 1/1.20;
+- a referência A é **reutilizada, sem reenviar o gesto já medido**;
+- B: primeiro contato em 88%/35%, espelho na tela, fator 1/1.20;
+- C: primeiro contato em 98%/22%, espelho na tela, fator 1/1.20;
+- D: primeiro contato em 95%/29%, mesma distância inicial de A, fator 0.90
+  (trajetória mais curta);
+- E: mesma geometria e amplitude de A, dez steps de 120 ms em vez de 60 ms.
+
+Não repete os fatores 1/1.25, 1/1.30, 1/1.35 do ensaio de convergência.
+B/C/D/E têm no máximo **uma tentativa cada**, sem reset ou compensação. Para
+na primeira redução >=3 px com injeção e drift válidos, ou em erro, direção
+errada, alteração dos bounds que comprometa a comparação ou mudança visual que
+exija revisão. Variantes restantes ficam NOT_EXECUTED; não são tratadas como
+falhas nem como passes. Quatro NO_EFFECT encerram o diagnóstico sem insistir.
+
+Saída em `artifacts/gesture-575-diagnostic-<timestamp>/`:
+
+- `gesture-575-diagnostic-report.json`: bounds, largura/altura/centro, anchors,
+  trajetórias completas, distâncias inicial/final, duração/steps, efeito e causa
+  candidata (nunca causa comprovada automaticamente);
+- `comparison.html`: comparação lado a lado do aprovado, do travado e de cada
+  variante executada, incluindo capturas históricas quando ainda disponíveis;
+- `<variante>-idle/before/after.png`, respectivos XML/JSON, e overlay
+  `<variante>-pointers.svg` com bounds e coordenadas calculadas;
+- `<variante>-touch-injection-logcat.txt`: log novo delimitado por marcador, sem
+  limpar logcat; relatório lista eventos em ordem, timestamps, IDs/coordenadas
+  quando expostos pelo driver e validade de DOWN → POINTER_DOWN → MOVE de dois
+  contatos → POINTER_UP → UP. Duas chamadas ACTION_DOWN não são consideradas
+  uma sequência válida de dois dedos.
+
+Uma captura idle e outra before, sem gesto entre elas, medem ruído visual. A
+diferença before/after compara pixels RGB decodificados na região do sticker,
+não bytes comprimidos dos PNGs. Diferença acima do ruído com XML igual é apenas
+candidata a mudança visual: pode ser fundo, estilo ou rotação. PNG não suportado
+resulta em análise UNAVAILABLE, nunca em “sem mudança”. O HTML permite revisão.
+
+**Limites da evidência:** DOWNs aceitos pelo driver não demonstram o hit-test
+interno nem o reconhecimento do pinch pelo Instagram. O segundo contato fica
+intencionalmente fora do sticker no modelo espelhado que já funcionou. O teste
+informa início/fim fora do retângulo XML e cruzamento das bordas; a área interativa
+real continua UNKNOWN. Não muda tolerância, mínimo conhecido, controlador do
+painel, RSS, fila ou publicação. Nenhum mínimo é aprendido do stall.
+
+Os relatórios históricos são buscados nos diretórios locais originais. Preserve
+`artifacts`; se os arquivos não existirem, o teste bloqueia sem gestos. Caminhos
+explícitos opcionais: `GESTURE_575_APPROVED_REPORT` e `GESTURE_575_STALLED_REPORT`.
+A indisponibilidade do log histórico ou das imagens é registrada, não substituída
+por eventos/coordenadas inventados. No cloud sem o emulador local, typecheck,
+build e testes de unidade validam o diagnóstico; causa e variante eficaz dependem
+da execução real e da leitura das novas capturas.
