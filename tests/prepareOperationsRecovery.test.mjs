@@ -36,3 +36,23 @@ test('complete event objects are never skipped when their syntax or schema is in
  assert.throws(()=>recoverCompleteEvents(Buffer.from('[null,')),/não é objeto/);
  const prefix=Buffer.from('['+JSON.stringify(event(0))+', {"id":"cut');const r=recoverCompleteEvents(prefix);assert.deepEqual(r.events,[event(0)]);assert.equal(r.partial_item_excluded,true);assert.equal(r.array_complete,false);
 });
+test('activation requires explicit partial approval, preserves corrupt source backup and installs exact reviewed bytes',async()=>{
+ const {activateOperationsRecovery}=await import('../dist/admin/activateOperationsRecovery.js');const {buffer}=sourceFixture();
+ await fixture(buffer,async(file,root)=>{
+  const {report,reportPath}=await prepareOperationsRecovery(file,sha(buffer));
+  await assert.rejects(activateOperationsRecovery(file,reportPath,report.candidate_sha256),/explicitamente/);assert.deepEqual(await readFile(file),buffer);
+  const expected=await readFile(report.candidate),result=await activateOperationsRecovery(file,reportPath,report.candidate_sha256,true);
+  assert.equal(result.status,'ACTIVATED');assert.deepEqual(await readFile(result.backup),buffer);assert.deepEqual(await readFile(file),expected);const state=JSON.parse(expected);assert.equal(state.queue.length,86);assert.equal(state.system.status,'PAUSED');assert.equal(state.publishing.enabled,false);assert.equal(state.feed.config.enabled,false);
+  assert.equal((await readdir(root)).includes('backend.lock'),false);const count=(await readdir(root)).length;
+  const again=await activateOperationsRecovery(file,reportPath,report.candidate_sha256,true);assert.equal(again.status,'ALREADY_ACTIVATED');assert.equal(again.source_replaced,false);assert.equal((await readdir(root)).length,count);
+ });
+});
+test('candidate or source changes and active backend refuse activation without replacement',async()=>{
+ const {activateOperationsRecovery}=await import('../dist/admin/activateOperationsRecovery.js');const {buffer}=sourceFixture();
+ await fixture(buffer,async(file,root)=>{
+  const {report,reportPath}=await prepareOperationsRecovery(file,sha(buffer)),candidate=await readFile(report.candidate);
+  await writeFile(report.candidate,Buffer.concat([candidate,Buffer.from(' ')]));await assert.rejects(activateOperationsRecovery(file,reportPath,report.candidate_sha256,true),/mudou/);assert.deepEqual(await readFile(file),buffer);await writeFile(report.candidate,candidate);
+  const changed=Buffer.concat([buffer,Buffer.from(' ')]);await writeFile(file,changed);await assert.rejects(activateOperationsRecovery(file,reportPath,report.candidate_sha256,true),/Original mudou/);assert.deepEqual(await readFile(file),changed);await writeFile(file,buffer);
+  await writeFile(join(root,'backend.lock'),String(process.pid));await assert.rejects(activateOperationsRecovery(file,reportPath,report.candidate_sha256,true),/em execução/);assert.deepEqual(await readFile(file),buffer);
+ });
+});

@@ -896,3 +896,22 @@ arquivo de mesmo nome terminado em `.report.json`. Enviar **somente o relatório
 não o candidato grande. Não renomear manualmente o candidato sobre o original.
 Não há opção `--apply` nesse comando. Uma eventual ativação exige etapa separada,
 backup do original e revisão explícita das perdas/valores novos informados.
+
+Após revisão explícita do `.report.json` e aceitação de suas partes indisponíveis,
+a ativação é uma etapa separada:
+
+```cmd
+npm run recover:operations -- --activate --accept-partial-recovery --candidate-sha SHA256_DO_CANDIDATO_REVISADO
+```
+
+O hash identifica exatamente o candidato revisado; não basta escolher qualquer
+arquivo “mais recente”. O comando confere source/candidate SHA256, schema,
+contagens e fila, além das flags de pausa. Exige painel encerrado e exclusividade
+no backend.lock. Cria backup integral `.before-recovery-<timestamp>-<id>.bak`,
+verifica o backup, grava/sincroniza um temporário e somente então troca o original
+atomicamente. Alteração da fonte ou do candidato cancela a ativação. Não remove o
+candidato, seus relatórios ou o backup. Repetição sem mudanças retorna ALREADY_ACTIVATED.
+Publicação, RSS e auto_enqueue continuam desligados após ativar. Não autoriza
+restaurar automaticamente feed/audit/locks indisponíveis nem afirmar recuperação
+integral. A inicialização normal pode marcar tarefas interrompidas para revisão,
+sem tentar publicá-las novamente.

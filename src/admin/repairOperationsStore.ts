@@ -34,7 +34,7 @@ export function escapeRawJsonControls(source:string){
 }
 export type RepairProgress={stage:string;[key:string]:unknown};
 const sha=(data:Buffer|string)=>createHash('sha256').update(data).digest('hex');
-async function repairLock(filename:string){
+export async function acquireOperationsBackendLock(filename:string){
  const lock=join(dirname(filename),'backend.lock');
  for(let attempt=0;attempt<2;attempt++){
   try{
@@ -55,7 +55,7 @@ async function repairLock(filename:string){
 }
 export async function repairOperationsStore(filename:string,apply=false,progress:(step:RepairProgress)=>void=()=>{}){
  progress({stage:'LOCK',apply});
- const release=apply?await repairLock(filename):async()=>{};
+ const release=apply?await acquireOperationsBackendLock(filename):async()=>{};
  let temp:string|undefined;
  try{
   const info=await stat(filename);progress({stage:'READ',file_size_bytes:info.size});
