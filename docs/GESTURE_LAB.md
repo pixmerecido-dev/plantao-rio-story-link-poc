@@ -870,3 +870,29 @@ Gera apenas `operations.json.corruption-survey-<timestamp>-<id>.json`; nunca alt
 o original, preferências, fila ou publicação. Enviar esse relatório pequeno para
 avaliar os próximos passos. Se o arquivo mudar durante a leitura, isso fica marcado
 e o diagnóstico não deve ser usado como base de recuperação.
+
+### Candidato separado de recuperação parcial
+
+Quando a varredura confirmar **um único bloco NUL até EOF**, preservando as seções
+anteriores, `npm run recover:operations -- --prepare` gera um **novo candidato**,
+sem renomear, substituir ou ativar `operations.json`. Usa o SHA256 da varredura
+local mais recente e faz nova leitura para conferir a fonte e os intervalos.
+
+Exige versão, contas, configurações, política, segurança, sistema e fila em seções
+completas anteriores à corrupção; qualquer ausência ou duplicidade bloqueia.
+Recupera apenas objetos de eventos inteiramente fechados e válidos antes do dano.
+O último objeto parcial não é fechado artificialmente. Evento completo inválido
+não é silenciosamente pulado: bloqueia a preparação. O candidato passa pelo schema
+operacional completo; a fila é comparada por hash e os estados/IDs são preservados.
+
+Se `feed`, `audit` ou `locks` não estiverem disponíveis, o relatório os identifica
+explicitamente como NÃO RECUPERADOS. Somente no candidato, cria valores vazios
+necessários ao schema; feed fica desativado, sem auto_enqueue. A publicação fica
+`enabled=false` e o sistema PAUSED. Isso não é uma recuperação integral do histórico
+e exige revisão antes da ativação. Os registros antigos permanecem no original.
+
+Saídas: `operations.json.recovery-candidate-<timestamp>-<id>.json` e o pequeno
+arquivo de mesmo nome terminado em `.report.json`. Enviar **somente o relatório**,
+não o candidato grande. Não renomear manualmente o candidato sobre o original.
+Não há opção `--apply` nesse comando. Uma eventual ativação exige etapa separada,
+backup do original e revisão explícita das perdas/valores novos informados.
