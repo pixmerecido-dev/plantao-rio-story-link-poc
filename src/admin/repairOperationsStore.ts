@@ -1,28 +1,38 @@
-import {readFile,open,copyFile,rename,unlink,chmod} from 'node:fs/promises';
+import {readFile,open,copyFile,rename,unlink,chmod,stat} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import {validateOperationsState,type OperationsState} from './operationsDomain.js';
+export const MAX_CONTROL_REPAIRS=100000;
+export const MAX_REPAIR_FILE_BYTES=256*1024*1024;
+export class OperationsRepairScanError extends Error {
+ constructor(message:string,readonly diagnostic:Record<string,unknown>){super(message);this.name='OperationsRepairScanError';}
+}
 /** Repair only unescaped U+0000..U+001F inside JSON strings. Never infer missing data. */
 export function escapeRawJsonControls(source:string){
  let quoted=false,escaped=false,start=0,line=1,column=1,count=0;
- const parts:string[]=[],locations:{offset:number;line:number;column:number;code_point:string}[]=[];
+ const blocks:string[]=[],parts:string[]=[],locations:{offset:number;line:number;column:number;code_point:string}[]=[];
+ const emit=(piece:string)=>{parts.push(piece);if(parts.length>=4096){blocks.push(parts.join(''));parts.length=0;}};
  for(let i=0;i<source.length;i++){
   const code=source.charCodeAt(i);
   if(quoted){
    if(code<32){
-    if(escaped)throw Error('Caractere de controle após barra invertida: reparo ambíguo; arquivo preservado.');
-    parts.push(source.slice(start,i),'\\u'+code.toString(16).padStart(4,'0'));start=i+1;count++;
+    if(escaped)throw new OperationsRepairScanError('Caractere de controle após barra invertida: reparo ambíguo; arquivo preservado.',{offset:i,line,column});
+    count++;
     if(locations.length<20)locations.push({offset:i,line,column,code_point:'U+'+code.toString(16).padStart(4,'0').toUpperCase()});
+    if(count>MAX_CONTROL_REPAIRS)throw new OperationsRepairScanError('Bloco excessivo de caracteres inválidos. Reparo automático interrompido; não remover esse bloco nem redefinir os dados.',{reason:'CONTROL_REPAIR_LIMIT',raw_controls_detected_at_least:count,maximum_control_repairs:MAX_CONTROL_REPAIRS,locations});
+    emit(source.slice(start,i));emit('\\u'+code.toString(16).padStart(4,'0'));start=i+1;
    }else if(escaped)escaped=false;
    else if(code===92)escaped=true;
    else if(code===34)quoted=false;
   }else if(code===34)quoted=true;
   if(code===10){line++;column=1;}else column++;
  }
- if(quoted||escaped)throw Error('String JSON incompleta; nenhum dado será adivinhado. Arquivo preservado.');
- return {text:count?parts.join('')+source.slice(start):source,count,locations};
+ if(quoted||escaped)throw new OperationsRepairScanError('String JSON incompleta; nenhum dado será adivinhado. Arquivo preservado.',{reason:'INCOMPLETE_STRING',raw_controls_detected:count,locations});
+ if(count){emit(source.slice(start));if(parts.length)blocks.push(parts.join(''));}
+ return {text:count?blocks.join(''):source,count,locations};
 }
+export type RepairProgress={stage:string;[key:string]:unknown};
 const sha=(data:Buffer|string)=>createHash('sha256').update(data).digest('hex');
 async function repairLock(filename:string){
  const lock=join(dirname(filename),'backend.lock');
@@ -43,12 +53,19 @@ async function repairLock(filename:string){
  }
  throw Error('Não foi possível obter exclusividade para reparar.');
 }
-export async function repairOperationsStore(filename:string,apply=false){
+export async function repairOperationsStore(filename:string,apply=false,progress:(step:RepairProgress)=>void=()=>{}){
+ progress({stage:'LOCK',apply});
  const release=apply?await repairLock(filename):async()=>{};
  let temp:string|undefined;
  try{
-  const original=await readFile(filename),source=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(original);
+  const info=await stat(filename);progress({stage:'READ',file_size_bytes:info.size});
+  if(info.size>MAX_REPAIR_FILE_BYTES)throw Error(`Arquivo acima do limite de diagnóstico (${MAX_REPAIR_FILE_BYTES} bytes). Original não substituído.`);
+  const original=await readFile(filename);
+  if(original.length>MAX_REPAIR_FILE_BYTES)throw Error('Arquivo cresceu durante leitura. Original não substituído.');
+  const source=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(original);
+  progress({stage:'SCAN_CONTROLS',source_character_count:source.length});
   const candidate=escapeRawJsonControls(source);
+  progress({stage:'VALIDATE',raw_control_characters:candidate.count,locations:candidate.locations,candidate_character_count:candidate.text.length});
   let state:OperationsState;
   try{state=JSON.parse(candidate.text);validateOperationsState(state);}
   catch(error){throw Error('Reparo limitado não produziu um armazenamento válido. Original preservado; não redefinir os dados.',{cause:error});}
@@ -58,9 +75,11 @@ export async function repairOperationsStore(filename:string,apply=false){
    original_sha256:sha(original),candidate_sha256:sha(candidate.text),queue_count:state.queue.length,account_count:state.instagram_accounts.length,event_count:state.events.length,audit_count:state.audit.length,feed_entry_count:state.feed.entries.length,
    backup:null as string|null,applied:false,publication_executed:false};
   if(!apply||!candidate.count)return summary;
+  progress({stage:'BACKUP'});
   const backup=`${filename}.before-repair-${Date.now()}-${randomUUID()}.bak`;
   await copyFile(filename,backup,constants.COPYFILE_EXCL);await chmod(backup,0o600);
   if(sha(await readFile(backup))!==summary.original_sha256)throw Error('Dados mudaram ao criar backup. Original não substituído.');
+  progress({stage:'WRITE_CANDIDATE',backup});
   temp=`${filename}.repair-${randomUUID()}.tmp`;
   const handle=await open(temp,'wx',0o600);
   try{await handle.writeFile(candidate.text,'utf8');await handle.sync();}finally{await handle.close();}
@@ -68,7 +87,8 @@ export async function repairOperationsStore(filename:string,apply=false){
   if(sha(prepared)!==summary.candidate_sha256)throw Error('Arquivo temporário divergiu. Original preservado.');
   validateOperationsState(JSON.parse(prepared.toString('utf8')));
   if(sha(await readFile(filename))!==summary.original_sha256)throw Error('Arquivo original mudou antes da troca. Reparo cancelado.');
-  await rename(temp,filename);temp=undefined;
+  progress({stage:'REPLACE',backup});
+  await rename(temp,filename);temp=undefined;progress({stage:'REPLACED',backup});
   return {...summary,backup,applied:true};
  }finally{if(temp)await unlink(temp).catch(()=>{});await release();}
 }

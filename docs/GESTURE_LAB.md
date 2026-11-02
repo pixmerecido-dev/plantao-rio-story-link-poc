@@ -843,3 +843,12 @@ inválido após essa correção limitada, aborta e preserva o original. Não faz
 nem tolerância automática no carregador. O reparo não identifica a causa da
 corrupção; o relatório local deve ser conferido antes de retomar os testes.
 Nenhum comando dessa ferramenta conecta ao Instagram ou publica.
+
+Falha `Invalid array length`: a ferramenta agora monta escapes em blocos pequenos,
+sem um array crescente por caractere inválido, e recusa arquivos acima de 256 MiB
+ou mais de 100.000 controles a reparar. Isso não classifica todo bloco inválido
+como texto recuperável. Exibe etapa/tamanho e salva falhas em
+`operations.json.repair-diagnostic-<timestamp>-<id>.json`, com posições e contagens,
+sem copiar trechos privados do armazenamento. Se falhar, enviar esse diagnóstico
+pequeno antes de tentar novos reparos; não truncar, apagar NULs em massa ou resetar
+fila/configurações. O erro anterior, sozinho, não determina a extensão da corrupção.

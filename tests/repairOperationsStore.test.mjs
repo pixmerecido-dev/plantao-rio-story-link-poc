@@ -28,3 +28,28 @@ test('live backend lock prevents repair and does not remove the lock or original
  try{await writeFile(file,source);await writeFile(lock,String(process.pid));await assert.rejects(repairOperationsStore(file,true),/em execução/);assert.equal(await readFile(file,'utf8'),source);assert.equal(await readFile(lock,'utf8'),String(process.pid));assert.equal((await readdir(root)).length,2);}
  finally{await rm(root,{recursive:true,force:true});}
 });
+test('large control sequences use bounded chunks and retain the exact decoded string',()=>{
+ const value='prefix'+'\u0000'.repeat(50000)+'suffix',r=escapeRawJsonControls('{"message":"'+value+'"}');
+ assert.equal(r.count,50000);assert.equal(r.locations.length,20);assert.equal(JSON.parse(r.text).message,value);
+});
+test('excessive corruption and oversized files stop before replacement, preserving original bytes',async()=>{
+ const {MAX_CONTROL_REPAIRS,MAX_REPAIR_FILE_BYTES,OperationsRepairScanError}=await import('../dist/admin/repairOperationsStore.js');
+ const {open,stat}=await import('node:fs/promises');
+ const root=await mkdtemp(join(tmpdir(),'ops-bounded-')),file=join(root,'operations.json');
+ try{
+  const source=Buffer.from('{"message":"'+'\u0000'.repeat(MAX_CONTROL_REPAIRS+1)+'"}');await writeFile(file,source);
+  await assert.rejects(repairOperationsStore(file,true),e=>e instanceof OperationsRepairScanError&&e.diagnostic.reason==='CONTROL_REPAIR_LIMIT');assert.deepEqual(await readFile(file),source);assert.deepEqual(await readdir(root),['operations.json']);
+  const handle=await open(file,'w');try{await handle.truncate(MAX_REPAIR_FILE_BYTES+1);}finally{await handle.close();}
+  const steps=[];await assert.rejects(repairOperationsStore(file,true,s=>steps.push(s)),/acima do limite/);assert.equal((await stat(file)).size,MAX_REPAIR_FILE_BYTES+1);assert.equal(steps.at(-1).stage,'READ');assert.deepEqual(await readdir(root),['operations.json']);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+test('CLI failures produce a small stage diagnostic without echoing private store contents',async()=>{
+ const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');const {resolve}=await import('node:path');
+ const run=promisify(execFile),root=await mkdtemp(join(tmpdir(),'ops-cli-')),file=join(root,'operations.json');
+ try{
+  const original='{ "private":"do-not-echo-this", "message":"'+'\u0000'.repeat(100001)+'"}';await writeFile(file,original);
+  await assert.rejects(run(process.execPath,[resolve('dist/utils/repairOperationsCli.js')],{env:{...process.env,ADMIN_DATA_DIR:root}}),e=>{assert.ok(!e.stderr.includes('do-not-echo-this'));return e.code===1;});
+  const name=(await readdir(root)).find(n=>n.includes('.repair-diagnostic-'));assert.ok(name);const report=JSON.parse(await readFile(join(root,name),'utf8'));
+  assert.equal(report.stage,'SCAN_CONTROLS');assert.equal(report.original_file_replaced,false);assert.equal(report.details.reason,'CONTROL_REPAIR_LIMIT');assert.equal(await readFile(file,'utf8'),original);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
