@@ -71,7 +71,8 @@
     "smoke:gesture-mirror-convergence": "tsx src/gestureLab/emulatorMirrorPinchCli.ts converge",
     "smoke:gesture-session-final": "tsx src/gestureLab/emulatorMirrorPinchCli.ts final-session",
     "smoke:gesture-575-diagnostic": "tsx src/gestureLab/diagnostic575Cli.ts",
-    "repair:operations": "tsx src/utils/repairOperationsCli.ts"
+    "repair:operations": "tsx src/utils/repairOperationsCli.ts",
+    "diagnose:operations-corruption": "tsx src/utils/scanOperationsCorruptionCli.ts"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

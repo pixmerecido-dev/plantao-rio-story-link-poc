@@ -852,3 +852,21 @@ como texto recuperável. Exibe etapa/tamanho e salva falhas em
 sem copiar trechos privados do armazenamento. Se falhar, enviar esse diagnóstico
 pequeno antes de tentar novos reparos; não truncar, apagar NULs em massa ou resetar
 fila/configurações. O erro anterior, sozinho, não determina a extensão da corrupção.
+
+Sem backup disponível e com corrupção extensa, `npm run diagnose:operations-corruption`
+faz uma varredura somente de leitura. Calcula SHA256, quantidade de bytes NUL,
+intervalos dos primeiros blocos (lista limitada), maior bloco, posição inicial/final
+e quantidade de bytes não NUL após o primeiro bloco. Processa por chunks, sem
+expandir NULs em escapes ou carregar o arquivo inteiro na memória.
+
+Também procura cabeçalhos conhecidos de seções no JSON formatado originalmente
+pelo backend. Seções completas até 64 MiB são analisadas individualmente; a saída
+mostra tipo/contagem, sem dados privados. Após a corrupção, qualquer seção localizada
+é marcada AFTER_CORRUPTION_UNAUTHENTICATED: JSON válido isolado não comprova que
+ela forma um armazenamento completo ou que pode ser restaurada automaticamente.
+Não fecha aspas/chaves, não remove blocos e não preenche registros perdidos.
+
+Gera apenas `operations.json.corruption-survey-<timestamp>-<id>.json`; nunca altera
+o original, preferências, fila ou publicação. Enviar esse relatório pequeno para
+avaliar os próximos passos. Se o arquivo mudar durante a leitura, isso fica marcado
+e o diagnóstico não deve ser usado como base de recuperação.
